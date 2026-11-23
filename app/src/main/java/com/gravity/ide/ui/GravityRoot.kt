@@ -109,10 +109,15 @@ fun GravityRoot() {
     val isTopLevel = route == null || route == Routes.HOME
 
     fun go(target: String) {
-        nav.navigate(target) {
-            launchSingleTop = true
-            if (target == Routes.HOME) popUpTo(Routes.HOME) { inclusive = false }
+        val navigate = {
+            nav.navigate(target) {
+                launchSingleTop = true
+                if (target == Routes.HOME) popUpTo(Routes.HOME) { inclusive = false }
+            }
         }
+        // Screens call go() from coroutines too; NavController must only be used on the main thread.
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) navigate()
+        else android.os.Handler(android.os.Looper.getMainLooper()).post { navigate() }
     }
 
     ModalNavigationDrawer(
