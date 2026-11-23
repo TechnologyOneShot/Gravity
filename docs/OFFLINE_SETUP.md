@@ -9,7 +9,7 @@ git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp app/src
 ./gradlew assembleDebug -Pgravity.llama=true
 ```
 
-CI does this on every push to `main` (job *llama-apk-and-emulator-tests*): it builds the runtime for arm64-v8a and x86_64, runs the emulator suite with it, and attaches the result to the `debug-latest` pre-release as `gravity-debug-llama.apk`. Pick that file for a phone.
+CI does this on every push to `main` (job *llama-apk-and-emulator-tests*): it builds the runtime for arm64-v8a and x86_64, runs the emulator suite with it, and attaches the result to the `debug-latest` pre-release as `gravity-debug.apk` (also under its old name `gravity-debug-llama.apk`).
 
 Notes:
 - The JNI bridge (`app/src/main/cpp/gravity_llama.cpp`) targets the 2025 llama.cpp C API: `llama_model_load_from_file`, `llama_init_from_model`, `llama_vocab`, sampler chains and `llama_chat_apply_template` without a model argument. If the tag you pick renamed a function, adjust the bridge or choose a nearby tag.

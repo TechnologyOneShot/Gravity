@@ -2,10 +2,10 @@
 
 ## Install
 
-1. Download `gravity-debug-llama.apk` (with the local AI runtime) or `gravity-debug.apk` from the repository's **debug-latest** pre-release, or build it yourself (README → Build).
+1. Download `gravity-debug.apk` from the repository's **debug-latest** pre-release (it includes the on-device AI engine), or build it yourself (README → Build).
 2. Open it on the phone. Allow "Install unknown apps" for your browser or file manager when Android asks.
 
-Updates: debug APKs are signed with the fixed debug key `app/gravity-debug.keystore`, so a newer APK installs over the old one and keeps your data. APKs built before 2026-11-23 used a random key per build: uninstall such a build once before installing a new one. The debug key is not secret; release builds must be signed with your own private key (keep it out of the repository, e.g. in a CI secret).
+Updates: debug APKs are signed with the fixed debug key `app/gravity-debug.keystore`, so a newer APK installs over the old one and keeps your data. APKs built before 2026-11-23 15:30 IST used a random key per build: uninstall such a build once before installing a new one. On some phones (e.g. Xiaomi) the installer then says "package appears to be invalid" instead of "conflicts with an existing package". Uninstalling deletes Gravity's data, including downloaded models. The debug key is not secret; release builds must be signed with your own private key (keep it out of the repository, e.g. in a CI secret).
 3. On first start, allow notifications. They are used for task progress, downloads and screen capture.
 
 Requirements: Android 8.0 (API 26) or newer. 64-bit ARM is recommended for local models.

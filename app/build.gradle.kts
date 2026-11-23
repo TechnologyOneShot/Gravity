@@ -40,8 +40,10 @@ android {
         applicationId = "com.gravity.ide"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI builds count up (GitHub run number) so every new APK installs as an update.
+        val ciBuild = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+        versionCode = ciBuild ?: 1
+        versionName = if (ciBuild != null) "0.1.$ciBuild" else "0.1.0-local"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "LLAMA_BUNDLED", llamaEnabled.toString())
 

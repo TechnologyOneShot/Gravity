@@ -88,14 +88,28 @@ fun ModelsScreen(initialTab: Int) {
     }
 }
 
+/** Release page with the current debug build (includes the llama.cpp engine). */
+private const val RELEASE_URL = "https://github.com/TechnologyOneShot/Gravity/releases/tag/debug-latest"
+
 @Composable
 private fun RuntimeBanner() {
     val c = LocalAppContainer.current
     if (!c.localHost.runtimeAvailable) {
-        MessageBanner(
-            "Local inference runtime not bundled: ${c.localHost.runtimeError}. Models can still be downloaded, verified and inspected; " +
-                "loading requires an APK built with -Pgravity.llama=true (docs/OFFLINE_SETUP.md).",
-        )
+        val context = androidx.compose.ui.platform.LocalContext.current
+        Column {
+            MessageBanner(
+                "This copy of Gravity has no on-device AI engine, so models can be downloaded and checked but not loaded. " +
+                    "Install gravity-debug.apk from the latest release (it includes the engine), then load the model here.",
+            )
+            TextButton(onClick = {
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(RELEASE_URL))
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }) { Text("Get the version with on-device AI") }
+        }
     }
 }
 
@@ -211,7 +225,11 @@ private fun InstalledModels() {
                     }
                     KeyValue("License", m.license ?: "unknown — check the model card")
                     KeyValue("SHA-256", (m.sha256Actual ?: "—").take(20) + if (m.sha256Expected != null) " (verified)" else "", mono = true)
-                    KeyValue("Est. RAM", formatBytes(com.gravity.ide.core.GgufReader.estimateRamBytes(m.sizeBytes, settings.localContextSize)))
+                    val needRam = com.gravity.ide.core.GgufReader.estimateRamBytes(m.sizeBytes, settings.localContextSize)
+                    KeyValue(
+                        "Est. RAM",
+                        formatBytes(needRam) + if (needRam > c.device.recommendedMaxModelBytes()) " — too big for this phone (slow or may be closed by Android)" else "",
+                    )
                     m.benchmarkTokensPerSec?.let { KeyValue("Benchmark", "%.1f tokens/s".format(it)) }
                     m.repoId?.let { KeyValue("Source", it) }
                     m.error?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = GravityColors.Amber) }

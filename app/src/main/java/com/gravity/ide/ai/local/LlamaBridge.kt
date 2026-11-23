@@ -21,7 +21,7 @@ object LlamaBridge {
         var error: String? = null
         var ok = false
         if (!BuildConfig.LLAMA_BUNDLED) {
-            error = "This build of Gravity does not include the llama.cpp runtime (built without -Pgravity.llama=true)."
+            error = "This copy of Gravity was built without the on-device AI engine (llama.cpp). Install gravity-debug.apk from the latest Gravity release, which includes it."
         } else {
             try {
                 System.loadLibrary("gravity_llama")

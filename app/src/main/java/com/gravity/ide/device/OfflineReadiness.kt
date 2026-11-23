@@ -60,7 +60,7 @@ class OfflineReadinessChecker(
         )
         checks += Check(
             "Local inference runtime", localHost.runtimeAvailable, localHost.runtimeError ?: "llama.cpp bundled",
-            if (!localHost.runtimeAvailable) "Install an APK built with -Pgravity.llama=true (docs/OFFLINE_SETUP.md)" else null,
+            if (!localHost.runtimeAvailable) "Install gravity-debug.apk from the latest Gravity release (it includes the on-device AI engine)" else null,
         )
         val loaded = localHost.loadedOrNull()
         val default = installed.firstOrNull { it.isDefault } ?: installed.firstOrNull()
