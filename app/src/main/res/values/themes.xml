@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="gravity_background">#FF0B0F17</color>
+    <color name="gravity_icon_background">#FF0B0F17</color>
+
+    <style name="Theme.Gravity" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/gravity_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

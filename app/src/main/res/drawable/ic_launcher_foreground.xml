@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Orbit ring -->
+    <path
+        android:pathData="M54,30a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z"
+        android:strokeWidth="5"
+        android:strokeColor="#FF22D3EE"
+        android:fillColor="#00000000" />
+    <!-- G stroke -->
+    <path
+        android:pathData="M64,46 L54,46 A8,8 0,1 0,62 56 L62,54 L55,54"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeColor="#FFA78BFA"
+        android:fillColor="#00000000" />
+    <!-- Satellite -->
+    <path
+        android:pathData="M76,34a4,4 0,1 1,0 8a4,4 0,1 1,0 -8z"
+        android:fillColor="#FF60A5FA" />
+</vector>
