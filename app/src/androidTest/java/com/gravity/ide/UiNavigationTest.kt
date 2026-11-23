@@ -1,0 +1,163 @@
+package com.gravity.ide
+
+import android.Manifest
+import android.os.Build
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.rule.GrantPermissionRule
+import com.gravity.ide.data.db.MessageEntity
+import com.gravity.ide.ui.drawerItems
+import com.gravity.ide.ui.titleFor
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.FixMethodOrder
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TestRule
+import org.junit.runner.RunWith
+import org.junit.runners.MethodSorters
+
+/**
+ * Drives the real app UI on an emulator: launch, dashboard, every navigation-drawer entry,
+ * and a chat message with no AI provider configured (which must fail honestly).
+ */
+@RunWith(AndroidJUnit4::class)
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+class UiNavigationTest {
+
+    @get:Rule(order = 0)
+    val notifications: TestRule =
+        if (Build.VERSION.SDK_INT >= 33) GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS) else TestRule { base, _ -> base }
+
+    @get:Rule(order = 1)
+    val compose = createAndroidComposeRule<MainActivity>()
+
+    private fun title(): String =
+        compose.onNodeWithTag("screen-title").fetchSemanticsNode().config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }.orEmpty()
+
+    private fun waitForTitle(expected: String, timeoutMs: Long = 15_000) {
+        compose.waitUntil(timeoutMs) { runCatching { title() == expected }.getOrDefault(false) }
+    }
+
+    /** Text currently on screen (nodes of the closed drawer sit off-screen and are skipped). */
+    private fun visibleText(): String {
+        val out = ArrayList<String>()
+        fun walk(node: SemanticsNode, width: Float) {
+            val b = node.boundsInRoot
+            if (b.right > 0f && b.left < width) {
+                node.config.getOrNull(SemanticsProperties.Text)?.forEach { if (it.text.isNotBlank()) out += it.text }
+                node.config.getOrNull(SemanticsProperties.EditableText)?.let { out += "[field:${it.text}]" }
+            }
+            node.children.forEach { walk(it, width) }
+        }
+        compose.onAllNodes(isRoot(), useUnmergedTree = true).fetchSemanticsNodes().forEach { root ->
+            walk(root, root.size.width.toFloat())
+        }
+        return out.joinToString(" | ")
+    }
+
+    private fun openDrawerEntry(label: String) {
+        compose.onNodeWithContentDescription("Open navigation").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("nav:$label").performScrollTo().performClick()
+        compose.waitForIdle()
+    }
+
+    private fun <T> poll(timeoutMs: Long, block: suspend () -> T?): T? {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < end) {
+            runBlocking { block() }?.let { return it }
+            Thread.sleep(250)
+        }
+        return null
+    }
+
+    @Test
+    fun t01_appLaunchesAndShowsDashboard() {
+        waitForTitle("Gravity")
+        compose.onNodeWithText("Welcome to Gravity").assertExists()
+        Thread.sleep(1500)
+        compose.waitForIdle()
+        Ci.log("launch", "Dashboard: ${visibleText().take(2500)}")
+        Ci.screenshot("01_dashboard")
+
+        compose.onNodeWithText("Offline readiness →").also { runCatching { it.performScrollTo() } }.performClick()
+        waitForTitle("Offline Readiness")
+        Thread.sleep(2000)
+        compose.waitForIdle()
+        Ci.log("launch", "Offline Readiness: ${visibleText().take(2500)}")
+        Ci.screenshot("02_offline_readiness")
+    }
+
+    @Test
+    fun t02_everyDrawerEntryOpens() {
+        waitForTitle("Gravity")
+        val failures = ArrayList<String>()
+        drawerItems.forEachIndexed { i, item ->
+            val expected = titleFor(item.route)
+            try {
+                openDrawerEntry(item.label)
+                waitForTitle(expected, 20_000)
+                Thread.sleep(1200) // let database / device-probe content arrive
+                compose.waitForIdle()
+                Ci.log("screen", "OK ${i + 1}/${drawerItems.size} ${item.label} → '${title()}' :: ${visibleText().take(1800)}")
+                Ci.screenshot("screen_%02d_%s".format(i + 1, item.label))
+            } catch (e: Throwable) {
+                val msg = "${item.label}: expected title '$expected', got '${runCatching { title() }.getOrDefault("?")}' — ${e.javaClass.simpleName}: ${e.message?.take(400)}"
+                failures += msg
+                Ci.log("screen", "FAIL ${i + 1}/${drawerItems.size} $msg")
+                Ci.screenshot("screen_%02d_%s_FAILED".format(i + 1, item.label))
+            }
+        }
+        Ci.log("screen", "Drawer entries opened: ${drawerItems.size - failures.size}/${drawerItems.size}")
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
+    @Test
+    fun t03_chatWithoutProviderFailsHonestlyAndPersists() {
+        waitForTitle("Gravity")
+        val prompt = "hello from CI ${System.currentTimeMillis() % 100000}"
+        openDrawerEntry("New Chat")
+        waitForTitle("Chat")
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput(prompt)
+        compose.onNodeWithContentDescription("Send").performClick()
+
+        val db = Ci.container.db
+        val reply: MessageEntity? = poll(30_000) {
+            val chat = db.chats().all().firstOrNull { it.title == prompt } ?: return@poll null
+            db.chats().messages(chat.id).firstOrNull { it.role == "assistant" }
+        }
+        assertNotNull("No assistant row was written for the message", reply)
+        reply!!
+        Ci.log("chat", "Assistant row: content='${reply.content}' error='${reply.error}' model=${reply.model}")
+        assertTrue("A reply was produced with no provider configured: '${reply.content}'", reply.content.isBlank())
+        assertTrue("No error was recorded", !reply.error.isNullOrBlank())
+        Thread.sleep(800)
+        compose.waitForIdle()
+        Ci.log("chat", "Chat screen: ${visibleText().take(2000)}")
+        Ci.screenshot("03_chat_no_provider")
+
+        // Recreate the activity: the chat must still be listed.
+        compose.activityRule.scenario.recreate()
+        compose.waitForIdle()
+        openDrawerEntry("Chat History")
+        waitForTitle("Chat History")
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(prompt, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        Ci.log("chat", "Chat History after recreate: ${visibleText().take(1500)}")
+        Ci.screenshot("04_chat_history_after_recreate")
+    }
+}

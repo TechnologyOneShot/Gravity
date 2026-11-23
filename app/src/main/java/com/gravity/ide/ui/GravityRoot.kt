@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -145,7 +146,7 @@ fun GravityRoot() {
                                 scope.launch { drawer.close() }
                                 go(item.route)
                             },
-                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding).height(44.dp),
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding).height(44.dp).testTag("nav:${item.label}"),
                         )
                     }
                 }
@@ -155,7 +156,7 @@ fun GravityRoot() {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(titleFor(route), maxLines = 1) },
+                    title = { Text(titleFor(route), maxLines = 1, modifier = Modifier.testTag("screen-title")) },
                     navigationIcon = {
                         if (isTopLevel) {
                             IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Filled.Menu, "Open navigation") }
