@@ -324,11 +324,12 @@ class AgentTools(
         "install_apk" -> {
             val inst = installer ?: return "Error: installing is not available to this agent"
             val requested = args.getString("path")
-            val apk = if (requested == "latest") {
+            val found: File? = if (requested == "latest") {
                 builds?.latestArtifact(project.id, ".apk")
             } else {
                 path(args).takeIf { it.isFile && it.name.endsWith(".apk") }
-            } ?: return "Error: no APK found for '$requested'"
+            }
+            val apk = found ?: return "Error: no APK found for '$requested'"
             if (!approve("Install ${apk.name}", "${apk.length()} bytes", "CAUTION")) {
                 "Rejected by user: ${apk.name} was not installed."
             } else {
