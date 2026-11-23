@@ -4,7 +4,8 @@ The specification asks Gravity never to fake a feature. This file lists everythi
 
 ## Verification
 
-- **Compiled, not yet run.** GitHub Actions compiles the app, runs 37 JVM unit tests (all pass) and produces the debug APK. Nobody has installed or used the APK on a device yet, so runtime bugs are still possible anywhere in the UI or device integrations.
+- **Verified on an emulator, not yet on a phone.** Every push runs the JVM unit tests and an instrumented suite on an Android 14 emulator (both the standard APK and the llama.cpp APK). See ACCEPTANCE_TESTS.md for each row's evidence. Real-device behaviour (performance, OEM restrictions, ARM-only issues) has not been checked yet.
+- Not verifiable in CI and therefore unverified: anything that needs an AI provider key (cloud chat, agent runs, teams, web search, screenshot analysis), Termux builds, the system install dialog and MediaProjection capture.
 - 15 Kotlin deprecation warnings (non-AutoMirrored icons, `LocalClipboardManager`) remain. They do not affect the build.
 - Acceptance tests 1–40 have **not** been executed on a device (see ACCEPTANCE_TESTS.md).
 

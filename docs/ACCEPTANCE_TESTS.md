@@ -1,56 +1,62 @@
 # Acceptance tests (spec §42)
 
-**Current status: none of these has been executed on a device.** What *is* verified (GitHub Actions, 2026-11-23): the project compiles, `assembleDebug` produces a debug-signed `app-debug.apk`, and the 37 JVM unit tests pass (path guard, zip safety, diff, command safety, secret scanning, SSE/UTF-8 streaming, GGUF parsing, backup crypto, syntax highlighting, tool protocol, glob, provider wire formats, Termux build script). Those unit tests do not cover any row below on their own. Do not treat any row as passed until it has a recorded result.
+**Status (2026-11-23):** verified on an Android 14 emulator (Google APIs, x86_64) in GitHub Actions by the instrumented suite in `app/src/androidTest` (job *emulator-tests*, plus *llama-apk-and-emulator-tests* for the native runtime). Each result below cites the test that produced it; the CI log prints what the app did and showed, and the run's `emulator-evidence` artifact holds 32 screenshots, logcat and the test XML.
 
-How results get recorded:
-- **JVM**: `./gradlew testDebugUnitTest`, run in CI. Reports are in `app/build/reports/tests/`.
-- **Self-test**: Testing Center or Help → *Run self-test*. Records name, expected, actual, PASS/FAIL/SKIPPED and details on the device; Export Center → *Test report* exports them.
-- **Feasibility**: Build Center → probes, recorded as suite `feasibility`.
+What an emulator run cannot prove: behaviour on real phone hardware, anything that needs an AI provider key (none is stored in CI), Termux, Shizuku, the system install dialog, or MediaProjection consent. Those rows say so.
+
+Result key: **Pass** = verified with evidence · **Partial** = the verifiable part passed, the rest is named · **Not run** = needs something CI does not have.
+
+How results get recorded on a phone:
+- **Self-test**: Testing Center or Help → *Run self-test* (name, expected, actual, PASS/FAIL/SKIPPED, details). Export Center → *Test report* exports them.
+- **Feasibility**: Build Center → probes, suite `feasibility`.
 - **App test**: Testing Center → *Run test* (suite `device:<package>`, with screenshot and log evidence).
-- **Manual**: steps below. Note the result in the table, with a screenshot or log.
 
-| # | Test | Verified by | Result |
+| # | Test | Evidence | Result |
 |---|---|---|---|
-| 1 | App launches | Manual: install, open | Not run |
-| 2 | Dashboard displays | Manual | Not run |
-| 3 | Navigation works | Manual: open all 28 drawer entries | Not run |
-| 4 | New Chat works | Manual | Not run |
-| 5 | Chat history persists | Manual: send, force-stop, reopen | Not run |
-| 6 | New Project | Manual: each template | Not run |
-| 7 | New Folder | Manual | Not run |
-| 8 | New File | Self-test "File create / rename / delete / restore" + manual | Not run |
-| 9 | File rename | Self-test (same) | Not run |
-| 10 | File delete with safeguards | Self-test (trash round-trip) + manual confirm dialog | Not run |
-| 11 | Workspace reopens | Manual: restart app, open project | Not run |
-| 12 | Terminal runs real commands | Self-test "Terminal exit codes" | Not run |
-| 13 | Terminal exit codes | Self-test (`exit 0` / `exit 3`) | Not run |
-| 14 | Local model downloads | Manual: Hub search → Download | Not run |
-| 15 | Checksum verified | Manual: Hub file with SHA-256; see "Downloaded and verified" event | Not run |
-| 16 | Local model loads | Manual (APK with llama runtime) | Not run |
-| 17 | Local model generates | Self-test "Local model inference" | Not run |
-| 18 | Gemini works with a valid key | Self-test "Cloud provider connection" + a chat message | Not run |
-| 19 | Custom API configuration | Manual: OpenAI-compatible provider → Test connection | Not run |
-| 20 | Online/offline switching | Manual: airplane mode during a cloud task → WAITING_NETWORK → resumes | Not run |
-| 21 | Hybrid collaboration task | Manual: team (cloud Architect + local Developer) task completes | Not run |
-| 22 | Shared project context | Manual: plan visible in task Result; developer prompt includes it | Not run |
-| 23 | File changes reviewable | Manual: task → Changes → diff | Not run |
-| 24 | Rollback restores content | Self-test "Checkpoint rollback" + task Roll back | Not run |
-| 25 | Web search returns sourced results | Manual: Brave key → agent `web_search`, or Gemini grounding sources | Not run |
-| 26 | Offline project search | Manual: airplane mode → Files search / Global Search | Not run |
-| 27 | Cached offline build | Manual: Termux backend, second build with `--offline` after one online build; Offline Readiness shows the Termux cache | Not run |
-| 28 | Android build generates an APK | CI (`assembleDebug`) for Gravity itself; on the phone with the Termux backend (Android template project) | Partial: CI builds Gravity's own APK (2026-11-23); in-app Termux build not run |
-| 29 | Exported artifact exists | Export Center reports the size it read back | Not run |
-| 30 | Same-device install | Manual: Device Manager → Install | Not run |
-| 31 | Target app launches | App test | Not run |
-| 32 | Runtime logs collected | App test details / Logcat tab | Not run |
-| 33 | Real screenshots | Testing Center capture → Gallery | Not run |
-| 34 | Screenshot analysis | Gallery → AI analyse | Not run |
-| 35 | Genuine pass/fail | App test with a crashing app records FAIL | Not run |
-| 36 | Accurate build failures | Build an Android project on a stock phone: FAILED with the real `java: not found` log | Not run |
-| 37 | Backup and restore | Self-test "Backup encryption" + manual backup → restore | Not run |
-| 38 | Credentials not exposed | Self-test "Keystore credential encryption"; check that exports and backups contain no keys | Not run |
-| 39 | Survives process interruption | Manual: start a task, force-stop, reopen → INTERRUPTED → Resume | Not run |
-| 40 | No placeholder core features | Review against KNOWN_LIMITATIONS.md | Not run |
+| 1 | App launches | `UiNavigationTest.t01` | **Pass** |
+| 2 | Dashboard displays | `UiNavigationTest.t01`: status panel (network, mode, local/cloud AI, builds), quick actions, recent items | **Pass** |
+| 3 | Navigation works | `UiNavigationTest.t02`: all 28 drawer entries opened with the right title, no crash | **Pass** (28/28) |
+| 4 | New Chat works | `UiNavigationTest.t03`: chat created, message saved, no provider → visible error and an empty assistant row (no invented reply) | **Partial**: a real AI reply needs a provider key (row 18) |
+| 5 | Chat history persists | `UiNavigationTest.t03`: chat still listed after the activity is recreated | **Partial**: survives activity recreation; not tested across a force-stop |
+| 6 | New Project | `DeviceServicesTest.t03`: all 7 templates create their files and a database row | **Pass** |
+| 7 | New Folder | `DeviceServicesTest.t03` | **Pass** |
+| 8 | New File | Self-test + `DeviceServicesTest.t03` | **Pass** |
+| 9 | File rename | Self-test + `DeviceServicesTest.t03` | **Pass** |
+| 10 | File delete with safeguards | Trash round-trip (self-test, `t03`); `../escape.txt` rejected | **Pass** (service level; confirm dialog not exercised) |
+| 11 | Workspace reopens | Workspaces screen lists every project from the database after restore and activity recreation (`t02` screens) | **Partial**: process restart not tested |
+| 12 | Terminal runs real commands | `DeviceServicesTest.t02`: `id`, `uname -a`, `pwd` return the device's real output | **Pass** |
+| 13 | Terminal exit codes | Self-test (`exit 0` / `exit 3`), `cat /nonexistent-file` → 1 | **Pass** |
+| 14 | Local model downloads | `DeviceServicesTest.t12`: `ggml-org/models/tinyllamas/stories260K.gguf` from the Hugging Face Hub through WorkManager | **Pass** |
+| 15 | Checksum verified | `t12`: SHA-256 equals the Hub's LFS hash; file size matches | **Pass** |
+| 16 | Local model loads | `DeviceServicesTest.t12b` (APK with llama.cpp, x86_64): the downloaded `stories260K.gguf` loads with a 512-token context | **Pass** |
+| 17 | Local model generates | `t12b`: 32 tokens in about 2 s; `t13`: with airplane mode on, the request is routed to the local model and generates 16 tokens | **Pass** (tiny test model; speed on a phone depends on the model and hardware) |
+| 18 | Gemini works with a valid key | Self-test "Cloud provider connection" | **Not run**: no API key in CI |
+| 19 | Custom API configuration | Provider protocol unit tests (MockWebServer) only | **Not run** on a device: needs an endpoint |
+| 20 | Online/offline switching | `t13`: airplane mode → app reports offline → back online; a task without a provider waits in WAITING_NETWORK (`t09`) | **Partial**: automatic resume of a cloud task needs a provider |
+| 21 | Hybrid collaboration task | | **Not run**: needs a cloud provider |
+| 22 | Shared project context | | **Not run**: needs a provider |
+| 23 | File changes reviewable | Diff engine in self-test only | **Not run** end to end: needs an agent run with a provider |
+| 24 | Rollback restores content | Self-test "Checkpoint rollback" | **Pass** (checkpoint level; per-task rollback needs an agent run) |
+| 25 | Web search returns sourced results | | **Not run**: needs a Brave key or Gemini |
+| 26 | Offline project search | `t13`: project search in airplane mode | **Pass** |
+| 27 | Cached offline build | | **Not run**: needs Termux |
+| 28 | Android build generates an APK | CI builds Gravity's APK on every push; shell and static-web projects build on the device (`t05`) | **Partial**: an on-phone APK build needs Termux |
+| 29 | Exported artifact exists | `t06`: exported ZIP read back (3 files); static-web artifact ZIP contains `index.html` (`t05`) | **Pass** |
+| 30 | Same-device install | | **Not run**: system install dialog needs a person |
+| 31 | Target app launches | `t11`: App test launched Settings; `dumpsys` shows it as the resumed activity | **Pass** |
+| 32 | Runtime logs collected | `t11`: logcat read; other apps' lines need READ_LOGS (`adb shell pm grant`) | **Partial** |
+| 33 | Real screenshots | CI captured 32 screenshots with `screencap`, not with the app's MediaProjection capture | **Not run** in-app: needs the user's capture consent |
+| 34 | Screenshot analysis | | **Not run**: needs a vision provider and a capture |
+| 35 | Genuine pass/fail | Healthy app → PASS (`t11`); Android build → FAILED with exit 127 (`t05`); no-provider chat and agent never report success (`t03`, `t09`) | **Partial**: the crashing-app FAIL path was not run |
+| 36 | Accurate build failures | `t05`: Android template built with the plain device shell → FAILED, exit 127, real log `./gradlew: inaccessible or not found` | **Pass** |
+| 37 | Backup and restore | `t07`: encrypted backup, wrong password rejected, restore adds the projects back | **Pass** |
+| 38 | Credentials not exposed | `t07`: key stored encrypted (not in the prefs file in plain text); none of 48 backup entries contains it | **Pass** |
+| 39 | Survives process interruption | `t08`: a task left RUNNING is marked INTERRUPTED by startup recovery | **Partial**: a real force-stop was not performed |
+| 40 | No placeholder core features | Git Manager and Plugins state in the app that they are not implemented | **Not met**: see KNOWN_LIMITATIONS.md |
+
+Counts for the latest runs: 16/16 instrumented tests pass on the standard APK, 17/17 on the llama.cpp APK, with no FATAL EXCEPTION in logcat; 37/37 JVM unit tests (38 with the big-endian GGUF test) pass.
+
+Bugs the emulator suite found and that are fixed: Android 14 throws inside `ZipInputStream` for `../` entries, which made ZIP import fail instead of rejecting the entry; big-endian GGUF files were reported as "Unsupported GGUF version 50331648".
 
 ## JVM unit tests included
 

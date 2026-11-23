@@ -79,11 +79,15 @@ jobs:
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk gravity-debug.apk
           SUM=$(sha256sum gravity-debug.apk | cut -d' ' -f1)
-          gh release delete debug-latest --cleanup-tag --yes 2>/dev/null || true
-          gh release create debug-latest gravity-debug.apk \
-            --prerelease --target "$GITHUB_SHA" \
-            --title "Gravity debug build (latest main)" \
-            --notes "Debug APK built by CI from commit ${GITHUB_SHA::7}. Debug-signed, for testing only; not a release build. SHA-256: $SUM"
+          # Keep the release (so download links never break); move its tag to this commit.
+          git tag -f debug-latest "$GITHUB_SHA"
+          git push -f origin refs/tags/debug-latest
+          NOTES="Debug builds from commit ${GITHUB_SHA::7} on main, replaced by CI on every push. Debug-signed, for testing only; not release builds.
+          - gravity-debug.apk: standard build (no local LLM runtime). SHA-256 $SUM
+          - gravity-debug-llama.apk: with the llama.cpp runtime; uploaded by the llama job about 30 minutes after the standard APK, from the same commit."
+          gh release view debug-latest > /dev/null 2>&1 || gh release create debug-latest --prerelease --verify-tag --title "Gravity debug build (latest main)" --notes "$NOTES"
+          gh release upload debug-latest gravity-debug.apk --clobber
+          gh release edit debug-latest --prerelease --notes "$NOTES"
 
   emulator-tests:
     # Installs the debug APK on an Android 14 emulator and drives the real app:

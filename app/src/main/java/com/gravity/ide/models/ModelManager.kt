@@ -203,7 +203,9 @@ class ModelManager(
             sizeLabel = info.sizeLabel,
             license = m.license ?: info.license,
             hasChatTemplate = info.hasChatTemplate,
-            name = info.name?.takeIf { it.isNotBlank() }?.let { "$it (${info.quantization ?: "?"})" } ?: m.name,
+            // Prefer the model's own name; a bare architecture name ("llama") says less than the file name.
+            name = info.name?.takeIf { it.isNotBlank() && !it.equals(info.architecture, ignoreCase = true) }
+                ?.let { n -> info.quantization?.let { "$n ($it)" } ?: n } ?: m.name,
             error = if (!info.hasChatTemplate) "No chat template in GGUF metadata — chat formatting may fail" else null,
             updatedAt = System.currentTimeMillis(),
         )
