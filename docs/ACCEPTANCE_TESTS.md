@@ -54,7 +54,7 @@ How results get recorded on a phone:
 | 39 | Survives process interruption | `t08`: a task left RUNNING is marked INTERRUPTED by startup recovery | **Partial**: a real force-stop was not performed |
 | 40 | No placeholder core features | Git Manager and Plugins state in the app that they are not implemented | **Not met**: see KNOWN_LIMITATIONS.md |
 
-Counts for the latest run (commit ac50b6e): standard APK 16 passed and 1 skipped (local inference needs the llama.cpp build); llama.cpp APK 17/17 passed; no FATAL EXCEPTION in logcat; 38/38 JVM unit tests pass.
+Counts for the latest run (commit 351f3e2, 2026-11-23): standard APK 20 passed and 1 skipped (local inference needs the llama.cpp build); llama.cpp APK 21/21 passed; App Builder end to end (build, change, undo, APK, install, launch, and the Home → Build → App screen UI flow) passed in both; no FATAL EXCEPTION in logcat; 47/47 JVM unit tests pass.
 
 ## App Builder (added after the original spec)
 
@@ -67,7 +67,7 @@ Counts for the latest run (commit ac50b6e): standard APK 16 passed and 1 skipped
 | Manifest rewriting | `AxmlRewriterTest` against the real shell APK | JVM unit test |
 | Real AI output quality | | **Not tested automatically** (needs an API key) |
 
-Bugs the emulator suite found and that are fixed: Android 14 throws inside `ZipInputStream` for `../` entries, which made ZIP import fail instead of rejecting the entry; big-endian GGUF files were reported as "Unsupported GGUF version 50331648".
+Bugs the emulator suite found and that are fixed: Navigation 2.9.0 lifecycle crash when leaving a screen ("State must be at least CREATED to be moved to DESTROYED"); navigation started from a coroutine could leave the new screen uninitialised (navigation now always runs on the main thread); closing tabs crashed Material's tab indicator; Android 14 throws inside `ZipInputStream` for `../` entries, which made ZIP import fail instead of rejecting the entry; big-endian GGUF files were reported as "Unsupported GGUF version 50331648".
 
 ## JVM unit tests included
 
