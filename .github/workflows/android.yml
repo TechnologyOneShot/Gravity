@@ -34,6 +34,29 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleDebug --stacktrace
 
+      - name: Verification summary
+        run: |
+          python3 - <<'EOF'
+          import glob, xml.etree.ElementTree as ET
+          total = fail = err = skip = 0
+          for f in sorted(glob.glob("app/build/test-results/testDebugUnitTest/*.xml")):
+              s = ET.parse(f).getroot()
+              t, fl, e, sk = (int(s.get(k, 0)) for k in ("tests", "failures", "errors", "skipped"))
+              total += t; fail += fl; err += e; skip += sk
+              print(f"{s.get('name')}: {t} tests, {fl} failures, {e} errors, {sk} skipped")
+              for case in s.iter("testcase"):
+                  bad = case.find("failure") is not None or case.find("error") is not None
+                  print(f"  {'FAIL' if bad else 'ok  '} {case.get('name')}")
+          print(f"UNIT TESTS: {total} total, {fail} failures, {err} errors, {skip} skipped")
+          EOF
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          for apk in app/build/outputs/apk/debug/*.apk; do
+            ls -l "$apk"
+            sha256sum "$apk"
+            "$BT/aapt2" dump badging "$apk" | grep -E "^(package|sdkVersion|targetSdkVersion|application-label|launchable-activity|native-code)"
+            "$BT/apksigner" verify --print-certs "$apk" | head -3
+          done
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
