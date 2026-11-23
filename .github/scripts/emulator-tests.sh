@@ -9,7 +9,8 @@ adb shell rm -rf /data/local/tmp/gravity-ci
 adb shell mkdir -p /data/local/tmp/gravity-ci
 adb shell getprop ro.build.fingerprint > ci-out/device.txt
 
-./gradlew --no-daemon connectedDebugAndroidTest --stacktrace > ci-out/gradle-connected.txt 2>&1
+# GRAVITY_GRADLE_ARGS lets the llama job pass -Pgravity.llama=true (same build as the APK it tests).
+./gradlew --no-daemon connectedDebugAndroidTest ${GRAVITY_GRADLE_ARGS:-} --stacktrace > ci-out/gradle-connected.txt 2>&1
 code=$?
 tail -40 ci-out/gradle-connected.txt
 

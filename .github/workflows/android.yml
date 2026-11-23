@@ -138,10 +138,16 @@ jobs:
           name: emulator-evidence
           path: ci-out/
 
-  debug-apk-with-llama:
-    if: github.event_name == 'workflow_dispatch' && inputs.llama
+  llama-apk-and-emulator-tests:
+    # Debug APK with the on-device llama.cpp runtime (arm64-v8a + x86_64). The x86_64 build is
+    # installed on the emulator and the full suite runs, including loading a real GGUF model and
+    # generating tokens online and in airplane mode. The APK is then attached to debug-latest.
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.llama)
+    needs: debug-apk
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -152,18 +158,62 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift /usr/local/share/boost /opt/hostedtoolcache/CodeQL /usr/local/share/powershell /usr/share/miniconda || true
+          df -h /
+
       - name: Fetch llama.cpp
-        run: git clone --depth 1 --branch "${{ inputs.llama_tag }}" https://github.com/ggml-org/llama.cpp app/src/main/cpp/llama.cpp
+        run: git clone --depth 1 --branch "${{ inputs.llama_tag || 'b6000' }}" https://github.com/ggml-org/llama.cpp app/src/main/cpp/llama.cpp
 
       - name: Install NDK and CMake
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
 
-      - name: Assemble debug APK with native runtime
-        run: ./gradlew --no-daemon assembleDebug -Pgravity.llama=true --stacktrace
+      - name: Assemble debug APK with native runtime (+ test APK)
+        run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest -Pgravity.llama=true --stacktrace
 
-      - name: Upload APK
+      - name: APK details
+        run: |
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          ls -l app/build/outputs/apk/debug/app-debug.apk
+          "$BT/aapt2" dump badging app/build/outputs/apk/debug/app-debug.apk | grep -E "^(package|native-code)"
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "lib/" || true
+
+      - name: Publish to debug-latest as gravity-debug-llama.apk
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk gravity-debug-llama.apk
+          gh release upload debug-latest gravity-debug-llama.apk --clobber
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run on-device tests with the native runtime (Android 14 emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disk-size: 4096M
+          ram-size: 3072M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          script: GRAVITY_GRADLE_ARGS=-Pgravity.llama=true bash .github/scripts/emulator-tests.sh
+
+      - name: Results
+        if: always()
+        run: python3 .github/scripts/emulator-report.py
+
+      - name: Upload evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gravity-debug-apk-llama
-          path: app/build/outputs/apk/debug/*.apk
+          name: emulator-evidence-llama
+          path: ci-out/

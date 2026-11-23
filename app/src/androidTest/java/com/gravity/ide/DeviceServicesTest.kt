@@ -7,7 +7,11 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import com.gravity.ide.ai.LlmMessage
+import com.gravity.ide.ai.LlmRequest
 import com.gravity.ide.ai.ReasoningMode
+import com.gravity.ide.ai.Role
+import com.gravity.ide.ai.complete
 import com.gravity.ide.build.BuildKind
 import com.gravity.ide.core.BackupCrypto
 import com.gravity.ide.data.db.AgentTaskEntity
@@ -20,6 +24,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.FixMethodOrder
 import org.junit.Rule
 import org.junit.Test
@@ -281,7 +286,8 @@ class DeviceServicesTest {
                 val files = runCatching { runBlocking { c.models.listHubFiles(repo) } }
                     .onFailure { Ci.log("download", "$repo: ${it.message}") }
                     .getOrNull() ?: continue
-                val f = files.firstOrNull { it.sha256 != null && it.size in 1L..60_000_000L && !it.path.contains("-be.") }
+                val usable = files.filter { it.sha256 != null && it.size in 1L..60_000_000L && !it.path.contains("-be.") && !it.path.contains("vocab") }
+                val f = usable.firstOrNull { "stories" in it.path } ?: usable.firstOrNull()
                 if (f != null) { picked = repo to f; break }
             }
             assertNotNull("No small GGUF with a published SHA-256 was found on the Hub", picked)
@@ -303,6 +309,24 @@ class DeviceServicesTest {
     }
 
     @Test
+    fun t12b_localModelLoadsAndGenerates() {
+        if (!c.localHost.runtimeAvailable) {
+            Ci.log("local-ai", "Skipped: ${c.localHost.runtimeError}")
+            Assume.assumeTrue("llama.cpp runtime is not bundled in this build", false)
+        }
+        val model = runBlocking { c.db.models().all().firstOrNull { it.status == ModelStatus.READY.name } }
+        assertNotNull("No verified model to load (the download test must pass first)", model)
+        val loaded = runBlocking { c.localHost.load(model!!, 512, 2) }
+        Ci.log("local-ai", "Loaded ${loaded.name} (context ${loaded.contextSize}) with llama.cpp")
+        val start = System.currentTimeMillis()
+        val r = runBlocking {
+            c.providers.local.complete(LlmRequest(loaded.name, listOf(LlmMessage(Role.USER, "Once upon a time")), maxOutputTokens = 32))
+        }
+        Ci.log("local-ai", "Generated ${r.outputTokens} tokens in ${System.currentTimeMillis() - start} ms (finish=${r.finishReason}): ${r.text.take(300)}")
+        assertTrue("The local model produced no tokens", r.outputTokens > 0)
+    }
+
+    @Test
     fun t13_offlineMode() {
         val project = runBlocking { c.db.projects().all().first { it.name == "ci-android_compose" } }
         Ci.shell("cmd connectivity airplane-mode enable")
@@ -320,11 +344,21 @@ class DeviceServicesTest {
             } finally {
                 shell.close()
             }
+            val local = c.localHost.loadedOrNull()
             val chat = runCatching { runBlocking { c.providers.resolve(null, null) } }
-            Ci.log("offline", "AI request while offline with no local model → ${chat.exceptionOrNull()?.message ?: "resolved ${chat.getOrNull()?.model}"}")
-            assertTrue(chat.isFailure)
+            Ci.log("offline", "AI request while offline (local model loaded: ${local?.name}) → ${chat.exceptionOrNull()?.message ?: "routed to ${chat.getOrNull()?.model} (local=${chat.getOrNull()?.provider?.isLocal})"}")
+            if (local == null) {
+                assertTrue("An AI request succeeded offline with no local model", chat.isFailure)
+            } else {
+                val resolved = chat.getOrThrow()
+                assertTrue("Offline request was not routed to the local model", resolved.provider.isLocal)
+                val r = runBlocking { resolved.provider.complete(LlmRequest(resolved.model, listOf(LlmMessage(Role.USER, "The little dog")), maxOutputTokens = 16)) }
+                Ci.log("offline", "Local generation in airplane mode: ${r.outputTokens} tokens: ${r.text.take(200)}")
+                assertTrue(r.outputTokens > 0)
+            }
         } finally {
             Ci.shell("cmd connectivity airplane-mode disable")
+            runBlocking { c.localHost.unload() }
         }
         val online = poll(60_000) { if (c.network.isOnline) true else null }
         Ci.log("offline", "Airplane mode off → online=${online == true}")

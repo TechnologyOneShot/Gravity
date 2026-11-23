@@ -11,6 +11,9 @@ plugins {
 // never depends on a native checkout. See docs/OFFLINE_SETUP.md.
 val llamaEnabled = (project.findProperty("gravity.llama") as String?)?.toBoolean() == true
 val llamaDir = file("src/main/cpp/llama.cpp")
+// ABIs for the native runtime; override with -Pgravity.abis=x86_64 (e.g. emulator-only builds).
+val llamaAbis = (project.findProperty("gravity.abis") as String?)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+    ?: listOf("arm64-v8a", "x86_64")
 if (llamaEnabled && !llamaDir.resolve("CMakeLists.txt").exists()) {
     throw GradleException(
         "gravity.llama=true but llama.cpp was not found at ${llamaDir.path}. " +
@@ -33,7 +36,7 @@ android {
 
         if (llamaEnabled) {
             ndk {
-                abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+                abiFilters.addAll(llamaAbis)
             }
             externalNativeBuild {
                 cmake {

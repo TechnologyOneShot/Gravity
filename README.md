@@ -10,7 +10,7 @@
 |---|---|
 | Android Studio (Otter or newer) | Open the folder → Run `app` (debug) |
 | Command line (JDK 17+, Android SDK 36) | `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk` |
-| GitHub Actions | Push to GitHub → Actions → *Android CI* → artifact `gravity-debug-apk` |
+| GitHub Actions | Every push to `main` builds and tests the APK and attaches it to the **debug-latest** pre-release: `gravity-debug.apk` (no local LLM runtime) and `gravity-debug-llama.apk` (with llama.cpp). Also available as run artifacts. |
 | With the on-device LLM runtime | Clone llama.cpp into `app/src/main/cpp/llama.cpp`, then `./gradlew assembleDebug -Pgravity.llama=true` (see [docs/OFFLINE_SETUP.md](docs/OFFLINE_SETUP.md)) |
 
 Unit tests: `./gradlew testDebugUnitTest`. These are real tests of the core logic: path sandboxing, ZIP-slip protection, Myers diff, command risk classification, secret redaction, SSE and UTF-8 streaming, GGUF parsing, backup encryption, the syntax lexer, and the Gemini/OpenAI request and stream parsers, tested against a local HTTP server.
