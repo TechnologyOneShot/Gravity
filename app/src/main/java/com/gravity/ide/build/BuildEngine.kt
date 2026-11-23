@@ -56,7 +56,7 @@ class BuildEngine(
     fun defaultKind(project: ProjectEntity, termuxConfigured: Boolean = false): BuildKind {
         project.buildBackend?.let { b -> BuildKind.entries.firstOrNull { it.name == b }?.let { return it } }
         return when {
-            (project.type == "WEB" || project.type == "GAME") && project.buildCommand.isNullOrBlank() -> BuildKind.STATIC_WEB
+            (project.type == "WEB" || project.type == "GAME" || project.type == "APP") && project.buildCommand.isNullOrBlank() -> BuildKind.STATIC_WEB
             project.type == "ANDROID" && termuxConfigured -> BuildKind.TERMUX
             else -> BuildKind.COMMAND
         }

@@ -69,6 +69,10 @@ class AppContainer(context: Context) {
         appContext, db, providers, localHost, workspace, checkpoints, terminals, search, approvals, settings, network, events, appScope,
         builds = builds, installer = installer, appTests = appTests,
     )
+    /** One-line app creation and change requests (Home screen). */
+    val appBuilder = com.gravity.ide.agent.AppBuilder(db, workspace, agent, checkpoints, events)
+    /** Packages App Builder projects as installable APKs on the phone. */
+    val packager = com.gravity.ide.build.WebAppPackager(appContext, events)
 
     val selfTest = SelfTestRunner(appContext, db, secrets, workspace, checkpoints, terminals, network, providers, localHost, settings, events)
     val offlineReadiness = com.gravity.ide.device.OfflineReadinessChecker(db, localHost, models, device, network, settings, events)

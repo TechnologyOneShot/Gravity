@@ -141,6 +141,12 @@ interface TaskDao {
     @Query("SELECT * FROM agent_tasks WHERE status IN (:statuses)")
     suspend fun withStatus(statuses: List<String>): List<AgentTaskEntity>
 
+    @Query("SELECT * FROM agent_tasks WHERE projectId = :projectId ORDER BY createdAt DESC")
+    suspend fun forProject(projectId: String): List<AgentTaskEntity>
+
+    @Query("SELECT * FROM agent_tasks WHERE projectId = :projectId ORDER BY createdAt DESC")
+    fun observeForProject(projectId: String): Flow<List<AgentTaskEntity>>
+
     @Upsert
     suspend fun upsert(task: AgentTaskEntity)
 

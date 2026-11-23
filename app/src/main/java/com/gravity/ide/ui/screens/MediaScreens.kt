@@ -269,7 +269,7 @@ fun BrowserScreen(initialUrl: String?) {
             IconButton(onClick = { showConsole = !showConsole }) { Icon(Icons.Filled.Terminal, "Console", tint = if (console.any { it.startsWith("ERROR") }) GravityColors.Red else MaterialTheme.colorScheme.onSurface) }
         }
         Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            projects.filter { it.type == "WEB" || it.type == "GAME" }.take(4).forEach { p ->
+            projects.filter { it.type == "WEB" || it.type == "GAME" || it.type == "APP" }.take(4).forEach { p ->
                 FilterChip(selected = false, onClick = { address = resolve("gravity-project:${p.id}"); webView?.loadUrl(address) }, label = { Text(p.name, maxLines = 1) })
             }
             FilterChip(selected = desktop, onClick = {

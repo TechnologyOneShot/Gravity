@@ -21,6 +21,17 @@ if (llamaEnabled && !llamaDir.resolve("CMakeLists.txt").exists()) {
     )
 }
 
+// App Builder: the shell APK (module :shell) is bundled as an asset; Gravity repackages it
+// on the phone for each web app. Built and copied before every app build.
+val webShellOut = layout.buildDirectory.dir("generated/webshell")
+val copyWebShell = tasks.register<Copy>("copyWebShell") {
+    dependsOn(":shell:assembleRelease")
+    from(rootProject.file("shell/build/outputs/apk/release/shell-release-unsigned.apk"))
+    into(webShellOut.map { it.dir("shell") })
+    rename { "webshell.apk" }
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(copyWebShell) }
+
 android {
     namespace = "com.gravity.ide"
     compileSdk = 36
@@ -120,7 +131,10 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
+android.sourceSets["main"].assets.srcDir(webShellOut)
+
 dependencies {
+    implementation(libs.apksig)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -159,5 +173,6 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.okhttp.mockwebserver)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

@@ -22,3 +22,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Gravity"
 include(":app")
+// Tiny WebView app that Gravity re-packages on the phone for every web app it builds.
+include(":shell")

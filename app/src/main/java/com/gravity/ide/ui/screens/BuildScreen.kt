@@ -103,7 +103,7 @@ fun BuildScreen(projectId: String?, go: (String) -> Unit) {
         if (project != null) item {
             val kind = backendOverride ?: c.builds.defaultKind(project, termuxOk)
             val isRunning = running.containsKey(project.id)
-            val kinds = BuildKind.entries.filter { it != BuildKind.STATIC_WEB || project.type == "WEB" || project.type == "GAME" }
+            val kinds = BuildKind.entries.filter { it != BuildKind.STATIC_WEB || project.type == "WEB" || project.type == "GAME" || project.type == "APP" }
             Panel {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Selector("Backend", kinds, kind, { it.label + if (it == BuildKind.TERMUX && !termuxOk) " (set up below)" else "" }, { backendOverride = it }, Modifier.fillMaxWidth())

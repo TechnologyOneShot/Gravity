@@ -4,6 +4,9 @@ The specification asks Gravity never to fake a feature. This file lists everythi
 
 ## Verification
 
+- **App Builder makes web apps.** Generated apps are HTML/CSS/JavaScript in a WebView (inside the APK). That covers music players, to-do lists, games, trackers and similar apps, but not features that need native Android APIs the WebView does not expose (background playback with the screen off, notifications, widgets, Bluetooth, contacts). How good an app is depends on the AI model: Gemini's current Flash model writes complete apps; small on-device models usually cannot.
+- **Generated APKs are signed with a key kept in this phone's Android Keystore.** Rebuilt apps install as updates. If Gravity is uninstalled the key is lost, and apps it made must be uninstalled before a new build can be installed. Installing needs Android's "Install unknown apps" permission for Gravity; Android asks the first time.
+- **App Builder's AI step is only tested with a scripted model in CI** (no API key is stored there). The scripted model exercises the real HTTP/SSE path, the agent and every step after it, but the quality of real model output is not tested automatically.
 - **Verified on an emulator, not yet on a phone.** Every push runs the JVM unit tests and an instrumented suite on an Android 14 emulator (both the standard APK and the llama.cpp APK). See ACCEPTANCE_TESTS.md for each row's evidence. Real-device behaviour (performance, OEM restrictions, ARM-only issues) has not been checked yet.
 - Not verifiable in CI and therefore unverified: anything that needs an AI provider key (cloud chat, agent runs, teams, web search, screenshot analysis), Termux builds, the system install dialog and MediaProjection capture.
 - 15 Kotlin deprecation warnings (non-AutoMirrored icons, `LocalClipboardManager`) remain. They do not affect the build.

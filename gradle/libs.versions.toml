@@ -24,6 +24,8 @@ androidxTestRules = "1.6.1"
 androidxTestExtJunit = "1.2.1"
 
 [libraries]
+# APK signing on the device (App Builder). Same release train as AGP.
+apksig = { group = "com.android.tools.build", name = "apksig", version.ref = "agp" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }

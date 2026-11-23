@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.AddComment
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
@@ -54,6 +56,10 @@ inline fun <reified VM : ViewModel> gravityViewModel(key: String? = null, crossi
 }
 
 object Routes {
+    /** Start screen: "What do you want to build?" */
+    const val HOME = "home"
+    const val APPS = "apps"
+    const val APP = "app/{projectId}"
     const val DASHBOARD = "dashboard"
     const val NEW_CHAT = "chat_new"
     const val CHATS = "chats"
@@ -87,6 +93,7 @@ object Routes {
     const val OFFLINE = "offline"
 
     fun chat(id: String) = "chat/$id"
+    fun app(projectId: String) = "app/$projectId"
     const val PROJECTS_LIST = "projects"
     const val PROJECTS_NEW = "projects?new=1"
     fun files(projectId: String?) = if (projectId == null) "files" else "files?projectId=$projectId"
@@ -103,32 +110,34 @@ object Routes {
 data class NavItem(val label: String, val route: String, val icon: ImageVector, val group: String)
 
 val drawerItems = listOf(
-    NavItem("Dashboard", Routes.DASHBOARD, Icons.Filled.Dashboard, "Home"),
-    NavItem("New Chat", Routes.NEW_CHAT, Icons.Filled.AddComment, "Home"),
-    NavItem("Chat History", Routes.CHATS, Icons.Filled.History, "Home"),
-    NavItem("Projects", "projects", Icons.Filled.Folder, "Workspace"),
-    NavItem("Workspaces", Routes.WORKSPACES, Icons.Filled.Workspaces, "Workspace"),
-    NavItem("Files", "files", Icons.Filled.Description, "Workspace"),
-    NavItem("Global Search", Routes.SEARCH, Icons.Filled.Search, "Workspace"),
-    NavItem("AI Agent", "agent_new", Icons.Filled.SmartToy, "AI"),
-    NavItem("Agent Tasks", Routes.TASKS, Icons.Filled.ListAlt, "AI"),
-    NavItem("Terminal", "terminal", Icons.Filled.Terminal, "Workspace"),
-    NavItem("Model Manager", Routes.models(0), Icons.Filled.Memory, "AI"),
-    NavItem("Model Downloads", Routes.models(1), Icons.Filled.Download, "AI"),
-    NavItem("AI Providers", Routes.PROVIDERS, Icons.Filled.Cloud, "AI"),
-    NavItem("Hybrid AI Team", Routes.TEAMS, Icons.Filled.Groups, "AI"),
-    NavItem("Build Center", "build", Icons.Filled.Build, "Build & Test"),
-    NavItem("Device Manager", "devices", Icons.Filled.PhoneAndroid, "Build & Test"),
-    NavItem("Testing Center", Routes.TESTING, Icons.Filled.BugReport, "Build & Test"),
-    NavItem("Screenshot Gallery", Routes.SCREENSHOTS, Icons.Filled.PhotoLibrary, "Build & Test"),
-    NavItem("Browser Preview", "browser", Icons.Filled.Public, "Build & Test"),
-    NavItem("Git Manager", Routes.GIT, Icons.Filled.AccountTree, "Workspace"),
+    NavItem("Create App", Routes.HOME, Icons.Filled.AutoAwesome, "Create"),
+    NavItem("My Apps", Routes.APPS, Icons.Filled.Apps, "Create"),
+    NavItem("New Chat", Routes.NEW_CHAT, Icons.Filled.AddComment, "Create"),
+    NavItem("Chat History", Routes.CHATS, Icons.Filled.History, "Create"),
+    NavItem("AI Providers", Routes.PROVIDERS, Icons.Filled.Cloud, "Setup"),
+    NavItem("Model Manager", Routes.models(0), Icons.Filled.Memory, "Setup"),
+    NavItem("Settings", Routes.SETTINGS, Icons.Filled.Settings, "Setup"),
+    NavItem("Dashboard", Routes.DASHBOARD, Icons.Filled.Dashboard, "Developer tools"),
+    NavItem("Projects", "projects", Icons.Filled.Folder, "Developer tools"),
+    NavItem("Workspaces", Routes.WORKSPACES, Icons.Filled.Workspaces, "Developer tools"),
+    NavItem("Files", "files", Icons.Filled.Description, "Developer tools"),
+    NavItem("Global Search", Routes.SEARCH, Icons.Filled.Search, "Developer tools"),
+    NavItem("AI Agent", "agent_new", Icons.Filled.SmartToy, "Developer tools"),
+    NavItem("Agent Tasks", Routes.TASKS, Icons.Filled.ListAlt, "Developer tools"),
+    NavItem("Hybrid AI Team", Routes.TEAMS, Icons.Filled.Groups, "Developer tools"),
+    NavItem("Terminal", "terminal", Icons.Filled.Terminal, "Developer tools"),
+    NavItem("Model Downloads", Routes.models(1), Icons.Filled.Download, "Developer tools"),
+    NavItem("Build Center", "build", Icons.Filled.Build, "Developer tools"),
+    NavItem("Device Manager", "devices", Icons.Filled.PhoneAndroid, "Developer tools"),
+    NavItem("Testing Center", Routes.TESTING, Icons.Filled.BugReport, "Developer tools"),
+    NavItem("Screenshot Gallery", Routes.SCREENSHOTS, Icons.Filled.PhotoLibrary, "Developer tools"),
+    NavItem("Browser Preview", "browser", Icons.Filled.Public, "Developer tools"),
+    NavItem("Git Manager", Routes.GIT, Icons.Filled.AccountTree, "Developer tools"),
     NavItem("Plugins", Routes.PLUGINS, Icons.Filled.Extension, "System"),
     NavItem("Activity Logs", Routes.ACTIVITY, Icons.Filled.Rule, "System"),
     NavItem("Notifications", Routes.NOTIFICATIONS, Icons.Filled.Notifications, "System"),
     NavItem("Export Center", Routes.EXPORT, Icons.Filled.Upload, "System"),
     NavItem("Backup and Recovery", Routes.BACKUP, Icons.Filled.Backup, "System"),
-    NavItem("Settings", Routes.SETTINGS, Icons.Filled.Settings, "System"),
     NavItem("Help and Diagnostics", Routes.HELP, Icons.Filled.Help, "System"),
     NavItem("About Gravity", Routes.ABOUT, Icons.Filled.Info, "System"),
 )
@@ -136,7 +145,10 @@ val drawerItems = listOf(
 fun titleFor(route: String?): String {
     val base = route?.substringBefore('?')?.substringBefore('/') ?: return "Gravity"
     return when (base) {
-        "dashboard" -> "Gravity"
+        "home" -> "Gravity"
+        "apps" -> "My Apps"
+        "app" -> "App"
+        "dashboard" -> "Dashboard"
         "chat_new", "chat" -> "Chat"
         "chats" -> "Chat History"
         "projects" -> "Projects"

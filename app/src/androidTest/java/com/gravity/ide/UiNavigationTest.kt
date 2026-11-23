@@ -89,14 +89,19 @@ class UiNavigationTest {
     }
 
     @Test
-    fun t01_appLaunchesAndShowsDashboard() {
+    fun t01_appLaunchesOnCreateAppHome_andDashboardStillWorks() {
         waitForTitle("Gravity")
-        compose.onNodeWithText("Welcome to Gravity").assertExists()
+        compose.onNodeWithText("What do you want to build?").assertExists()
+        compose.onNodeWithText("Build my app").assertExists()
         Thread.sleep(1500)
         compose.waitForIdle()
-        Ci.log("launch", "Dashboard: ${visibleText().take(2500)}")
-        Ci.screenshot("01_dashboard")
+        Ci.log("launch", "Home: ${visibleText().take(2500)}")
+        Ci.screenshot("01_home_create_app")
 
+        openDrawerEntry("Dashboard")
+        waitForTitle("Dashboard")
+        compose.onNodeWithText("Welcome to Gravity").assertExists()
+        Ci.log("launch", "Dashboard: ${visibleText().take(2000)}")
         compose.onNodeWithText("Offline readiness →").also { runCatching { it.performScrollTo() } }.performClick()
         waitForTitle("Offline Readiness")
         Thread.sleep(2000)

@@ -98,7 +98,7 @@ class OfflineReadinessChecker(
                     val offlineFlag = project.buildCommand?.contains("--offline") == true
                     checks += Check("Build command uses --offline", offlineFlag, project.buildCommand ?: "no build command")
                 }
-                "WEB", "GAME" -> {
+                "WEB", "GAME", "APP" -> {
                     val pkg = File(root, "package.json")
                     if (pkg.isFile) {
                         val nodeModules = File(root, "node_modules").isDirectory

@@ -56,6 +56,17 @@ How results get recorded on a phone:
 
 Counts for the latest run (commit ac50b6e): standard APK 16 passed and 1 skipped (local inference needs the llama.cpp build); llama.cpp APK 17/17 passed; no FATAL EXCEPTION in logcat; 38/38 JVM unit tests pass.
 
+## App Builder (added after the original spec)
+
+| Check | Evidence | Result |
+|---|---|---|
+| "music player bana do" → project "Music Player" → complete app written | `AppBuilderDeviceTest.t01` with a scripted model over real HTTP/SSE | Verified by CI on each push |
+| Change request edits the app; Undo restores it | `t01`: `replace_in_file` adds a shuffle button, undo removes it | Verified by CI on each push |
+| APK packaged and signed on the device | `t01`: Android parses the APK (package, label), `pm install` succeeds, the app launches and loads its page | Verified by CI on each push |
+| Home → Build → App screen in the UI | `AppBuilderDeviceTest.t02` | Verified by CI on each push |
+| Manifest rewriting | `AxmlRewriterTest` against the real shell APK | JVM unit test |
+| Real AI output quality | | **Not tested automatically** (needs an API key) |
+
 Bugs the emulator suite found and that are fixed: Android 14 throws inside `ZipInputStream` for `../` entries, which made ZIP import fail instead of rejecting the entry; big-endian GGUF files were reported as "Unsupported GGUF version 50331648".
 
 ## JVM unit tests included

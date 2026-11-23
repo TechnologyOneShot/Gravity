@@ -1,8 +1,12 @@
 # GRAVITY
 
-**Gravity** is an autonomous AI development environment for Android, written in Kotlin and Jetpack Compose. It combines a project workspace, a code editor, a real device shell, local (llama.cpp) and cloud (Gemini / OpenAI-compatible) models, a tool-using coding agent, multi-agent teams, builds, same-device install and testing, screenshots, backups and exports.
+**Gravity** is an autonomous AI development environment for Android, written in Kotlin and Jetpack Compose.
 
-> **Status: builds and passes on an Android 14 emulator; not yet tested on a phone.** Every push to `main` runs 38 JVM unit tests, then installs the APK on an emulator and drives the real app: all 28 screens, chat, self-test, projects, builds, backup/restore, Keystore, a real Hugging Face model download with SHA-256 check, and (in the llama.cpp APK) local generation online and in airplane mode. Features that need an AI provider key, Termux or user consent dialogs are not covered by CI. Details: [docs/ACCEPTANCE_TESTS.md](docs/ACCEPTANCE_TESTS.md).
+**Start here: App Builder.** The home screen asks "What do you want to build?". Type something like *"music player bana do"* and Gravity creates a project, has the AI write a complete mobile web app, and runs it on the same screen. Ask for changes in plain words ("add a shuffle button"), undo the last change, and tap **Install on phone** to get a real APK, packaged and signed on the phone itself (no PC, Java or Termux). Apps are HTML/CSS/JavaScript running in an Android WebView; native Kotlin apps still go through the Build Center and Termux. Gravity has no subscription and no limits of its own; cloud AI providers keep their own quotas (Gemini's free tier has daily limits).
+
+Under the hood it combines a project workspace, a code editor, a real device shell, local (llama.cpp) and cloud (Gemini / OpenAI-compatible) models, a tool-using coding agent, multi-agent teams, builds, same-device install and testing, screenshots, backups and exports.
+
+> **Status: builds and passes on an Android 14 emulator; first phone reports have been fixed.** Every push to `main` runs the JVM unit tests, then installs the APK on an emulator and drives the real app: App Builder end to end (with a scripted model: build, change, undo, APK packaging, install and launch of the generated app), every drawer screen, chat, self-test, projects, builds, backup/restore, Keystore, a real Hugging Face model download with SHA-256 check, and (in the llama.cpp APK) local generation online and in airplane mode. Features that need an AI provider key, Termux or user consent dialogs are not covered by CI. Details: [docs/ACCEPTANCE_TESTS.md](docs/ACCEPTANCE_TESTS.md).
 
 ## Build
 

@@ -202,7 +202,7 @@ fun DashboardScreen(go: (String) -> Unit) {
                     items(projects.take(10), key = { it.id }) { p ->
                         Column(
                             Modifier.width(160.dp).background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
-                                .clickable { go(Routes.files(p.id)) }.padding(12.dp),
+                                .clickable { go(if (p.type == "APP") Routes.app(p.id) else Routes.files(p.id)) }.padding(12.dp),
                         ) {
                             Text(p.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(p.type.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall, color = GravityColors.Purple)

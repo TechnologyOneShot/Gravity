@@ -192,7 +192,7 @@ fun ProjectsScreen(openNew: Boolean, go: (String) -> Unit) {
             EmptyState(if (showArchived) "No archived projects" else "No projects yet", "Create a project from a template, open a folder or import a ZIP.")
         }
         items(visible, key = { it.id }) { p ->
-            Panel(onClick = { go(Routes.files(p.id)) }) {
+            Panel(onClick = { go(if (p.type == "APP") Routes.app(p.id) else Routes.files(p.id)) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {

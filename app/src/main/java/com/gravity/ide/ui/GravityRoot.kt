@@ -60,6 +60,9 @@ import com.gravity.ide.data.settings.AppSettings
 import com.gravity.ide.ui.screens.AboutScreen
 import com.gravity.ide.ui.screens.ActivityScreen
 import com.gravity.ide.ui.screens.AgentNewTaskScreen
+import com.gravity.ide.ui.screens.AppScreen
+import com.gravity.ide.ui.screens.HomeScreen
+import com.gravity.ide.ui.screens.MyAppsScreen
 import com.gravity.ide.ui.screens.BackupScreen
 import com.gravity.ide.ui.screens.BrowserScreen
 import com.gravity.ide.ui.screens.BuildScreen
@@ -103,12 +106,12 @@ fun GravityRoot() {
     val settings by container.settings.settings.collectAsState(initial = AppSettings())
     val unread by container.db.events().observeUnreadCount().collectAsState(initial = 0)
     val approvals by container.approvals.pending.collectAsState()
-    val isTopLevel = route == null || route == Routes.DASHBOARD
+    val isTopLevel = route == null || route == Routes.HOME
 
     fun go(target: String) {
         nav.navigate(target) {
             launchSingleTop = true
-            if (target == Routes.DASHBOARD) popUpTo(Routes.DASHBOARD) { inclusive = false }
+            if (target == Routes.HOME) popUpTo(Routes.HOME) { inclusive = false }
         }
     }
 
@@ -124,7 +127,7 @@ fun GravityRoot() {
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text("GRAVITY", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                            Text("Autonomous AI development", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Describe an app. Gravity builds it.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     HorizontalDivider()
@@ -161,7 +164,7 @@ fun GravityRoot() {
                         if (isTopLevel) {
                             IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Filled.Menu, "Open navigation") }
                         } else {
-                            IconButton(onClick = { if (!nav.popBackStack()) go(Routes.DASHBOARD) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                            IconButton(onClick = { if (!nav.popBackStack()) go(Routes.HOME) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                         }
                     },
                     actions = {
@@ -212,7 +215,12 @@ private fun ModeIndicator(online: Boolean, mode: String, onClick: () -> Unit) {
 @Composable
 private fun GravityNavHost(nav: NavHostController, go: (String) -> Unit) {
     val optionalString = { name: String -> navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null } }
-    NavHost(navController = nav, startDestination = Routes.DASHBOARD) {
+    NavHost(navController = nav, startDestination = Routes.HOME) {
+        composable(Routes.HOME) { HomeScreen(go) }
+        composable(Routes.APPS) { MyAppsScreen(go) }
+        composable(Routes.APP, arguments = listOf(navArgument("projectId") { type = NavType.StringType })) { e ->
+            AppScreen(e.arguments?.getString("projectId").orEmpty(), go)
+        }
         composable(Routes.DASHBOARD) { DashboardScreen(go) }
         composable(Routes.NEW_CHAT) { NewChatRedirect { id -> nav.navigate(Routes.chat(id)) { popUpTo(Routes.NEW_CHAT) { inclusive = true } } } }
         composable(Routes.CHATS) { ChatListScreen(go) }

@@ -10,6 +10,13 @@ Updates: debug APKs are signed with the fixed debug key `app/gravity-debug.keyst
 
 Requirements: Android 8.0 (API 26) or newer. 64-bit ARM is recommended for local models.
 
+## First run: App Builder
+
+1. On the home screen, tap the **AI** card (or just press **Build my app**) and connect AI once: open Google AI Studio from the dialog, create a free API key, paste it, and tap **Save and check**. Gravity verifies the key and picks the newest stable Gemini Flash model it can use. Alternatively, load an on-device model in Model Manager (offline, unlimited, much weaker).
+2. Describe the app in your own words, in any language, and tap **Build my app**. Gravity opens the app's page and shows progress, then the running app.
+3. Type changes in the box under the preview ("make the buttons bigger", "add a dark theme switch"). **Undo last change** restores the files the last change touched. If the app shows JavaScript errors, **Ask AI to fix** sends them to the AI.
+4. **Install on phone** packages the app as an APK and opens Android's install dialog; **Share APK** sends the file to another phone. Each app gets its own package name (`com.gravity.app.<name>.<id>`), so several apps can be installed side by side.
+
 ## Permissions and why
 
 | Permission | Used for |
