@@ -2,6 +2,7 @@
 
 package com.gravity.ide.ui.screens
 
+import com.gravity.ide.ui.components.safeTabIndicator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -102,7 +103,7 @@ fun TerminalScreen(cwd: String?) {
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (sessions.isNotEmpty()) {
-                ScrollableTabRow(selectedTabIndex = sessions.indexOf(session).coerceAtLeast(0), edgePadding = 4.dp, modifier = Modifier.weight(1f), containerColor = MaterialTheme.colorScheme.background) {
+                ScrollableTabRow(selectedTabIndex = sessions.indexOf(session).coerceAtLeast(0), indicator = safeTabIndicator(sessions.indexOf(session).coerceAtLeast(0)), edgePadding = 4.dp, modifier = Modifier.weight(1f), containerColor = MaterialTheme.colorScheme.background) {
                     sessions.forEach { s ->
                         Tab(selected = s == session, onClick = { activeId = s.id }, text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {

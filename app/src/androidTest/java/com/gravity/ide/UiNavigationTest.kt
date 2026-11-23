@@ -8,7 +8,9 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -159,5 +161,28 @@ class UiNavigationTest {
         compose.waitUntil(10_000) { compose.onAllNodesWithText(prompt, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         Ci.log("chat", "Chat History after recreate: ${visibleText().take(1500)}")
         Ci.screenshot("04_chat_history_after_recreate")
+    }
+
+    /** Regression: closing tabs used to crash Material's tab indicator (IndexOutOfBounds). */
+    @Test
+    fun t04_closingTerminalTabsDoesNotCrash() {
+        waitForTitle("Gravity")
+        openDrawerEntry("Terminal")
+        waitForTitle("Terminal")
+        repeat(2) {
+            compose.onNodeWithContentDescription("New terminal").performClick()
+            compose.waitForIdle()
+        }
+        val before = compose.onAllNodesWithContentDescription("Close").fetchSemanticsNodes().size
+        repeat(2) {
+            compose.onAllNodesWithContentDescription("Close").onLast().performClick()
+            compose.waitForIdle()
+            Thread.sleep(300)
+            compose.waitForIdle()
+        }
+        val after = compose.onAllNodesWithContentDescription("Close").fetchSemanticsNodes().size
+        Ci.log("tabs", "Terminal tabs: $before → $after after closing two; screen: ${visibleText().take(600)}")
+        Ci.screenshot("05_terminal_tabs_closed")
+        assertTrue("Tabs were not closed ($before → $after)", after == before - 2)
     }
 }

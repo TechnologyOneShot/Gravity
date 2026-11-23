@@ -2,6 +2,7 @@ package com.gravity.ide.ai
 
 import com.gravity.ide.ai.local.LocalLlamaProvider
 import com.gravity.ide.ai.local.LocalModelHost
+import com.gravity.ide.core.ModelPicker
 import com.gravity.ide.data.EventCategory
 import com.gravity.ide.data.EventLevel
 import com.gravity.ide.data.EventLog
@@ -35,11 +36,14 @@ class ProviderRegistry(
     val local: LocalLlamaProvider = LocalLlamaProvider(localHost) { localHost.loadedOrNull()?.name }
 
     fun build(entity: ProviderEntity): LlmProvider = when (ProviderKind.valueOf(entity.kind)) {
-        ProviderKind.GEMINI -> GeminiProvider(
-            entity.id,
-            secrets.get(SecretStore.providerKey(entity.id)) ?: throw NoProviderException("No API key stored for ${entity.name}"),
-            entity.baseUrl.ifBlank { GeminiProvider.DEFAULT_BASE_URL },
-            entity.timeoutSec,
+        ProviderKind.GEMINI -> SelfHealingProvider(
+            GeminiProvider(
+                entity.id,
+                secrets.get(SecretStore.providerKey(entity.id)) ?: throw NoProviderException("No API key stored for ${entity.name}"),
+                entity.baseUrl.ifBlank { GeminiProvider.DEFAULT_BASE_URL },
+                entity.timeoutSec,
+            ),
+            entity,
         )
         ProviderKind.OPENAI_COMPAT -> OpenAiCompatibleProvider(
             entity.id,
@@ -74,7 +78,7 @@ class ProviderRegistry(
                 val p = requested ?: all.firstOrNull { it.kind != ProviderKind.LOCAL.name }
                     ?: throw NoProviderException("Cloud-only mode: no cloud provider configured.")
                 if (!online) throw NoProviderException("Offline. Cloud-only mode is active.", waitForNetwork = true)
-                return ResolvedModel(build(p), model ?: p.defaultModel, p)
+                return ResolvedModel(build(p), model?.takeIf { it.isNotBlank() } ?: p.defaultModel, p)
             }
             OperatingMode.HYBRID, OperatingMode.AUTO -> {
                 if (wantsLocal) return localOrThrow(null)
@@ -95,7 +99,7 @@ class ProviderRegistry(
                     }
                     throw NoProviderException("Usage limit reached for ${cloud.name} and no backup provider is configured.")
                 }
-                return ResolvedModel(build(cloud), model ?: cloud.defaultModel, cloud)
+                return ResolvedModel(build(cloud), model?.takeIf { it.isNotBlank() } ?: cloud.defaultModel, cloud)
             }
         }
     }
@@ -116,6 +120,69 @@ class ProviderRegistry(
         if (entity == null) return
         val current = db.providers().get(entity.id) ?: return
         db.providers().setStatus(entity.id, message.take(200), System.currentTimeMillis(), if (ok) 0 else current.failureCount + 1)
+    }
+
+    /**
+     * Picks the newest stable model this key can use (Gemini only) and saves it as the provider's
+     * default. Used when a provider is added without a model ID.
+     */
+    suspend fun autoSelectModel(entity: ProviderEntity): Result<String> = try {
+        val models = build(entity).listModels()
+        val best = (if (entity.kind == ProviderKind.GEMINI.name) ModelPicker.bestGemini(models) else models.firstOrNull())
+            ?: throw LlmException("${entity.name} returned no usable models for this key.")
+        db.providers().get(entity.id)?.let { db.providers().upsert(it.copy(defaultModel = best)) }
+        settings.update { if (it.defaultProviderId == entity.id && it.defaultModel.isNullOrBlank()) it.copy(defaultModel = best) else it }
+        events.log(EventCategory.PROVIDER, "Default model for ${entity.name}: $best", "Chosen from ${models.size} models offered to this key")
+        Result.success(best)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    /**
+     * Called when [failedModel] is reported missing or retired. Lists what the key can use, and
+     * if the model really is gone, switches the provider, the app default and existing chats to
+     * the newest stable model. Returns the replacement, or null when nothing should change.
+     */
+    suspend fun repairModel(entity: ProviderEntity, failedModel: String): String? {
+        if (entity.kind != ProviderKind.GEMINI.name) return null
+        val models = try { build(entity).listModels() } catch (_: Exception) { return null }
+        if (failedModel.isNotBlank() && failedModel in models) return null
+        val best = ModelPicker.bestGemini(models) ?: return null
+        if (best == failedModel) return null
+        db.providers().get(entity.id)?.let { if (it.defaultModel == failedModel || it.defaultModel.isBlank()) db.providers().upsert(it.copy(defaultModel = best)) }
+        settings.update { if (it.defaultModel == failedModel) it.copy(defaultModel = best) else it }
+        if (failedModel.isNotBlank()) db.chats().replaceModel(failedModel, best)
+        events.log(
+            EventCategory.PROVIDER,
+            "Model ${failedModel.ifBlank { "(none)" }} unavailable on ${entity.name}: switched to $best",
+            "The provider no longer offers ${failedModel.ifBlank { "the configured model" }} to this key. $best is the newest stable model it lists.",
+            EventLevel.WARN,
+        )
+        return best
+    }
+
+    /**
+     * Gemini provider wrapper: if the requested model is missing or retired (and nothing has been
+     * streamed yet), switch to the newest available model, announce it with
+     * [LlmEvent.ModelSwitched] and retry once. Any other failure is passed through unchanged.
+     */
+    private inner class SelfHealingProvider(private val inner: LlmProvider, private val entity: ProviderEntity) : LlmProvider by inner {
+        override suspend fun stream(request: LlmRequest, onEvent: (LlmEvent) -> Unit) {
+            if (request.model.isBlank()) {
+                val chosen = repairModel(entity, "") ?: throw LlmException("No model is set for ${entity.name}. Open AI Providers → Discover models.")
+                onEvent(LlmEvent.ModelSwitched("", chosen))
+                return inner.stream(request.copy(model = chosen), onEvent)
+            }
+            var emitted = false
+            try {
+                inner.stream(request) { emitted = true; onEvent(it) }
+            } catch (e: LlmException) {
+                if (emitted || !ModelPicker.isModelUnavailable(e)) throw e
+                val replacement = repairModel(entity, request.model) ?: throw e
+                onEvent(LlmEvent.ModelSwitched(request.model, replacement))
+                inner.stream(request.copy(model = replacement), onEvent)
+            }
+        }
     }
 
     /** Real connection test: lists models with the stored credentials. */

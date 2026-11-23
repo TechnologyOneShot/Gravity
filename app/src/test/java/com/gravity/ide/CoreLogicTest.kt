@@ -17,6 +17,7 @@ import com.gravity.ide.core.ZipSafety
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -312,5 +313,34 @@ class SyntaxHighlighterTest {
         assertEquals(Language.PYTHON, Language.forFileName("main.py"))
         assertEquals(Language.PLAIN, Language.forFileName("LICENSE"))
         assertNotNull(Language.forFileName("x.tsx"))
+    }
+}
+
+class ModelPickerTest {
+    @Test fun picksNewestStableFlash() {
+        val listed = listOf(
+            "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.7-flash",
+            "gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-image", "gemini-3.1-flash-tts-preview", "gemini-flash-latest",
+        )
+        assertEquals("gemini-3.8-flash", com.gravity.ide.core.ModelPicker.bestGemini(listed))
+    }
+
+    @Test fun versionsCompareNumerically() {
+        assertEquals("gemini-3.10-flash", com.gravity.ide.core.ModelPicker.bestGemini(listOf("gemini-3.9-flash", "gemini-3.10-flash", "gemini-3-flash")))
+    }
+
+    @Test fun fallsBackToAliasThenGeneralModels() {
+        assertEquals("gemini-flash-latest", com.gravity.ide.core.ModelPicker.bestGemini(listOf("gemini-flash-latest", "gemini-3.1-pro-preview")))
+        assertEquals("gemini-4-pro", com.gravity.ide.core.ModelPicker.bestGemini(listOf("models/gemini-4-pro", "gemini-3.1-flash-image")))
+        assertNull(com.gravity.ide.core.ModelPicker.bestGemini(emptyList()))
+    }
+
+    @Test fun recognisesRetiredModelErrors() {
+        val retired = com.gravity.ide.ai.LlmException(
+            "Model or endpoint not found: This model models/gemini-2.5-flash is no longer available to new users.", httpCode = 404,
+        )
+        assertTrue(com.gravity.ide.core.ModelPicker.isModelUnavailable(retired))
+        assertFalse(com.gravity.ide.core.ModelPicker.isModelUnavailable(com.gravity.ide.ai.LlmException("Rate limited", httpCode = 429)))
+        assertFalse(com.gravity.ide.core.ModelPicker.isModelUnavailable(com.gravity.ide.ai.LlmException("Authentication failed", httpCode = 401)))
     }
 }

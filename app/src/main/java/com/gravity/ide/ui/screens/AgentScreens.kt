@@ -2,6 +2,7 @@
 
 package com.gravity.ide.ui.screens
 
+import com.gravity.ide.ui.components.safeTabIndicator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -260,7 +261,7 @@ fun TaskDetailScreen(taskId: String, go: (String) -> Unit) {
                 }
             }
         }
-        TabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
+        TabRow(selectedTabIndex = tab, indicator = safeTabIndicator(tab), containerColor = MaterialTheme.colorScheme.background) {
             Tab(tab == 0, { tab = 0 }, text = { Text("Activity") })
             Tab(tab == 1, { tab = 1 }, text = { Text("Result") })
             Tab(tab == 2, { tab = 2 }, text = { Text("Changes (${versions.map { it.relPath }.distinct().size})") })

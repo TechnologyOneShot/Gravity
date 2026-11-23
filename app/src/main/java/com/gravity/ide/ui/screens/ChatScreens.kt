@@ -221,6 +221,8 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
     val streaming = MutableStateFlow<String?>(null)
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
+    /** One-off information for the user, e.g. that a retired model was replaced. */
+    val notice = MutableStateFlow<String?>(null)
     val attachments = MutableStateFlow<List<Attachment>>(emptyList())
     private var job: Job? = null
 
@@ -342,6 +344,11 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                         outTok = maxOf(outTok, ev.outputTokens)
                     }
                     is LlmEvent.Sources -> sources += ev.sources
+                    is LlmEvent.ModelSwitched -> {
+                        resolvedModel = ev.to
+                        notice.value = if (ev.from.isBlank()) "Using ${ev.to}, the newest model your key can use."
+                        else "${ev.from} is no longer offered by the provider. Switched to ${ev.to} (newest stable model for your key)."
+                    }
                     else -> Unit
                 }
             }
@@ -399,6 +406,7 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
     val streaming by vm.streaming.collectAsState()
     val busy by vm.busy.collectAsState()
     val error by vm.error.collectAsState()
+    val notice by vm.notice.collectAsState()
     val attachments by vm.attachments.collectAsState()
     val providers by vm.providers.collectAsState(initial = emptyList())
     val projects by vm.projects.collectAsState(initial = emptyList())
@@ -464,6 +472,7 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
             }
         }
         error?.let { MessageBanner(it, isError = true) { vm.error.value = null } }
+        notice?.let { MessageBanner(it) { vm.notice.value = null } }
         if (attachments.isNotEmpty()) {
             LazyRow(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(attachments) { a ->
@@ -517,7 +526,10 @@ private fun MessageBubble(m: MessageEntity, onCopy: () -> Unit, onDelete: () -> 
                 if (atts != null && atts.length() > 0) {
                     Text((0 until atts.length()).joinToString { atts.getJSONObject(it).optString("name") }, style = MaterialTheme.typography.labelSmall, color = GravityColors.Purple)
                 }
-                SelectionContainer { RichText(m.content.ifEmpty { if (m.error != null) "" else "(empty)" }) }
+                val hasAttachments = atts != null && atts.length() > 0
+                if (m.content.isNotEmpty() || (m.error == null && !hasAttachments)) {
+                    SelectionContainer { RichText(m.content.ifEmpty { "(empty)" }) }
+                }
                 m.error?.let { Text("Error: $it", color = GravityColors.Red, style = MaterialTheme.typography.bodySmall) }
                 val sources = remember(m.sources) { runCatching { JSONArray(m.sources) }.getOrNull() }
                 if (sources != null && sources.length() > 0) {

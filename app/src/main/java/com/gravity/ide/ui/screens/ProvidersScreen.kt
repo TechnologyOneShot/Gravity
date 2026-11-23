@@ -104,7 +104,12 @@ fun ProvidersScreen() {
                                     scope.launch {
                                         val r = c.providers.test(p)
                                         testing = null
-                                        r.onSuccess { discovered = p to it }.onFailure { toast(context, "Failed: ${it.message}") }
+                                        r.onSuccess { models ->
+                                            discovered = p to models
+                                            if (p.kind == ProviderKind.GEMINI.name && p.defaultModel !in models) {
+                                                toast(context, "${p.defaultModel.ifBlank { "No model" }} is not offered to this key. Pick one from the list.")
+                                            }
+                                        }.onFailure { toast(context, "Failed: ${it.message}") }
                                     }
                                 },
                                 MenuAction("Set as default", Icons.Filled.Star) { scope.launch { c.settings.update { it.copy(defaultProviderId = p.id, defaultModel = p.defaultModel) } } },
@@ -131,8 +136,15 @@ fun ProvidersScreen() {
             scope.launch {
                 c.db.providers().upsert(entity)
                 if (key != null) c.secrets.put(SecretStore.providerKey(entity.id), key)
-                if (settings.defaultProviderId == null) c.settings.update { it.copy(defaultProviderId = entity.id, defaultModel = entity.defaultModel) }
-                toast(context, "Saved ${entity.name} — use Test connection to verify")
+                if (settings.defaultProviderId == null) c.settings.update { it.copy(defaultProviderId = entity.id, defaultModel = entity.defaultModel.ifBlank { null }) }
+                if (entity.defaultModel.isBlank()) {
+                    toast(context, "Saved ${entity.name}. Checking which models your key can use…")
+                    c.providers.autoSelectModel(entity)
+                        .onSuccess { toast(context, "${entity.name}: using $it (newest stable model for your key)") }
+                        .onFailure { toast(context, "Saved, but the model list failed: ${it.message}. Set a model ID with Edit.") }
+                } else {
+                    toast(context, "Saved ${entity.name} — use Test connection to verify")
+                }
             }
         }
     }
@@ -176,7 +188,9 @@ private fun ProviderDialog(existing: ProviderEntity?, onDismiss: () -> Unit, onS
     var kind by remember { mutableStateOf(existing?.kind?.let { ProviderKind.valueOf(it) } ?: ProviderKind.GEMINI) }
     var name by remember { mutableStateOf(existing?.name ?: "Google Gemini") }
     var baseUrl by remember { mutableStateOf(existing?.baseUrl ?: GeminiProvider.DEFAULT_BASE_URL) }
-    var model by remember { mutableStateOf(existing?.defaultModel ?: "gemini-2.5-flash") }
+    // Blank for Gemini: Gravity asks the API which models this key can use and picks the newest
+    // stable Flash model, so no retired model name is baked into the app.
+    var model by remember { mutableStateOf(existing?.defaultModel ?: "") }
     var key by remember { mutableStateOf("") }
     var timeout by remember { mutableStateOf((existing?.timeoutSec ?: 120).toString()) }
     var priority by remember { mutableStateOf((existing?.priority ?: 0).toString()) }
@@ -196,13 +210,17 @@ private fun ProviderDialog(existing: ProviderEntity?, onDismiss: () -> Unit, onS
                 Selector("Type", kinds, kind, { it.label }, { k ->
                     kind = k
                     if (existing == null) {
-                        if (k == ProviderKind.GEMINI) { name = "Google Gemini"; baseUrl = GeminiProvider.DEFAULT_BASE_URL; model = "gemini-2.5-flash" }
+                        if (k == ProviderKind.GEMINI) { name = "Google Gemini"; baseUrl = GeminiProvider.DEFAULT_BASE_URL; model = "" }
                         else { name = "OpenAI-compatible"; baseUrl = "https://api.openai.com/v1"; model = "" }
                     }
                 }, Modifier.fillMaxWidth())
                 OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(model, { model = it }, label = { Text("Default model ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    model, { model = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    label = { Text(if (kind == ProviderKind.GEMINI) "Default model ID (optional)" else "Default model ID") },
+                    placeholder = if (kind == ProviderKind.GEMINI) ({ Text("Blank = newest model your key can use") }) else null,
+                )
                 OutlinedTextField(
                     key, { key = it }, label = { Text(if (hasKey) "API key (stored — leave blank to keep)" else "API key") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth(),
@@ -224,7 +242,7 @@ private fun ProviderDialog(existing: ProviderEntity?, onDismiss: () -> Unit, onS
             }
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank() && baseUrl.isNotBlank() && model.isNotBlank() && (hasKey || key.isNotBlank() || kind == ProviderKind.OPENAI_COMPAT), onClick = {
+            TextButton(enabled = name.isNotBlank() && baseUrl.isNotBlank() && (model.isNotBlank() || kind == ProviderKind.GEMINI) && (hasKey || key.isNotBlank() || kind == ProviderKind.OPENAI_COMPAT), onClick = {
                 val entity = (existing ?: ProviderEntity(id = UUID.randomUUID().toString(), name = name, kind = kind.name, baseUrl = baseUrl, defaultModel = model, createdAt = System.currentTimeMillis())).copy(
                     name = name.trim(), kind = kind.name, baseUrl = baseUrl.trim(), defaultModel = model.trim(),
                     timeoutSec = timeout.toIntOrNull() ?: 120, priority = priority.toIntOrNull() ?: 0,

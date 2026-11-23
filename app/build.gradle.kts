@@ -65,9 +65,23 @@ android {
         }
     }
 
+    signingConfigs {
+        // Fixed DEBUG key, committed on purpose so every CI-built debug APK installs as an update
+        // over the previous one (keeps the user's data). Debug builds only; a release build must
+        // be signed with a private key that is never committed (see docs/SETUP.md).
+        getByName("debug") {
+            storeFile = file("gravity-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            storeType = "pkcs12"
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             isMinifyEnabled = false

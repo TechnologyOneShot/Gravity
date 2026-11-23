@@ -2,6 +2,7 @@
 
 package com.gravity.ide.ui.screens
 
+import com.gravity.ide.ui.components.safeTabIndicator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -505,7 +506,7 @@ fun EditorScreen(projectId: String, path: String?, go: (String) -> Unit) {
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        ScrollableTabRow(selectedTabIndex = index, edgePadding = 4.dp, containerColor = MaterialTheme.colorScheme.background) {
+        ScrollableTabRow(selectedTabIndex = index, indicator = safeTabIndicator(index), edgePadding = 4.dp, containerColor = MaterialTheme.colorScheme.background) {
             tabs.forEachIndexed { i, t ->
                 Tab(selected = i == index, onClick = { vm.active.value = i }, text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {

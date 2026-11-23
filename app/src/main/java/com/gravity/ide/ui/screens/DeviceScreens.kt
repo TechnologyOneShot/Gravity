@@ -2,6 +2,7 @@
 
 package com.gravity.ide.ui.screens
 
+import com.gravity.ide.ui.components.safeTabIndicator
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -86,7 +87,7 @@ import java.io.File
 fun DevicesScreen(apkPath: String?, go: (String) -> Unit) {
     var tab by remember { mutableStateOf(0) }
     Column {
-        TabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
+        TabRow(selectedTabIndex = tab, indicator = safeTabIndicator(tab), containerColor = MaterialTheme.colorScheme.background) {
             Tab(tab == 0, { tab = 0 }, text = { Text("Device") })
             Tab(tab == 1, { tab = 1 }, text = { Text("Apps") })
             Tab(tab == 2, { tab = 2 }, text = { Text("Logcat") })

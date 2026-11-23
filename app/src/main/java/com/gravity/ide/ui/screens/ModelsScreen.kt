@@ -2,6 +2,7 @@
 
 package com.gravity.ide.ui.screens
 
+import com.gravity.ide.ui.components.safeTabIndicator
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -74,7 +75,7 @@ import kotlinx.coroutines.launch
 fun ModelsScreen(initialTab: Int) {
     var tab by remember { mutableStateOf(initialTab.coerceIn(0, 2)) }
     Column {
-        TabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
+        TabRow(selectedTabIndex = tab, indicator = safeTabIndicator(tab), containerColor = MaterialTheme.colorScheme.background) {
             Tab(tab == 0, { tab = 0 }, text = { Text("Installed") })
             Tab(tab == 1, { tab = 1 }, text = { Text("Downloads") })
             Tab(tab == 2, { tab = 2 }, text = { Text("Search Hub") })

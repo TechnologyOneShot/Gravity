@@ -37,6 +37,8 @@ sealed interface LlmEvent {
     data class Usage(val inputTokens: Int, val outputTokens: Int) : LlmEvent
     data class Sources(val sources: List<WebSource>) : LlmEvent
     data class Done(val finishReason: String?) : LlmEvent
+    /** The provider retired [from]; the request was retried with [to]. */
+    data class ModelSwitched(val from: String, val to: String) : LlmEvent
 }
 
 data class WebSource(val title: String, val url: String, val snippet: String = "")
@@ -87,6 +89,7 @@ suspend fun LlmProvider.complete(request: LlmRequest, onText: (String) -> Unit =
             }
             is LlmEvent.Sources -> sources += ev.sources
             is LlmEvent.Done -> finish = ev.finishReason
+            is LlmEvent.ModelSwitched -> Unit
         }
     }
     return LlmResult(text.toString(), calls, inTok, outTok, finish, sources.distinctBy { it.url })

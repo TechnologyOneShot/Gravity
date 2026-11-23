@@ -2,8 +2,10 @@
 
 ## Install
 
-1. Build the debug APK (README → Build), or download the `gravity-debug-apk` artifact from GitHub Actions.
-2. Copy it to the phone and open it. Allow "Install unknown apps" for your file manager when Android asks.
+1. Download `gravity-debug-llama.apk` (with the local AI runtime) or `gravity-debug.apk` from the repository's **debug-latest** pre-release, or build it yourself (README → Build).
+2. Open it on the phone. Allow "Install unknown apps" for your browser or file manager when Android asks.
+
+Updates: debug APKs are signed with the fixed debug key `app/gravity-debug.keystore`, so a newer APK installs over the old one and keeps your data. APKs built before 2026-11-23 used a random key per build: uninstall such a build once before installing a new one. The debug key is not secret; release builds must be signed with your own private key (keep it out of the repository, e.g. in a CI secret).
 3. On first start, allow notifications. They are used for task progress, downloads and screen capture.
 
 Requirements: Android 8.0 (API 26) or newer. 64-bit ARM is recommended for local models.
@@ -24,7 +26,7 @@ Open **AI Providers → Add provider**, save, then use **⋮ → Test connection
 
 ### Google Gemini
 - Type: Google Gemini. Base URL: `https://generativelanguage.googleapis.com`.
-- Model: e.g. `gemini-2.5-flash` or `gemini-2.5-pro`. Use Test connection to see what your key can access.
+- Model: leave it blank. Gravity asks the API which models your key can use and picks the newest stable Flash model. If Google later retires that model, Gravity switches to the newest available one on the next request and tells you in the chat. You can still type a model ID, or pick one with Test connection.
 - API key: create one in Google AI Studio. It is stored encrypted with an Android Keystore key.
 - Gemini supports streaming, function calling, vision, thinking configuration and the **Google Search grounding** chat toggle.
 

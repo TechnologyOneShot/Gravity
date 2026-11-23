@@ -33,6 +33,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.TabPosition
+import androidx.compose.material3.TabRowDefaults
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -269,4 +271,15 @@ fun <T> Selector(label: String, options: List<T>, selected: T?, display: (T) -> 
 @Composable
 fun Arranged(content: @Composable () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { content() }
+}
+
+
+/**
+ * Tab-row indicator that tolerates the selected index pointing past the last tab for a frame
+ * (tabs being closed). Material's default indexes the position list directly and crashes then.
+ */
+fun safeTabIndicator(selected: Int): @Composable (List<TabPosition>) -> Unit = { positions ->
+    positions.getOrNull(selected)?.let { position ->
+        TabRowDefaults.SecondaryIndicator(with(TabRowDefaults) { Modifier.tabIndicatorOffset(position) })
+    }
 }

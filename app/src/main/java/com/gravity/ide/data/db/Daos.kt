@@ -47,6 +47,10 @@ interface ChatDao {
     @Query("SELECT * FROM chats ORDER BY updatedAt DESC")
     suspend fun all(): List<ChatEntity>
 
+    /** Points chats that used a retired model at its replacement. */
+    @Query("UPDATE chats SET model = :replacement WHERE model = :old")
+    suspend fun replaceModel(old: String, replacement: String)
+
     @Upsert
     suspend fun upsert(chat: ChatEntity)
 

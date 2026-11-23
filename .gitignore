@@ -12,4 +12,5 @@
 *.apk
 *.aab
 *.keystore
+!app/gravity-debug.keystore
 *.jks
