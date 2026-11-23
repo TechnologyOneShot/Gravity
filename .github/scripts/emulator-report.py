@@ -37,6 +37,10 @@ if full.exists():
     timeline = [l for l in lines if " TestRunner: " in l and ("started:" in l or "finished:" in l or "failed:" in l)]
     print("\n== Test runner timeline ==")
     print("\n".join(timeline[-80:]))
+    mains = [i for i, l in enumerate(lines) if "THREAD_STATE:" in l and "Thread[main," in l]
+    for i in mains[:2]:
+        print("\n== Main thread state (test runner dump) ==")
+        print("\n".join(lines[i:i + 45]))
     crashes = [i for i, l in enumerate(lines) if "AndroidRuntime: FATAL EXCEPTION" in l]
     for i in crashes[:2]:
         print("\n== Log lines before crash (warnings/errors) ==")

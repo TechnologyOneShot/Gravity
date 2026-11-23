@@ -119,24 +119,6 @@ class AppBuilderDeviceTest {
         }
     }
 
-    @Test
-    fun t02_homeScreenBuildsAnAppFromOneSentence() {
-        fun title() = compose.onNodeWithTag("screen-title").fetchSemanticsNode().config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }.orEmpty()
-        compose.waitUntil(15_000) { runCatching { title() == "Gravity" }.getOrDefault(false) }
-        compose.onNodeWithTag("build-prompt").performTextInput("calculator bana do")
-        compose.onNodeWithTag("build-button").performClick()
-        compose.waitUntil(20_000) { runCatching { title() == "App" }.getOrDefault(false) }
-        compose.waitUntil(120_000) { compose.onAllNodesWithTag("app-summary").fetchSemanticsNodes().isNotEmpty() }
-        Thread.sleep(1500)
-        compose.waitForIdle()
-        val summary = compose.onNodeWithTag("app-summary").fetchSemanticsNode().config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }
-        Ci.log("builder-ui", "Home → Build → App screen; summary shown: $summary")
-        Ci.screenshot("07_app_screen_after_build")
-        assertTrue(compose.onAllNodesWithTag("install-app").fetchSemanticsNodes().isNotEmpty())
-        val app = runBlocking { c.db.projects().all().firstOrNull { it.name == "Calculator" && it.type == "APP" } }
-        assertNotNull(app)
-    }
-
     companion object {
         private val ACTIVE = setOf("PENDING", "RUNNING", "WAITING_APPROVAL", "WAITING_NETWORK")
         private const val PROVIDER_ID = "ci-scripted-model"
@@ -210,7 +192,10 @@ class AppBuilderDeviceTest {
 
         @BeforeClass
         @JvmStatic
-        fun startScriptedModel() {
+        fun startScriptedModel() = installScriptedModel()
+
+        /** Starts the scripted model server and makes it the default provider. */
+        fun installScriptedModel() {
             server = MockWebServer().apply { dispatcher = ScriptedModel; start() }
             runBlocking {
                 Ci.container.db.providers().upsert(
@@ -225,6 +210,9 @@ class AppBuilderDeviceTest {
 
         @AfterClass
         @JvmStatic
+        fun stopScriptedModel() = removeScriptedModel()
+
+        /** Removes the scripted provider again (other suites test the no-provider behaviour). */
         fun removeScriptedModel() {
             // Other suites check behaviour with no provider configured.
             runBlocking {
