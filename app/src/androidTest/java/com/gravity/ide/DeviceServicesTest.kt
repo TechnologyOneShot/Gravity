@@ -363,4 +363,45 @@ class DeviceServicesTest {
         val online = poll(60_000) { if (c.network.isOnline) true else null }
         Ci.log("offline", "Airplane mode off → online=${online == true}")
     }
+
+    /**
+     * Regression for a crash reported from a phone: an agent task that ends immediately made
+     * Gravity stop its foreground service before Android delivered the start, which Android 12+
+     * punishes with ForegroundServiceDidNotStartInTimeException. Run with Gravity in the
+     * foreground (so the service is actually allowed to start), as on the phone.
+     */
+    @Test
+    fun t14_taskServiceSurvivesInstantStartStop() {
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            val am = ctx.getSystemService(android.app.ActivityManager::class.java)
+            @Suppress("DEPRECATION")
+            fun serviceRunning() = am.getRunningServices(50).any { it.service.className == com.gravity.ide.agent.TaskForegroundService::class.java.name }
+
+            repeat(25) {
+                com.gravity.ide.agent.TaskForegroundService.update(ctx, 1)
+                com.gravity.ide.agent.TaskForegroundService.update(ctx, 0)
+            }
+            // Agent tasks that fail at once (no provider), several in a row, as the phone did.
+            val project = runBlocking { c.db.projects().all().first() }
+            repeat(4) {
+                val id = runBlocking { c.agent.create(project.id, "Instant failure $it", null, null, ReasoningMode.FAST, null) }
+                c.agent.start(id)
+            }
+            Thread.sleep(15_000) // longer than Android's startForeground deadline in this window
+            val idle = poll(10_000) { if (!serviceRunning()) true else null }
+            Ci.log("task-service", "25 instant start/stop cycles + 4 instantly failing tasks: no crash; service stopped afterwards: ${idle == true}")
+            assertNotNull("Task service still running with no tasks", idle)
+
+            com.gravity.ide.agent.TaskForegroundService.update(ctx, 2)
+            val up = poll(10_000) { if (serviceRunning()) true else null }
+            com.gravity.ide.agent.TaskForegroundService.update(ctx, 0)
+            val down = poll(10_000) { if (!serviceRunning()) true else null }
+            Ci.log("task-service", "Normal start → running=${up == true}; stop → stopped=${down == true}")
+            assertNotNull("Task service did not start", up)
+            assertNotNull("Task service did not stop", down)
+        } finally {
+            scenario.close()
+        }
+    }
 }

@@ -170,6 +170,13 @@ class ScreenCaptureService : Service() {
         private const val ACTION_STOP = "com.gravity.ide.capture.STOP"
 
         fun start(context: Context, resultCode: Int, data: Intent) {
+            // Only start as a foreground service with real consent: the service cannot call
+            // startForeground(mediaProjection) without it, and Android crashes the app if a
+            // foreground-service start is not followed by startForeground().
+            if (resultCode != Activity.RESULT_OK) {
+                ScreenCaptureController.setState(CaptureState.Error("Screen capture permission was not granted"))
+                return
+            }
             val intent = Intent(context, ScreenCaptureService::class.java)
                 .putExtra(EXTRA_RESULT_CODE, resultCode)
                 .putExtra(EXTRA_DATA, data)
