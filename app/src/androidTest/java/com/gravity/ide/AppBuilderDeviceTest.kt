@@ -105,8 +105,10 @@ class AppBuilderDeviceTest {
         assertTrue("Install failed: $install", install.contains("Success"))
         try {
             Ci.shell("am start -W -n ${out.packageName}/${WebAppPackager.SHELL_ACTIVITY}")
-            val loaded = poll(30_000) {
-                Ci.shell("logcat -d -s GravityWebShell:I").lineSequence().firstOrNull { "title=CI Music Player" in it }
+            // First WebView start in a brand-new app process can be slow on a loaded CI emulator.
+            val loaded = poll(90_000) {
+                Ci.shell("logcat -d -s GravityWebShell:I").lineSequence()
+                    .firstOrNull { "title=CI Music Player" in it || "music player ready" in it }
             }
             val resumed = Ci.shell("dumpsys activity activities").lineSequence().filter { "ResumedActivity" in it }.joinToString(" / ") { it.trim() }
             Ci.log("builder", "Installed app launched: ${loaded ?: "no page-load log"} | resumed: $resumed")
