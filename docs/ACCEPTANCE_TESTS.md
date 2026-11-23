@@ -1,6 +1,6 @@
 # Acceptance tests (spec §42)
 
-**Current status: none of these has been executed.** The code has not been compiled, because the authoring sandbox had no Android toolchain. Do not treat any row as passed until it has a recorded result.
+**Current status: none of these has been executed on a device.** What *is* verified (GitHub Actions, 2026-11-23): the project compiles, `assembleDebug` produces a debug-signed `app-debug.apk`, and the 37 JVM unit tests pass (path guard, zip safety, diff, command safety, secret scanning, SSE/UTF-8 streaming, GGUF parsing, backup crypto, syntax highlighting, tool protocol, glob, provider wire formats, Termux build script). Those unit tests do not cover any row below on their own. Do not treat any row as passed until it has a recorded result.
 
 How results get recorded:
 - **JVM**: `./gradlew testDebugUnitTest`, run in CI. Reports are in `app/build/reports/tests/`.
@@ -38,7 +38,7 @@ How results get recorded:
 | 25 | Web search returns sourced results | Manual: Brave key → agent `web_search`, or Gemini grounding sources | Not run |
 | 26 | Offline project search | Manual: airplane mode → Files search / Global Search | Not run |
 | 27 | Cached offline build | Manual: Termux backend, second build with `--offline` after one online build; Offline Readiness shows the Termux cache | Not run |
-| 28 | Android build generates an APK | CI (`assembleDebug`) for Gravity itself; on the phone with the Termux backend (Android template project) | Not run |
+| 28 | Android build generates an APK | CI (`assembleDebug`) for Gravity itself; on the phone with the Termux backend (Android template project) | Partial: CI builds Gravity's own APK (2026-11-23); in-app Termux build not run |
 | 29 | Exported artifact exists | Export Center reports the size it read back | Not run |
 | 30 | Same-device install | Manual: Device Manager → Install | Not run |
 | 31 | Target app launches | App test | Not run |

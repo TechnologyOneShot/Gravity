@@ -4,7 +4,8 @@ The specification asks Gravity never to fake a feature. This file lists everythi
 
 ## Verification
 
-- **Nothing has been compiled or run yet.** The code was written without network access to Google Maven, Maven Central or the Android SDK. Run the GitHub Actions workflow, or build in Android Studio, and expect to fix some compile errors in the first pass.
+- **Compiled, not yet run.** GitHub Actions compiles the app, runs 37 JVM unit tests (all pass) and produces the debug APK. Nobody has installed or used the APK on a device yet, so runtime bugs are still possible anywhere in the UI or device integrations.
+- 15 Kotlin deprecation warnings (non-AutoMirrored icons, `LocalClipboardManager`) remain. They do not affect the build.
 - Acceptance tests 1–40 have **not** been executed on a device (see ACCEPTANCE_TESTS.md).
 
 ## By area

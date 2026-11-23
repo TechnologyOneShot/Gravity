@@ -2,7 +2,7 @@
 
 **Gravity** is an autonomous AI development environment for Android, written in Kotlin and Jetpack Compose. It combines a project workspace, a code editor, a real device shell, local (llama.cpp) and cloud (Gemini / OpenAI-compatible) models, a tool-using coding agent, multi-agent teams, builds, same-device install and testing, screenshots, backups and exports.
 
-> **Status: source complete, not yet compiled.** The project was written in a sandbox that could not reach Google Maven, Maven Central or the Android SDK, so **it has not been compiled, and no APK has been produced or run on a device yet.** The included GitHub Actions workflow builds the debug APK and runs the JVM unit tests. Expect a first round of compile fixes. See [docs/ACCEPTANCE_TESTS.md](docs/ACCEPTANCE_TESTS.md) for what has and hasn't been verified.
+> **Status: compiles in CI; not yet run on a device.** GitHub Actions builds the debug APK (`com.gravity.ide` 0.1.0, minSdk 26, targetSdk 35, debug-signed) and runs the JVM unit tests: 37 tests, 0 failures, first verified on 2026-11-23. The APK has **not** been installed or run on a phone yet, and acceptance tests 1–40 have not been executed. See [docs/ACCEPTANCE_TESTS.md](docs/ACCEPTANCE_TESTS.md) for what has and hasn't been verified.
 
 ## Build
 
