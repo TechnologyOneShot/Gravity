@@ -34,7 +34,14 @@ print(f"INSTRUMENTED TESTS: {total} total, {failed} failed, {skipped} skipped")
 full = out / "logcat-full.txt"
 if full.exists():
     lines = full.read_text(errors="replace").splitlines()
+    timeline = [l for l in lines if " TestRunner: " in l and ("started:" in l or "finished:" in l or "failed:" in l)]
+    print("\n== Test runner timeline ==")
+    print("\n".join(timeline[-80:]))
     crashes = [i for i, l in enumerate(lines) if "AndroidRuntime: FATAL EXCEPTION" in l]
+    for i in crashes[:2]:
+        print("\n== Log lines before crash (warnings/errors) ==")
+        before = [l for l in lines[max(0, i - 400):i] if (" E " in l or " W " in l) and "chatty" not in l]
+        print("\n".join(before[-40:]))
     print(f"\n== FATAL EXCEPTION blocks in logcat: {len(crashes)} ==")
     for i in crashes[:5]:
         print("\n".join(lines[i:i + 40]))

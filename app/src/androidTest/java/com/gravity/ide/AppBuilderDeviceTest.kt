@@ -98,9 +98,9 @@ class AppBuilderDeviceTest {
         val appInfo = info.applicationInfo!!.apply { sourceDir = out.apk.path; publicSourceDir = out.apk.path }
         assertEquals("Music Player", ctx.packageManager.getApplicationLabel(appInfo).toString())
 
-        val staged = File(ctx.getExternalFilesDir(null), "ci-generated-app.apk")
-        out.apk.copyTo(staged, overwrite = true)
-        val install = Ci.shell("pm install -r ${staged.absolutePath}").trim()
+        // Stream the APK to `pm install` (the shell user cannot read Gravity's private storage).
+        val bytes = out.apk.readBytes()
+        val install = Ci.shellWithInput("pm install -r -S ${bytes.size}", bytes).trim()
         Ci.log("builder", "pm install → $install")
         assertTrue("Install failed: $install", install.contains("Success"))
         try {
@@ -116,7 +116,6 @@ class AppBuilderDeviceTest {
         } finally {
             Ci.shell("am force-stop ${out.packageName}")
             Ci.shell("pm uninstall ${out.packageName}")
-            staged.delete()
         }
     }
 

@@ -22,10 +22,24 @@ object Ci {
         text.chunked(3000).forEach { Log.i(TAG, it) }
     }
 
-    /** Runs a command as the shell user and returns its output (blocks until it exits). */
-    fun shell(command: String): String {
-        val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
-        return FileInputStream(pfd.fileDescriptor).use { it.readBytes().toString(Charsets.UTF_8) }.also { pfd.close() }
+    /** Runs a command as the shell user and returns stdout + stderr (blocks until it exits). */
+    fun shell(command: String): String = shellWithInput(command, null)
+
+    /**
+     * Runs a command as the shell user, optionally writing [input] to its stdin (e.g.
+     * `pm install -S <size>` streaming an APK the shell user could not read from app storage).
+     */
+    fun shellWithInput(command: String, input: ByteArray?): String {
+        val ua = InstrumentationRegistry.getInstrumentation().uiAutomation
+        if (android.os.Build.VERSION.SDK_INT < 31) {
+            val pfd = ua.executeShellCommand(command)
+            return FileInputStream(pfd.fileDescriptor).use { it.readBytes().toString(Charsets.UTF_8) }.also { pfd.close() }
+        }
+        val (out, inp, err) = ua.executeShellCommandRwe(command)
+        android.os.ParcelFileDescriptor.AutoCloseOutputStream(inp).use { stream -> if (input != null) stream.write(input) }
+        val stdout = android.os.ParcelFileDescriptor.AutoCloseInputStream(out).use { it.readBytes().toString(Charsets.UTF_8) }
+        val stderr = android.os.ParcelFileDescriptor.AutoCloseInputStream(err).use { it.readBytes().toString(Charsets.UTF_8) }
+        return if (stderr.isBlank()) stdout else "$stdout\n[stderr] $stderr"
     }
 
     /** Real screenshot of the emulator screen, pulled by the CI job afterwards. */
