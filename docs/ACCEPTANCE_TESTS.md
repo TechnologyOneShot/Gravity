@@ -54,7 +54,7 @@ How results get recorded on a phone:
 | 39 | Survives process interruption | `t08`: a task left RUNNING is marked INTERRUPTED by startup recovery | **Partial**: a real force-stop was not performed |
 | 40 | No placeholder core features | Git Manager and Plugins state in the app that they are not implemented | **Not met**: see KNOWN_LIMITATIONS.md |
 
-Counts for the latest runs: 16/16 instrumented tests pass on the standard APK, 17/17 on the llama.cpp APK, with no FATAL EXCEPTION in logcat; 37/37 JVM unit tests (38 with the big-endian GGUF test) pass.
+Counts for the latest run (commit ac50b6e): standard APK 16 passed and 1 skipped (local inference needs the llama.cpp build); llama.cpp APK 17/17 passed; no FATAL EXCEPTION in logcat; 38/38 JVM unit tests pass.
 
 Bugs the emulator suite found and that are fixed: Android 14 throws inside `ZipInputStream` for `../` entries, which made ZIP import fail instead of rejecting the entry; big-endian GGUF files were reported as "Unsupported GGUF version 50331648".
 
