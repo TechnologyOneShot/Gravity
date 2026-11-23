@@ -273,7 +273,8 @@ class WorkspaceManager(
         val result = input.use { ZipSafety.extract(it, destDir) }
         events.log(
             EventCategory.WORKSPACE, "Extracted ZIP into ${destDir.name}",
-            "${result.files} files, ${result.bytes} bytes" + if (result.rejected.isNotEmpty()) "\nRejected unsafe entries: ${result.rejected.joinToString()}" else ""
+            "${result.files} files, ${result.bytes} bytes" + (if (result.rejected.isNotEmpty()) "\nRejected unsafe entries: ${result.rejected.joinToString()}" else "") +
+                if (result.stoppedEarly) "\nExtraction stopped at the unsafe entry: Android refuses to read such archives any further, so later entries were not imported." else ""
         )
         result
     }

@@ -21,7 +21,11 @@ object ZipSafety {
         val maxEntryBytes: Long = 1L * 1024 * 1024 * 1024,
     )
 
-    data class ExtractResult(val files: Int, val directories: Int, val bytes: Long, val rejected: List<String>)
+    /**
+     * [stoppedEarly] is true when the platform itself refused an entry (Android 14+ throws
+     * on "../" names while reading the archive), so the remaining entries were not read.
+     */
+    data class ExtractResult(val files: Int, val directories: Int, val bytes: Long, val rejected: List<String>, val stoppedEarly: Boolean = false)
 
     class ZipLimitException(message: String) : IOException(message)
 
@@ -34,9 +38,21 @@ object ZipSafety {
         var entries = 0
         val rejected = mutableListOf<String>()
         val buffer = ByteArray(64 * 1024)
+        var stoppedEarly = false
         ZipInputStream(input).use { zis ->
             while (true) {
-                val entry: ZipEntry = zis.nextEntry ?: break
+                val entry: ZipEntry = try {
+                    zis.nextEntry ?: break
+                } catch (e: java.util.zip.ZipException) {
+                    // Android 14+ (targetSdk 34+) validates entry names inside ZipInputStream and
+                    // throws for traversal paths. The stream cannot be read past that point, so
+                    // record the entry as rejected and stop; nothing was written outside destDir.
+                    val msg = e.message.orEmpty()
+                    if (!msg.startsWith("Invalid zip entry path")) throw e
+                    rejected += msg.substringAfter(": ", msg)
+                    stoppedEarly = true
+                    break
+                }
                 entries++
                 if (entries > limits.maxEntries) throw ZipLimitException("Archive has more than ${limits.maxEntries} entries")
                 val name = entry.name.replace('\\', '/')
@@ -70,7 +86,7 @@ object ZipSafety {
                 files++
             }
         }
-        return ExtractResult(files, dirs, total, rejected)
+        return ExtractResult(files, dirs, total, rejected, stoppedEarly)
     }
 
     /** Zips [dir] into [output]. Paths inside the zip are relative to [dir]. */

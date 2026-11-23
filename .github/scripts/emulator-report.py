@@ -34,7 +34,7 @@ print(f"INSTRUMENTED TESTS: {total} total, {failed} failed, {skipped} skipped")
 full = out / "logcat-full.txt"
 if full.exists():
     lines = full.read_text(errors="replace").splitlines()
-    crashes = [i for i, l in enumerate(lines) if "FATAL EXCEPTION" in l]
+    crashes = [i for i, l in enumerate(lines) if "AndroidRuntime: FATAL EXCEPTION" in l]
     print(f"\n== FATAL EXCEPTION blocks in logcat: {len(crashes)} ==")
     for i in crashes[:5]:
         print("\n".join(lines[i:i + 40]))

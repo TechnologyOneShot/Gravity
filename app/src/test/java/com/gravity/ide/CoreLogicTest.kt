@@ -211,6 +211,14 @@ class GgufReaderTest {
         assertEquals("Qwen2.5 Coder 1.5B", info.name)
     }
 
+    @Test fun explainsBigEndianFiles() {
+        // Magic is written as bytes "GGUF"; a big-endian file stores the version as 00 00 00 03.
+        val bytes = byteArrayOf(0x47, 0x47, 0x55, 0x46, 0, 0, 0, 3) + ByteArray(32)
+        val f = tmp.newFile("be.gguf").apply { writeBytes(bytes) }
+        val e = runCatching { GgufReader.read(f) }.exceptionOrNull()
+        assertTrue("expected a big-endian explanation, got $e", e?.message?.contains("Big-endian") == true)
+    }
+
     @Test fun rejectsNonGguf() {
         val f = tmp.newFile("x.bin").apply { writeBytes("not a model".toByteArray()) }
         try {

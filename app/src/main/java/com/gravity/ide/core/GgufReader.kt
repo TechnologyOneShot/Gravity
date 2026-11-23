@@ -38,7 +38,13 @@ object GgufReader {
         val magic = input.u32()
         if (magic != MAGIC.toLong()) throw NotGgufException("Not a GGUF file (bad magic)")
         val version = input.u32().toInt()
-        if (version < 2 || version > 3) throw NotGgufException("Unsupported GGUF version $version")
+        if (version < 2 || version > 3) {
+            val swapped = Integer.reverseBytes(version)
+            if (swapped == 2 || swapped == 3) {
+                throw NotGgufException("Big-endian GGUF (v$swapped): made for big-endian CPUs. Android devices are little-endian; download the regular (little-endian) file instead.")
+            }
+            throw NotGgufException("Unsupported GGUF version $version")
+        }
         val tensorCount = input.u64()
         val kvCount = input.u64()
         if (kvCount < 0 || kvCount > 100_000) throw NotGgufException("Implausible metadata count $kvCount")

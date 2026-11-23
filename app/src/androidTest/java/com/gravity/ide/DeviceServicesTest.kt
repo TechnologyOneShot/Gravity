@@ -281,7 +281,7 @@ class DeviceServicesTest {
                 val files = runCatching { runBlocking { c.models.listHubFiles(repo) } }
                     .onFailure { Ci.log("download", "$repo: ${it.message}") }
                     .getOrNull() ?: continue
-                val f = files.firstOrNull { it.sha256 != null && it.size in 1L..60_000_000L }
+                val f = files.firstOrNull { it.sha256 != null && it.size in 1L..60_000_000L && !it.path.contains("-be.") }
                 if (f != null) { picked = repo to f; break }
             }
             assertNotNull("No small GGUF with a published SHA-256 was found on the Hub", picked)
