@@ -163,7 +163,10 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" > /dev/null
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-user-static file > /dev/null
+          sudo apt-get install -y -qq qemu-user file > /dev/null || sudo apt-get install -y -qq qemu-user-static file > /dev/null
+          QEMU=$(command -v qemu-aarch64 || command -v qemu-aarch64-static)
+          echo "QEMU=$QEMU" >> "$GITHUB_ENV"
+          "$QEMU" --version | head -1
 
       - name: Fetch llama.cpp b6000
         run: git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
@@ -187,7 +190,7 @@ jobs:
           ok=0
           for cpu in max cortex-a76; do
             echo "=== qemu -cpu $cpu, llamafile ${{ matrix.llamafile }} ==="
-            timeout 1500 qemu-aarch64-static -cpu $cpu /tmp/arm-build/gravity-cli /tmp/model.gguf "What is the capital of France? Answer with one word." 4 2>/tmp/stderr-$cpu.txt | tee /tmp/answer-$cpu.txt
+            timeout 1500 "$QEMU" -cpu $cpu /tmp/arm-build/gravity-cli /tmp/model.gguf "What is the capital of France? Answer with one word." 4 2>/tmp/stderr-$cpu.txt | tee /tmp/answer-$cpu.txt
             echo "exit=$?"; tail -5 /tmp/stderr-$cpu.txt
             if grep -qi "^ANSWER:.*paris" /tmp/answer-$cpu.txt; then echo "VERDICT cpu=$cpu: coherent (Paris)"; else echo "VERDICT cpu=$cpu: WRONG"; ok=1; fi
           done

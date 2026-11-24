@@ -473,10 +473,10 @@ class DeviceServicesTest {
                 com.gravity.ide.agent.TaskForegroundService.update(ctx, 1)
                 com.gravity.ide.agent.TaskForegroundService.update(ctx, 0)
             }
-            // Agent tasks that fail at once (no provider), several in a row, as the phone did.
-            val project = runBlocking { c.db.projects().all().first() }
+            // Agent tasks that fail at once, several in a row, as the phone did. (A missing project makes
+            // them fail instantly even though a phone model is downloaded by now and would otherwise run them.)
             repeat(4) {
-                val id = runBlocking { c.agent.create(project.id, "Instant failure $it", null, null, ReasoningMode.FAST, null) }
+                val id = runBlocking { c.agent.create("ci-missing-project", "Instant failure $it", null, null, ReasoningMode.FAST, null) }
                 c.agent.start(id)
             }
             Thread.sleep(15_000) // longer than Android's startForeground deadline in this window
