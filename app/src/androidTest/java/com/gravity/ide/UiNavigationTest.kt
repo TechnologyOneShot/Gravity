@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
@@ -250,5 +251,24 @@ class UiNavigationTest {
         Ci.log("tabs", "Terminal tabs: $before → $after after closing two; screen: ${visibleText().take(600)}")
         Ci.screenshot("05_terminal_tabs_closed")
         assertTrue("Tabs were not closed ($before → $after)", after == before - 2)
+    }
+
+    /** Phone Models → Check the phone AI: the on-device check runs and reports correct answers (llama.cpp APK). */
+    @Test
+    fun t05_phoneAiCheckReportsCorrectAnswers() {
+        val c = Ci.container
+        val hasModel = c.localHost.runtimeAvailable && runBlocking { c.db.models().all() }.any { it.status == "READY" }
+        org.junit.Assume.assumeTrue("Needs the llama.cpp runtime and a downloaded model", hasModel)
+        waitForTitle("Gravity")
+        openDrawerEntry("Phone Models")
+        waitForTitle("Phone Models")
+        compose.onNode(androidx.compose.ui.test.hasScrollToNodeAction())
+            .performScrollToNode(androidx.compose.ui.test.hasTestTag("phone-ai-check"))
+        compose.onNodeWithTag("phone-ai-check").performClick()
+        compose.waitUntil(240_000) { compose.onAllNodesWithTag("phone-ai-report").fetchSemanticsNodes().isNotEmpty() }
+        val report = compose.onNodeWithTag("phone-ai-report").fetchSemanticsNode().config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }.orEmpty()
+        Ci.log("phone-ai-check", report)
+        Ci.screenshot("05_phone_ai_check")
+        assertTrue("The check did not report correct answers:\n$report", report.contains("answers correctly"))
     }
 }

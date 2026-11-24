@@ -181,19 +181,36 @@ jobs:
           cmake --build /tmp/arm-build --target gravity-cli -j"$(nproc)"
           file /tmp/arm-build/gravity-cli
 
-      - name: Download Qwen2.5-0.5B-Instruct Q4_K_M
-        run: curl -fL --retry 3 -o /tmp/model.gguf https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
+      - name: Download models (the 0.5B check model and Qwen2.5-Coder-1.5B, the model a user runs)
+        run: |
+          curl -fsSL --retry 3 -o /tmp/q05.gguf https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
+          if [ "${{ matrix.llamafile }}" = "OFF" ]; then
+            for q in q4_k_m q4_0 q8_0; do
+              curl -fsSL --retry 3 -o /tmp/coder-$q.gguf https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-$q.gguf
+            done
+          fi
+          ls -l /tmp/*.gguf
 
       - name: Ask on emulated ARM CPUs
         run: |
           set +e
           ok=0
-          for cpu in max cortex-a76; do
-            echo "=== qemu -cpu $cpu, llamafile ${{ matrix.llamafile }} ==="
-            timeout 1500 "$QEMU" -cpu $cpu /tmp/arm-build/gravity-cli /tmp/model.gguf "What is the capital of France? Answer with one word." 4 2>/tmp/stderr-$cpu.txt | tee /tmp/answer-$cpu.txt
-            echo "exit=$?"; tail -5 /tmp/stderr-$cpu.txt
-            if grep -qi "^ANSWER:.*paris" /tmp/answer-$cpu.txt; then echo "VERDICT cpu=$cpu: coherent (Paris)"; else echo "VERDICT cpu=$cpu: WRONG"; ok=1; fi
-          done
+          SYS="You are Gravity, a friendly and capable AI assistant in an Android app. Reply in the language and script the user writes in (Hindi, Hinglish or English). Give clear, correct, well-organised answers; keep them as short as the question allows. Use Markdown, and put code in fenced code blocks. If you are not sure, say so instead of guessing."
+          ask() { # model threads ctx cpu question expect
+            echo "=== $(basename $1) threads=$2 ctx=$3 cpu=$4 llamafile=${{ matrix.llamafile }}: $5"
+            timeout 1500 "$QEMU" -cpu $4 /tmp/arm-build/gravity-cli "$1" "$2" "$3" "$5" "$SYS" 0.4 40 2>/tmp/stderr.txt | tee /tmp/answer.txt
+            if grep -qi "^ANSWER:.*$6" /tmp/answer.txt; then echo "VERDICT: correct"; else echo "VERDICT: WRONG"; tail -3 /tmp/stderr.txt; ok=1; fi
+          }
+          ask /tmp/q05.gguf 4 1024 max "What is the capital of France? Answer with one word." paris
+          ask /tmp/q05.gguf 4 1024 cortex-a76 "What is the capital of France? Answer with one word." paris
+          if [ "${{ matrix.llamafile }}" = "OFF" ]; then
+            for q in q4_k_m q4_0 q8_0; do
+              for t in 4 8; do
+                ask /tmp/coder-$q.gguf $t 4096 max "What is 12 + 30? Reply with the number only." 42
+              done
+            done
+            ask /tmp/coder-q4_k_m.gguf 8 4096 max "hello" "hello\|hi\|help\|assist"
+          fi
           # The app ships with llamafile OFF: that build must answer correctly.
           if [ "${{ matrix.llamafile }}" = "OFF" ]; then exit $ok; fi
           exit 0

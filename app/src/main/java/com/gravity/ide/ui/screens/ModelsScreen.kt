@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import com.gravity.ide.ai.LlmMessage
 import com.gravity.ide.ai.LlmRequest
 import com.gravity.ide.ai.Role
+import com.gravity.ide.ai.complete
+import androidx.compose.ui.platform.testTag
 import com.gravity.ide.ai.local.LocalModelHost
 import com.gravity.ide.ai.local.LlamaBridge
 import com.gravity.ide.data.db.LocalModelEntity
@@ -151,6 +153,7 @@ private fun InstalledModels() {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { RuntimeBanner() }
         item { RecommendedModels(models) }
+        item { PhoneAiCheck() }
         item {
             Panel {
                 Column {
@@ -462,6 +465,120 @@ private fun RecommendedModels(installed: List<LocalModelEntity>) {
                         }) { Text("Download") }
                     }
                 }
+            }
+        }
+    }
+}
+
+
+/**
+ * Asks the phone model two easy questions and shows its answers with this phone's details, so a
+ * broken setup (e.g. random text) is visible and can be reported. If the answers are wrong, it
+ * tries again with 1 thread and offers to keep that if it helps.
+ */
+@Composable
+private fun PhoneAiCheck() {
+    val c = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val settings by c.settings.settings.collectAsState(initial = AppSettings())
+    var running by remember { mutableStateOf(false) }
+    var report by remember { mutableStateOf<String?>(null) }
+    var oneThreadHelps by remember { mutableStateOf(false) }
+
+    suspend fun runCheck(): String {
+        val sb = StringBuilder()
+        val loaded = c.localHost.loadedOrNull() ?: c.localHost.autoLoad(c.db.models().all(), settings)
+            ?: return "No phone model to check. Download one above (Recommended), then run the check."
+        val model = c.db.models().get(loaded.modelId) ?: return "The loaded model is not in the list any more."
+        val info = c.device.info()
+        val threads = com.gravity.ide.device.PerformanceManager.threads(settings, info)
+        val soc = if (android.os.Build.VERSION.SDK_INT >= 31) "${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}" else android.os.Build.HARDWARE
+        sb.appendLine("Phone: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · $soc · ${info.cpuCores} cores · ${android.os.Build.SUPPORTED_ABIS.firstOrNull()}")
+        sb.appendLine("Model: ${model.name} · ${model.quantization ?: "?"} · ${formatBytes(model.sizeBytes)} · ${java.io.File(model.filePath).name}")
+        sb.appendLine("Context ${loaded.contextSize} · threads $threads · ${com.gravity.ide.ai.local.LlamaBridge.systemInfo().trim()}")
+        val questions = listOf("What is the capital of France? Answer with one word." to "paris", "What is 12 + 30? Reply with the number only." to "42")
+
+        suspend fun round(label: String, handleName: String): Boolean {
+            var allOk = true
+            sb.appendLine(label)
+            for ((q, expect) in questions) {
+                val started = System.currentTimeMillis()
+                val r = c.providers.local.complete(
+                    LlmRequest(
+                        handleName,
+                        listOf(LlmMessage(Role.SYSTEM, "You are a helpful assistant. Answer briefly."), LlmMessage(Role.USER, q)),
+                        temperature = 0.1, maxOutputTokens = 24,
+                    )
+                )
+                val answer = r.text.trim().replace(Regex("\\s+"), " ")
+                val ok = answer.contains(expect, ignoreCase = true)
+                if (!ok) allOk = false
+                sb.appendLine("${if (ok) "✓" else "✗"} $q → \"${answer.take(120)}\" (${r.outputTokens} tokens, ${System.currentTimeMillis() - started} ms)")
+            }
+            return allOk
+        }
+
+        val ok = round("Answers with $threads thread(s):", loaded.name)
+        if (ok) {
+            sb.appendLine("Result: the phone model answers correctly.")
+        } else if (threads > 1) {
+            c.localHost.unload()
+            val single = c.localHost.load(model, loaded.contextSize, 1)
+            val okSingle = round("Answers with 1 thread:", single.name)
+            if (okSingle) {
+                oneThreadHelps = true
+                sb.appendLine("Result: wrong with $threads threads, correct with 1 thread. Tap \"Use 1 thread\" below to keep that.")
+            } else {
+                c.localHost.unload()
+                c.localHost.load(model, loaded.contextSize, threads)
+                sb.appendLine("Result: the answers are wrong. Please send a screenshot of this box so the problem can be fixed.")
+            }
+        } else {
+            sb.appendLine("Result: the answers are wrong. Please send a screenshot of this box so the problem can be fixed.")
+        }
+        return sb.toString()
+    }
+
+    Panel {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Check the phone AI", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Asks the phone model two easy questions and shows its answers with this phone's details. Use it if replies look like random text.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    enabled = !running && c.localHost.runtimeAvailable,
+                    onClick = {
+                        running = true
+                        oneThreadHelps = false
+                        report = null
+                        scope.launch {
+                            report = try {
+                                runCheck()
+                            } catch (e: Exception) {
+                                "The check could not run: ${e.message}"
+                            }
+                            running = false
+                        }
+                    },
+                    modifier = Modifier.testTag("phone-ai-check"),
+                ) { Text(if (running) "Checking…" else "Run check") }
+                if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+            report?.let {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.testTag("phone-ai-report"))
+                }
+            }
+            if (oneThreadHelps) {
+                TextButton(onClick = {
+                    scope.launch {
+                        c.settings.update { it.copy(localThreads = 1, performanceMode = "ADAPTIVE") }
+                        toast(context, "The phone model now uses 1 thread")
+                    }
+                }) { Text("Use 1 thread") }
             }
         }
     }
