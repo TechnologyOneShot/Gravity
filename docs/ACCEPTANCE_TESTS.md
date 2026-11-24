@@ -54,7 +54,7 @@ How results get recorded on a phone:
 | 39 | Survives process interruption | `t08`: a task left RUNNING is marked INTERRUPTED by startup recovery | **Partial**: a real force-stop was not performed |
 | 40 | No placeholder core features | Git Manager and Plugins state in the app that they are not implemented | **Not met**: see KNOWN_LIMITATIONS.md |
 
-Counts for the latest run (commit 351f3e2, 2026-11-23): standard APK 20 passed and 1 skipped (local inference needs the llama.cpp build); llama.cpp APK 21/21 passed; App Builder end to end (build, change, undo, APK, install, launch, and the Home → Build → App screen UI flow) passed in both; no FATAL EXCEPTION in logcat; 47/47 JVM unit tests pass.
+Counts for the latest run (commit bddbb9b, 2026-11-24): standard APK 22 passed and 2 skipped (both need the llama.cpp engine); llama.cpp APK 24/24 passed; App Builder end to end (build, change, undo, APK, install, launch, and the Home → Build → App screen UI flow) passed in both; no FATAL EXCEPTION in logcat; 53/53 JVM unit tests pass.
 
 ## App Builder (added after the original spec)
 
@@ -65,7 +65,10 @@ Counts for the latest run (commit 351f3e2, 2026-11-23): standard APK 20 passed a
 | APK packaged and signed on the device | `t01`: Android parses the APK (package, label), `pm install` succeeds, the app launches and loads its page | Verified by CI on each push |
 | Home → Build → App screen in the UI | `AppBuilderDeviceTest.t02` | Verified by CI on each push |
 | Manifest rewriting | `AxmlRewriterTest` against the real shell APK | JVM unit test |
-| Real AI output quality | | **Not tested automatically** (needs an API key) |
+| Builds on the phone model never fake success | `DeviceServicesTest.t12c`: real llama.cpp run of App Builder with the CI model (stories260K, 2048 context). It replied with story text (1,617 tokens), so the task was marked FAILED with the reason, index.html kept the starter page and packaging was refused | Verified by CI on each push (llama.cpp APK) |
+| A run that writes no files, or leaves the starter page, is not "completed" | `AgentEngine.complete()` checks; HTML extraction rules in `AppBuilderLocalPathTest` | JVM unit tests + `t12c` |
+| Chat controls: model pill and picker sheet, + menu (files, photos), mic | `UiNavigationTest.t03a` opens the menu and the sheet (Auto, Cloud AI, On this phone, options) | Verified by CI on each push |
+| Real AI output quality | | **Not tested automatically** (needs an API key, or a model too large for CI) |
 
 Bugs the emulator suite found and that are fixed: Navigation 2.9.0 lifecycle crash when leaving a screen ("State must be at least CREATED to be moved to DESTROYED"); navigation started from a coroutine could leave the new screen uninitialised (navigation now always runs on the main thread); closing tabs crashed Material's tab indicator; Android 14 throws inside `ZipInputStream` for `../` entries, which made ZIP import fail instead of rejecting the entry; big-endian GGUF files were reported as "Unsupported GGUF version 50331648".
 
