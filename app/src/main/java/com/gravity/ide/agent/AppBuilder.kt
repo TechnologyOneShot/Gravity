@@ -109,65 +109,29 @@ class AppBuilder(
             return body.substringBefore("\n\nDeliver a complete").substringBefore("\n\nRead the relevant files first").trim()
         }
 
+        private val fileWords = Regex(
+            "(?i)\\b(music|songs?|audio|mp3|playlists?|podcasts?|photos?|pictures?|images?|gallery|videos?|movies?|films?|files?|documents?|pdfs?|" +
+                "gaan[ae]?|gana|gane|geet|tasve?er)\\b|player|फ़ोटो|फोटो|गाना|गाने|वीडियो|संगीत|तस्वीर",
+        )
+
+        /** True when the app works with the user's own media or documents (e.g. a music player). */
+        fun usesUserFiles(request: String) = fileWords.containsMatchIn(request)
+
         /**
          * Prompt for on-device models: one self-contained HTML file in a single reply. Small
          * models cannot follow the multi-step tool protocol, but many can write one file.
          */
-        /**
-         * A short, correct example app shown to on-device models: small models follow a worked
-         * pattern (state, render(), listeners, on-screen output) far better than rules alone.
-         */
-        val EXAMPLE_APP = """
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Counter</title>
-            <style>
-            :root{--bg:#f5f5f7;--fg:#111;--accent:#2563eb}
-            @media (prefers-color-scheme:dark){:root{--bg:#0b0f17;--fg:#eee}}
-            body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;align-items:center;padding:24px}
-            #value{font-size:64px;margin:24px}
-            .row{display:flex;gap:12px}
-            button{font-size:24px;padding:16px 24px;border:0;border-radius:16px;background:var(--accent);color:#fff}
-            </style>
-            </head>
-            <body>
-            <h1>Counter</h1>
-            <div id="value">0</div>
-            <div class="row">
-            <button data-step="-1">−</button>
-            <button data-step="1">+</button>
-            <button id="reset">Reset</button>
-            </div>
-            <script>
-            let count = Number(localStorage.getItem('count')) || 0;
-            const valueEl = document.getElementById('value');
-            function render() {
-              valueEl.textContent = count;
-              localStorage.setItem('count', count);
-            }
-            document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
-              count += Number(b.dataset.step);
-              render();
-            }));
-            document.getElementById('reset').addEventListener('click', () => { count = 0; render(); });
-            render();
-            </script>
-            </body>
-            </html>
-        """.trimIndent()
-
         fun directPrompt(request: String, currentHtml: String?): Pair<String, String> {
             val system = "You are an expert web developer. You write small, complete, working mobile web apps as ONE self-contained HTML file " +
-                "with inline <style> and <script>. No external libraries, no CDNs, no comments, no explanations: output only the code.\n\n" +
-                "Example of the expected structure (a different app, for style only: state variables, a render() function that updates " +
-                "elements on screen, buttons wired with addEventListener):\n```html\n$EXAMPLE_APP\n```"
+                "with inline <style> and <script>. No external libraries, no CDNs, no comments, no explanations: output only the code."
             val rules = "Rules: one HTML file with a viewport meta tag; large touch-friendly buttons; a clean modern look; keep it compact " +
-                "(about 100–200 lines, short CSS); every button and feature must really work: define every function you call, and show results in an element that is on screen. Use localStorage only if the app must remember " +
-                "data. If the app works with the user's own files (music, photos, videos, documents), let them choose files with " +
-                "<input type=\"file\"> (multiple where useful) and use URL.createObjectURL; never use made-up file names or URLs."
+                "(about 100–200 lines, short CSS); every button and feature must really work: define every function you call, and show results in an element that is on screen. Use localStorage only if the app must remember data." +
+                if (usesUserFiles(request) || currentHtml?.contains("type=\"file\"") == true) {
+                    " The user picks their own files with <input type=\"file\"> (multiple where useful); use URL.createObjectURL to play or show " +
+                        "them. Never use made-up file names or URLs."
+                } else {
+                    ""
+                }
             val user = if (currentHtml == null) {
                 "Build this app: $request\n\n$rules"
             } else {

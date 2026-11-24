@@ -125,6 +125,17 @@ class AppBuilderLocalPathTest {
         assertFalse(AppBuilder.isPlaceholder(page))
     }
 
+    @Test fun fileGuidanceOnlyForAppsThatUseTheUsersFiles() {
+        for (r in listOf("music player bana do", "a photo gallery", "video player", "mere gaane chalane wala app", "PDF reader", "गाना सुनने का ऐप")) {
+            assertTrue(r, AppBuilder.usesUserFiles(r))
+            assertTrue(r, AppBuilder.directPrompt(r, null).second.contains("<input type=\"file\">"))
+        }
+        for (r in listOf("calculator bana do", "a to-do list app", "tic tac toe game", "BMI calculator", "my profile page")) {
+            assertFalse(r, AppBuilder.usesUserFiles(r))
+            assertFalse(r, AppBuilder.directPrompt(r, null).second.contains("<input type=\"file\">"))
+        }
+    }
+
     @Test fun directPromptCarriesTheRequestAndCurrentPage() {
         val (system, user) = AppBuilder.directPrompt("music player", null)
         assertTrue(system.contains("ONE self-contained HTML file"))
