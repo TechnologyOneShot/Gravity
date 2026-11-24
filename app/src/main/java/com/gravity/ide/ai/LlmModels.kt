@@ -43,13 +43,13 @@ sealed interface LlmEvent {
     data class Usage(val inputTokens: Int, val outputTokens: Int) : LlmEvent
     data class Sources(val sources: List<WebSource>) : LlmEvent
     data class Done(val finishReason: String?) : LlmEvent
-    /** The provider retired [from]; the request was retried with [to]. */
-    data class ModelSwitched(val from: String, val to: String) : LlmEvent
+    /** The request was retried with [to] instead of [from] (retired model, or its free quota is used up); [reason] says why. */
+    data class ModelSwitched(val from: String, val to: String, val reason: String = "") : LlmEvent
 }
 
 data class WebSource(val title: String, val url: String, val snippet: String = "")
 
-class LlmException(
+open class LlmException(
     message: String,
     val httpCode: Int? = null,
     val retryable: Boolean = false,

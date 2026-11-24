@@ -20,6 +20,15 @@ data class ResolvedModel(val provider: LlmProvider, val model: String, val entit
 
 class NoProviderException(message: String, val waitForNetwork: Boolean = false) : Exception(message)
 
+/** Every model of a cloud key has used up its free quota for now. */
+class QuotaExhaustedException(val providerName: String, val retryIn: String?, cause: LlmException) : LlmException(
+    "$providerName's free limit is used up for now" + (retryIn?.let { " (it resets in about $it)" } ?: "") +
+        ". Gravity tried this key's other models too. Wait and try again, or use the phone model.",
+    httpCode = 429,
+) {
+    init { initCause(cause) }
+}
+
 /**
  * Builds provider clients from stored configuration and applies the operating-mode rules:
  * Local-only never touches the network; Cloud-only never uses the local model; Hybrid/Auto
@@ -176,15 +185,69 @@ class ProviderRegistry(
                 return inner.stream(request.copy(model = chosen), onEvent)
             }
             var emitted = false
+            val start = exhaustedNow(entity, request.model)?.let { firstAvailable(entity, request.model) } ?: request.model
+            if (start != request.model) onEvent(LlmEvent.ModelSwitched(request.model, start, "${request.model}'s free limit is used up for now"))
             try {
-                inner.stream(request) { emitted = true; onEvent(it) }
+                inner.stream(request.copy(model = start)) { emitted = true; onEvent(it) }
             } catch (e: LlmException) {
-                if (emitted || !ModelPicker.isModelUnavailable(e)) throw e
-                val replacement = repairModel(entity, request.model) ?: throw e
-                onEvent(LlmEvent.ModelSwitched(request.model, replacement))
-                inner.stream(request.copy(model = replacement), onEvent)
+                if (emitted) throw e
+                when {
+                    ModelPicker.isQuotaExhausted(e) -> streamWithQuotaFallback(request, start, e, onEvent)
+                    ModelPicker.isModelUnavailable(e) -> {
+                        val replacement = repairModel(entity, start) ?: throw e
+                        onEvent(LlmEvent.ModelSwitched(start, replacement))
+                        inner.stream(request.copy(model = replacement), onEvent)
+                    }
+                    else -> throw e
+                }
             }
         }
+
+        /** [failed]'s quota is used up: try the key's other Gemini models (each has its own free quota). */
+        private suspend fun streamWithQuotaFallback(request: LlmRequest, failed: String, error: LlmException, onEvent: (LlmEvent) -> Unit) {
+            markExhausted(entity, failed, error)
+            val models = try { inner.listModels() } catch (_: Exception) { throw error }
+            var last: LlmException = error
+            var from = failed
+            for (candidate in ModelPicker.quotaFallbacks(models, failed, exhaustedSet(entity)).take(4)) {
+                var emitted = false
+                try {
+                    onEvent(LlmEvent.ModelSwitched(from, candidate, "$from's free limit is used up for now"))
+                    inner.stream(request.copy(model = candidate)) { emitted = true; onEvent(it) }
+                    events.log(EventCategory.PROVIDER, "Free limit of $failed used up: answered with $candidate", error.message.orEmpty().take(300), EventLevel.WARN)
+                    return
+                } catch (e: LlmException) {
+                    if (emitted || !(ModelPicker.isQuotaExhausted(e) || ModelPicker.isModelUnavailable(e))) throw e
+                    markExhausted(entity, candidate, e)
+                    last = e
+                    from = candidate
+                }
+            }
+            throw QuotaExhaustedException(entity.name, ModelPicker.retryHint(error), last)
+        }
+    }
+
+    // Models whose free quota ran out, per provider, until about when (in memory; resets on restart).
+    private val exhausted = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun markExhausted(entity: ProviderEntity, model: String, e: Throwable) {
+        val hint = Regex("retry in (?:(\\d+)h)?(?:(\\d+)m)?(\\d+(?:\\.\\d+)?)s", RegexOption.IGNORE_CASE).find(e.message.orEmpty())
+        val ms = hint?.let { m ->
+            ((m.groupValues[1].toLongOrNull() ?: 0) * 3600 + (m.groupValues[2].toLongOrNull() ?: 0) * 60 + (m.groupValues[3].toDoubleOrNull() ?: 0.0).toLong() + 1) * 1000
+        } ?: (60L * 60 * 1000)
+        exhausted["${entity.id}/$model"] = System.currentTimeMillis() + ms
+    }
+
+    private fun exhaustedNow(entity: ProviderEntity, model: String): Long? =
+        exhausted["${entity.id}/$model"]?.takeIf { it > System.currentTimeMillis() }
+
+    private fun exhaustedSet(entity: ProviderEntity): Set<String> =
+        exhausted.filter { it.key.startsWith("${entity.id}/") && it.value > System.currentTimeMillis() }.keys.map { it.substringAfter('/') }.toSet()
+
+    /** The first model of this key that is not known to be out of quota, or null if none is known. */
+    private suspend fun firstAvailable(entity: ProviderEntity, preferred: String): String? {
+        val models = try { build(entity).listModels() } catch (_: Exception) { return null }
+        return ModelPicker.quotaFallbacks(models, preferred, exhaustedSet(entity)).firstOrNull()
     }
 
     /** Real connection test: lists models with the stored credentials. */

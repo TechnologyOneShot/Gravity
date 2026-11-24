@@ -252,7 +252,16 @@ class AgentEngine(
     private suspend fun runSingle(task: AgentTaskEntity, project: ProjectEntity) {
         val resolved = resolveOrWait(task.id, task.providerId, task.model, project) ?: return
         if (AppBuilder.isBuilderInstruction(task.instruction)) {
-            runSingleFileApp(task, project, resolved)
+            try {
+                runSingleFileApp(task, project, resolved)
+            } catch (e: Exception) {
+                // The cloud key's free quota is used up (all its models): build with the phone model if there is one.
+                if (resolved.provider.isLocal || !com.gravity.ide.core.ModelPicker.isQuotaExhausted(e)) throw e
+                val phone = runCatching { registry.resolve(com.gravity.ide.ai.local.LocalLlamaProvider.ID, null) }.getOrNull()?.takeIf { it.provider.isLocal } ?: throw e
+                events.log(EventCategory.PROVIDER, "Cloud quota used up: building with the phone model", e.message.orEmpty(), EventLevel.WARN, taskId = task.id)
+                stage(task.id, "Cloud AI limit reached; continuing with the phone model (${phone.model})")
+                runSingleFileApp(task, project, phone)
+            }
             return
         }
         val s = settings.current()
@@ -594,8 +603,15 @@ class AgentEngine(
             val repairRoom = budget(rs, ru)
             if (repairRoom == null || repairRoom >= 1100) {
                 stage(task.id, "The test found ${report.errors.size} error(s); fixing them")
-                val fix = ask(rs, ru, repairRoom)
-                val fixed = AppBuilder.extractHtml(fix.text)
+                val fix = try {
+                    ask(rs, ru, repairRoom)
+                } catch (e: Exception) {
+                    // A used-up quota must not throw away the app that was already written.
+                    if (!com.gravity.ide.core.ModelPicker.isQuotaExhausted(e)) throw e
+                    events.log(EventCategory.PROVIDER, "Could not ask for a fix: the AI's free limit is used up", e.message.orEmpty(), EventLevel.WARN, taskId = task.id)
+                    null
+                }
+                val fixed = fix?.let { AppBuilder.extractHtml(it.text) }
                 if (fixed != null && fixed != html) {
                     write(fixed, "write_file (fix after test)")
                     stage(task.id, "Testing the fixed app")
@@ -606,7 +622,7 @@ class AgentEngine(
                     } else {
                         write(html, "write_file (fix made it worse; first version restored)")
                     }
-                } else {
+                } else if (fix != null) {
                     events.log(EventCategory.AGENT, "The fix was not a complete page; keeping the first version", fix.text.take(20_000), EventLevel.WARN, taskId = task.id)
                 }
             }

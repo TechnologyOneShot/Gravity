@@ -79,7 +79,9 @@ object Http {
         } catch (_: Exception) {
             raw
         }.take(600)
-        val retryable = code == 429 || code >= 500
+        // A used-up daily quota does not come back in seconds: don't retry it, switch models instead.
+        val dailyQuota = code == 429 && message.contains("per day", ignoreCase = true)
+        val retryable = (code == 429 && !dailyQuota) || code >= 500
         val hint = when (code) {
             400 -> "Bad request"
             401, 403 -> "Authentication failed — check the API key"

@@ -10,10 +10,12 @@ set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+# llamafile sgemm does not support Android (garbage output on ARM phones); llama.cpp's Android docs turn it off.
+set(GGML_LLAMAFILE OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${LLAMA_DIR} llama-build)
 
-add_library(gravity_llama SHARED gravity_llama.cpp)
+add_library(gravity_llama SHARED gravity_llama.cpp gravity_core.cpp)
 target_include_directories(gravity_llama PRIVATE ${LLAMA_DIR}/include)
 target_link_libraries(gravity_llama llama ggml android log)

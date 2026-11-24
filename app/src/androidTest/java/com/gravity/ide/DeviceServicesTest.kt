@@ -382,6 +382,41 @@ class DeviceServicesTest {
         }
     }
 
+    /**
+     * A real instruct model (Qwen2.5-0.5B-Instruct Q4_K_M, quantized like the models users run)
+     * through the app's own download, load and chat path: the answer must be correct, not just
+     * "some tokens". Catches prompt-format and inference bugs that a tiny story model hides.
+     */
+    @Test
+    fun t12d_realInstructModelAnswersCorrectly() {
+        if (!c.localHost.runtimeAvailable) {
+            Ci.log("local-qwen", "Skipped: ${c.localHost.runtimeError}")
+            Assume.assumeTrue("llama.cpp runtime is not bundled in this build", false)
+        }
+        val repo = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
+        val file = runBlocking { c.models.listHubFiles(repo) }.firstOrNull { it.path == "qwen2.5-0.5b-instruct-q4_k_m.gguf" }
+        assertNotNull("qwen2.5-0.5b-instruct-q4_k_m.gguf not found in $repo", file)
+        Ci.log("local-qwen", "Downloading $repo/${file!!.path} (${file.size} bytes, sha256 ${file.sha256})")
+        val entity = runBlocking { c.models.enqueueHubDownload(repo, file, null) }
+        val done = poll(10 * 60_000L) {
+            c.db.models().get(entity.id)?.takeIf { it.status == ModelStatus.READY.name || it.status == ModelStatus.FAILED.name }
+        }
+        assertEquals("Download did not finish: ${done?.error}", ModelStatus.READY.name, done?.status)
+        val loaded = runBlocking { c.localHost.unload(); c.localHost.load(done!!, 2048, 2) }
+        val start = System.currentTimeMillis()
+        val r = runBlocking {
+            c.providers.local.complete(
+                LlmRequest(
+                    loaded.name,
+                    listOf(LlmMessage(Role.SYSTEM, "You are a helpful assistant. Answer briefly."), LlmMessage(Role.USER, "What is the capital of France? Answer with one word.")),
+                    temperature = 0.2, maxOutputTokens = 24,
+                )
+            )
+        }
+        Ci.log("local-qwen", "Answer in ${System.currentTimeMillis() - start} ms (${r.outputTokens} tokens, finish=${r.finishReason}): ${r.text.take(200)}")
+        assertTrue("The model's answer is wrong or garbled: ${r.text.take(200)}", r.text.contains("Paris", ignoreCase = true))
+    }
+
     @Test
     fun t13_offlineMode() {
         val project = runBlocking { c.db.projects().all().first { it.name == "ci-android_compose" } }

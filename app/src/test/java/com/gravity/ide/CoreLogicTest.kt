@@ -318,6 +318,21 @@ class SyntaxHighlighterTest {
 }
 
 class ModelPickerTest {
+    @Test fun recognisesUsedUpFreeQuotaAndPlansFallbacks() {
+        val daily = com.gravity.ide.ai.LlmException(
+            "Rate limited — retry later: You exceeded your current quota. * Quota exceeded for metric: generate_content_free_tier_requests, limit: 20, " +
+                "model: gemini-3.8-flash, description: Generate content requests per day limit exceeded on Free Tier. Please retry in 25m25.077803779s.",
+            httpCode = 429,
+        )
+        assertTrue(ModelPicker.isQuotaExhausted(daily))
+        assertFalse(ModelPicker.isModelUnavailable(daily))
+        assertEquals("26 min", ModelPicker.retryHint(daily))
+        assertFalse(ModelPicker.isQuotaExhausted(com.gravity.ide.ai.LlmException("Bad request: invalid argument", httpCode = 400)))
+        val listed = listOf("gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.5-pro", "gemini-3.1-pro-preview", "gemini-3.1-flash-image", "text-embedding-004")
+        assertEquals(listOf("gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.5-pro"), ModelPicker.quotaFallbacks(listed, "gemini-3.8-flash", emptySet()))
+        assertEquals(listOf("gemini-3.5-flash-lite", "gemini-3.5-pro"), ModelPicker.quotaFallbacks(listed, "gemini-3.8-flash", setOf("gemini-3.5-flash")))
+    }
+
     @Test fun ranksModelsForThePicker() {
         val listed = listOf("gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-pro-preview", "text-embedding-004", "gemini-3.5-pro")
         val ranked = ModelPicker.rankForChat(listed.map { "models/$it" })

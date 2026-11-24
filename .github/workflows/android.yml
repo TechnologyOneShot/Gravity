@@ -145,6 +145,56 @@ jobs:
           name: phone-model-apps-${{ matrix.model }}
           path: phone-model-apps/
 
+  arm64-native-check:
+    # The app's inference core (gravity_core.cpp), built for arm64 phones with the same NDK, API
+    # level and llama.cpp settings as the APK, run under ARM emulation (qemu) with a real small
+    # instruct model. Built with and without llamafile, which llama.cpp says is not for Android.
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        llamafile: [OFF, ON]
+    name: arm64-native-check (llamafile ${{ matrix.llamafile }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install NDK and qemu
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-user-static file > /dev/null
+
+      - name: Fetch llama.cpp b6000
+        run: git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
+
+      - name: Build gravity-cli for arm64-v8a (NDK 27, API 26, like the APK)
+        run: |
+          NDK="$ANDROID_HOME/ndk/27.0.12077973"
+          cmake -S tools/arm-check -B /tmp/arm-build -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_DIR=/tmp/llama.cpp -DCHECK_LLAMAFILE=${{ matrix.llamafile }} > /tmp/cmake.log
+          grep -i "llamafile\|ARM" /tmp/cmake.log | head -20 || true
+          cmake --build /tmp/arm-build --target gravity-cli -j"$(nproc)"
+          file /tmp/arm-build/gravity-cli
+
+      - name: Download Qwen2.5-0.5B-Instruct Q4_K_M
+        run: curl -fL --retry 3 -o /tmp/model.gguf https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
+
+      - name: Ask on emulated ARM CPUs
+        run: |
+          set +e
+          ok=0
+          for cpu in max cortex-a76; do
+            echo "=== qemu -cpu $cpu, llamafile ${{ matrix.llamafile }} ==="
+            timeout 1500 qemu-aarch64-static -cpu $cpu /tmp/arm-build/gravity-cli /tmp/model.gguf "What is the capital of France? Answer with one word." 4 2>/tmp/stderr-$cpu.txt | tee /tmp/answer-$cpu.txt
+            echo "exit=$?"; tail -5 /tmp/stderr-$cpu.txt
+            if grep -qi "^ANSWER:.*paris" /tmp/answer-$cpu.txt; then echo "VERDICT cpu=$cpu: coherent (Paris)"; else echo "VERDICT cpu=$cpu: WRONG"; ok=1; fi
+          done
+          # The app ships with llamafile OFF: that build must answer correctly.
+          if [ "${{ matrix.llamafile }}" = "OFF" ]; then exit $ok; fi
+          exit 0
+
   emulator-tests:
     # Installs the debug APK on an Android 14 emulator and drives the real app:
     # every screen, chat, self-test, builds, backup, credentials, downloads, offline mode.

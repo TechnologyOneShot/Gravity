@@ -60,6 +60,9 @@ android {
                             "-DLLAMA_BUILD_TESTS=OFF",
                             "-DLLAMA_BUILD_EXAMPLES=OFF",
                             "-DLLAMA_BUILD_SERVER=OFF",
+                            // llamafile's sgemm does not support Android: with it on, phones (ARM) produce
+                            // garbage text. llama.cpp's own Android build and example turn it off.
+                            "-DGGML_LLAMAFILE=OFF",
                             "-DCMAKE_BUILD_TYPE=Release"
                         )
                     )
