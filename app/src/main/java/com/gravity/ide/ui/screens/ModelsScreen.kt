@@ -499,10 +499,21 @@ private fun PhoneAiCheck() {
         val bridge = com.gravity.ide.ai.local.LlamaBridge
         sb.appendLine("Engines: ${bridge.engines.joinToString(", ") { it.label }.ifEmpty { "none" }}" +
             (bridge.fastUnavailableReason?.let { " (fast engine: $it)" } ?: "") + " · HWCAP 0x${java.lang.Long.toHexString(bridge.cpuHwcap())}")
-        c.db.models().all().filter { it.status == "READY" }.forEach { m ->
+        val ready = c.db.models().all().filter { it.status == "READY" }
+        val lastId = c.localHost.lastModelId()
+        ready.forEach { m ->
+            val file = java.io.File(m.filePath)
+            // Read the file back now (not the checksum saved at download): shows if the stored copy changed.
+            val now = if (file.length() <= 6L * 1024 * 1024 * 1024 && (m.id == lastId || ready.size <= 2)) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { sha256Of(file) }.getOrNull() }
+            } else null
             val hash = when {
-                m.sha256Expected == null -> "no published checksum to compare"
-                m.sha256Expected.equals(m.sha256Actual, ignoreCase = true) -> "checksum matches Hugging Face"
+                !file.exists() -> "FILE IS MISSING"
+                file.length() != m.sizeBytes -> "SIZE DIFFERS (${formatBytes(file.length())} on disk) — download it again"
+                m.sha256Expected == null -> "no published checksum to compare" + (now?.let { " (sha256 ${it.take(12)}…)" } ?: "")
+                now != null && !now.equals(m.sha256Expected, ignoreCase = true) -> "FILE ON DISK DIFFERS from Hugging Face — delete it and download again"
+                now != null -> "file on disk re-checked: matches Hugging Face"
+                m.sha256Expected.equals(m.sha256Actual, ignoreCase = true) -> "checksum matched Hugging Face at download"
                 else -> "CHECKSUM DIFFERS from Hugging Face"
             }
             sb.appendLine("File: ${m.name} · ${formatBytes(m.sizeBytes)} · $hash")
@@ -606,4 +617,17 @@ private fun PhoneAiCheck() {
             }
         }
     }
+}
+
+private fun sha256Of(file: java.io.File): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    file.inputStream().buffered(1 shl 20).use { input ->
+        val buf = ByteArray(1 shl 20)
+        while (true) {
+            val r = input.read(buf)
+            if (r < 0) break
+            digest.update(buf, 0, r)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
 }

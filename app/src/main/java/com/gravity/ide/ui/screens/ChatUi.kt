@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -595,6 +596,7 @@ internal fun ModelPickerSheet(
     var confirmLocal by remember { mutableStateOf<Pair<LocalModelEntity, String>?>(null) }
     var loadingId by remember { mutableStateOf<String?>(null) }
     val loaded = (localState as? LocalModelHost.State.Ready)?.loaded
+    var loadFailure by remember { mutableStateOf<String?>(null) }
 
     fun useLocal(m: LocalModelEntity) {
         scope.launch {
@@ -605,8 +607,23 @@ internal fun ModelPickerSheet(
                 onUpdate(chat.copy(providerId = LocalLlamaProvider.ID, model = null))
                 toast(context, "Using ${m.name} on this phone")
                 onDismiss()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                toast(context, "Could not load ${m.name}: ${e.message}")
+                // The whole reason, not a cut-off toast: what failed, every way Gravity tried, and the phone.
+                loadFailure = buildString {
+                    appendLine(e.message ?: e.toString())
+                    val attempts = c.localHost.lastAttempts
+                    if (attempts.isNotEmpty()) {
+                        appendLine()
+                        appendLine("What Gravity tried:")
+                        attempts.forEach { appendLine("• $it") }
+                    }
+                    appendLine()
+                    append("Phone: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE}")
+                    if (android.os.Build.VERSION.SDK_INT >= 31) append(" · ${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}")
+                    append(" · app ${runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()}")
+                }
             } finally {
                 loadingId = null
             }
@@ -714,6 +731,32 @@ internal fun ModelPickerSheet(
                 }
             }
         }
+    }
+
+    loadFailure?.let { report ->
+        val clipboard = LocalClipboardManager.current
+        AlertDialog(
+            onDismissRequest = { loadFailure = null },
+            modifier = Modifier.testTag("load-failure"),
+            title = { Text("The phone model did not load") },
+            text = {
+                SelectionContainer {
+                    Text(
+                        report, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { clipboard.setText(AnnotatedString(report)); toast(context, "Copied. Paste it in your message.") }) { Text("Copy") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { loadFailure = null; onDismiss(); go(Routes.models(0)) }) { Text("Full check") }
+                    TextButton(onClick = { loadFailure = null }) { Text("Close") }
+                }
+            },
+        )
     }
 
     confirmLocal?.let { (m, warn) ->
