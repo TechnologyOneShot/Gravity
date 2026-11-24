@@ -54,7 +54,7 @@ How results get recorded on a phone:
 | 39 | Survives process interruption | `t08`: a task left RUNNING is marked INTERRUPTED by startup recovery | **Partial**: a real force-stop was not performed |
 | 40 | No placeholder core features | Git Manager and Plugins state in the app that they are not implemented | **Not met**: see KNOWN_LIMITATIONS.md |
 
-Counts for the latest run (commit ad1f410, 2026-11-24): standard APK 25 passed and 3 skipped (they need the llama.cpp engine); llama.cpp APK 28/28 passed; App Builder end to end passed in both; no FATAL EXCEPTION from Gravity or its generated apps in logcat; JVM unit tests pass.
+Counts for the latest run (commit c595996, 2026-11-24): standard APK passed (llama.cpp-only tests skipped); llama.cpp APK 28/28 passed, including Qwen2.5-0.5B-Instruct answering correctly with and without mmap and the offline auto-load; ARM emulation of the phone code passed for every model, thread count and the no-mmap mode; no FATAL EXCEPTION from Gravity or its generated apps.
 
 ## App Builder (added after the original spec)
 
