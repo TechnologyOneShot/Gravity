@@ -117,7 +117,7 @@ class AppBuilder(
             val system = "You are an expert web developer. You write small, complete, working mobile web apps as ONE self-contained HTML file " +
                 "with inline <style> and <script>. No external libraries, no CDNs, no comments, no explanations: output only the code."
             val rules = "Rules: one HTML file with a viewport meta tag; large touch-friendly buttons; a clean modern look; keep it compact " +
-                "(about 100–200 lines, short CSS); every button and feature must really work. Use localStorage only if the app must remember " +
+                "(about 100–200 lines, short CSS); every button and feature must really work: define every function you call, and show results in an element that is on screen. Use localStorage only if the app must remember " +
                 "data, and <input type=\"file\"> only if it needs the user's files (music, photos)."
             val user = if (currentHtml == null) {
                 "Build this app: $request\n\n$rules"

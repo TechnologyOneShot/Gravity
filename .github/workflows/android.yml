@@ -82,12 +82,25 @@ jobs:
           path: app/build/reports/tests/
 
   phone-model-app-check:
-    # Can a real small phone model write an app with App Builder's single-file prompt? Runs the
-    # exact prompts (exported by a unit test) through Qwen2.5-Coder-1.5B-Instruct Q4_K_M with
-    # llama.cpp b6000 on the runner, with the app's sampler settings, and checks each page.
+    # Can real phone-sized models write a working app with App Builder's single-file prompt?
+    # Runs the exact prompts (exported by a unit test) through each model with llama.cpp b6000
+    # on the runner, with the app's sampler settings, then uses each app in jsdom
+    # (calculator: 7 + 8 = 15; to-do: a typed task is listed; music player: file picker,
+    # audio and play button). A quality report: only a run that cannot execute fails.
     needs: debug-apk
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: Qwen2.5-Coder-1.5B-Instruct-Q4_K_M
+            url: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+          - model: Qwen2.5-Coder-3B-Instruct-Q4_K_M
+            url: https://huggingface.co/bartowski/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf
+          - model: Qwen2.5-Coder-7B-Instruct-Q4_K_M
+            url: https://huggingface.co/bartowski/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
+    name: phone-model-app-check (${{ matrix.model }})
     steps:
       - uses: actions/checkout@v4
 
@@ -102,17 +115,22 @@ jobs:
           cmake -S /tmp/llama.cpp -B /tmp/llama-build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF
           cmake --build /tmp/llama-build --target llama-server -j"$(nproc)"
 
-      - name: Download Qwen2.5-Coder-1.5B-Instruct Q4_K_M
+      - name: Download ${{ matrix.model }}
         run: |
-          curl -fL --retry 3 -o /tmp/model.gguf https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+          curl -fL --retry 3 -o /tmp/model.gguf "${{ matrix.url }}"
           ls -l /tmp/model.gguf
           sha256sum /tmp/model.gguf
 
-      - name: Generate apps with the App Builder prompt
+      - name: Install jsdom (for using the generated apps)
+        run: npm install --prefix /tmp/smoke jsdom@24 --no-audit --no-fund
+
+      - name: Generate and use apps
+        env:
+          NODE_PATH: /tmp/smoke/node_modules
         run: |
           /tmp/llama-build/bin/llama-server -m /tmp/model.gguf -c 8192 -np 1 -t "$(nproc)" --port 8089 > /tmp/server.log 2>&1 &
-          for i in $(seq 1 180); do curl -sf http://127.0.0.1:8089/health > /dev/null && break; sleep 1; done
-          python3 .github/scripts/phone-model-check.py prompts http://127.0.0.1:8089 phone-model-apps
+          for i in $(seq 1 300); do curl -sf http://127.0.0.1:8089/health > /dev/null && break; sleep 1; done
+          python3 .github/scripts/phone-model-check.py prompts http://127.0.0.1:8089 phone-model-apps 2
 
       - name: Server log
         if: always()
@@ -121,7 +139,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: phone-model-apps
+          name: phone-model-apps-${{ matrix.model }}
           path: phone-model-apps/
 
   emulator-tests:

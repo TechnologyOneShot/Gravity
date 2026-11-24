@@ -6,8 +6,12 @@ the reply started with the app's prefix, temperature 0.2, top-k 40, top-p 0.95, 
 repetition penalty 1.05 over 64 tokens, stop at </html>, an 8192-token context. Then applies
 the app's acceptance rule (a complete page) and checks that the JavaScript parses.
 
-Usage: phone-model-check.py <prompts dir> <server url> <out dir>
-Exit code 1 if any app is not a complete page with valid JavaScript.
+Each app is then used in jsdom (app-smoke-test.js): the calculator must show 15 after
+7 + 8 =, the to-do list must list a typed task, the music player must have a file picker,
+an audio player and a play button.
+
+Usage: phone-model-check.py <prompts dir> <server url> <out dir> [runs per app]
+This is a quality report: it exits 1 only if the model could not be run at all.
 """
 import json
 import os
@@ -48,10 +52,20 @@ def extract_html(reply):
     return html if ok else None
 
 
+def smoke(kind, path):
+    here = os.path.dirname(os.path.abspath(__file__))
+    r = subprocess.run(["node", os.path.join(here, "app-smoke-test.js"), kind, path], capture_output=True, text=True, timeout=120)
+    try:
+        return json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        return {"ok": False, "detail": f"smoke test did not run: {r.stderr.strip()[:300]}", "errors": []}
+
+
 def main():
     prompts_dir, server, out_dir = sys.argv[1:4]
+    runs = int(sys.argv[4]) if len(sys.argv) > 4 else 1
     os.makedirs(out_dir, exist_ok=True)
-    failures = 0
+    summary = []
     for name in sorted(os.listdir(prompts_dir)):
         if not name.endswith(".json"):
             continue
@@ -63,44 +77,49 @@ def main():
         )
         n_prompt = len(post(server + "/tokenize", {"content": prompt})["tokens"])
         n_predict = min(CTX - n_prompt - 64, 7500)
-        t0 = time.time()
-        r = post(server + "/completion", {
-            "prompt": prompt, "n_predict": n_predict, "temperature": 0.2, "top_k": 40, "top_p": 0.95,
-            "min_p": 0.05, "repeat_penalty": 1.05, "repeat_last_n": 64, "stop": p["stop"],
-            "samplers": ["penalties", "top_k", "top_p", "min_p", "temperature"], "cache_prompt": False,
-        })
-        secs = time.time() - t0
-        content = r.get("content", "")
-        reply = p["prefix"] + content
-        stopped_word = r.get("stop_type") == "word" or bool(r.get("stopping_word")) or r.get("stopped_word") is True
-        if stopped_word and "</html>" not in content.lower():
-            reply += "</html>"  # llama-server leaves the stop string out of the content
-        predicted = r.get("tokens_predicted", 0)
-        html = extract_html(reply)
-        print(f"=== {p['name']}: prompt {n_prompt} tokens, wrote {predicted} tokens in {secs:.0f} s "
-              f"(stop: {r.get('stop_type', '?')}), fits a 4096 context: {n_prompt + predicted < 4096} ===")
-        open(os.path.join(out_dir, f"{p['name']}.reply.txt"), "w").write(reply)
-        if html is None:
-            failures += 1
-            print(f"RESULT {p['name']}: FAIL, no complete page. Reply ends with: {reply[-400:]!r}")
-            continue
-        path = os.path.join(out_dir, f"{p['name']}.html")
-        open(path, "w").write(html)
-        scripts = re.findall(r"<script[^>]*>([\s\S]*?)</script>", html, re.I)
-        js_path = os.path.join(out_dir, f"{p['name']}.js")
-        open(js_path, "w").write("\n;\n".join(scripts))
-        check = subprocess.run(["node", "--check", js_path], capture_output=True, text=True)
-        buttons = len(re.findall(r"<button", html, re.I))
-        inputs = len(re.findall(r"<input", html, re.I))
-        verdict = "PASS" if check.returncode == 0 and scripts else "FAIL"
-        if verdict == "FAIL":
-            failures += 1
-        print(f"RESULT {p['name']}: {verdict}: page {len(html)} chars, {len(scripts)} script block(s), "
-              f"JavaScript {'parses' if check.returncode == 0 else 'has a syntax error: ' + check.stderr.strip()[:300]}, "
-              f"{buttons} <button>, {inputs} <input>")
-        print(html)
-        print()
-    sys.exit(1 if failures else 0)
+        for run in range(1, runs + 1):
+            tag = f"{p['name']}#{run}"
+            t0 = time.time()
+            r = post(server + "/completion", {
+                "prompt": prompt, "n_predict": n_predict, "temperature": 0.2, "top_k": 40, "top_p": 0.95,
+                "min_p": 0.05, "repeat_penalty": 1.05, "repeat_last_n": 64, "stop": p["stop"], "seed": run,
+                "samplers": ["penalties", "top_k", "top_p", "min_p", "temperature"], "cache_prompt": False,
+            })
+            secs = time.time() - t0
+            content = r.get("content", "")
+            reply = p["prefix"] + content
+            if r.get("stop_type") == "word" and "</html>" not in content.lower():
+                reply += "</html>"  # llama-server leaves the stop string out of the content
+            predicted = r.get("tokens_predicted", 0)
+            print(f"=== {tag}: prompt {n_prompt} tokens, wrote {predicted} tokens in {secs:.0f} s (stop: {r.get('stop_type', '?')}) ===")
+            open(os.path.join(out_dir, f"{p['name']}-{run}.reply.txt"), "w").write(reply)
+            html = extract_html(reply)
+            if html is None:
+                summary.append((tag, "FAIL", predicted, "no complete page"))
+                print(f"RESULT {tag}: FAIL, no complete page. Reply ends with: {reply[-300:]!r}")
+                continue
+            path = os.path.join(out_dir, f"{p['name']}-{run}.html")
+            open(path, "w").write(html)
+            scripts = re.findall(r"<script[^>]*>([\s\S]*?)</script>", html, re.I)
+            js_path = os.path.join(out_dir, f"{p['name']}-{run}.js")
+            open(js_path, "w").write("\n;\n".join(scripts))
+            syntax = subprocess.run(["node", "--check", js_path], capture_output=True, text=True)
+            if syntax.returncode != 0:
+                summary.append((tag, "FAIL", predicted, "JavaScript syntax error"))
+                print(f"RESULT {tag}: FAIL, JavaScript syntax error: {syntax.stderr.strip()[:300]}")
+            else:
+                use = smoke(p["name"], path)
+                verdict = "PASS" if use["ok"] else "FAIL"
+                summary.append((tag, verdict, predicted, use["detail"]))
+                print(f"RESULT {tag}: {verdict}: {use['detail']}" + (f" (errors: {use['errors']})" if use.get("errors") else ""))
+            print(html)
+            print()
+    print("\n== Summary ==")
+    for tag, verdict, tokens, detail in summary:
+        print(f"{verdict}  {tag:16} {tokens:5} tokens  {detail}")
+    passed = sum(1 for s in summary if s[1] == "PASS")
+    print(f"WORKING APPS: {passed}/{len(summary)}")
+    sys.exit(0 if summary else 1)
 
 
 if __name__ == "__main__":
