@@ -73,7 +73,7 @@ Java_com_gravity_ide_ai_local_LlamaBridge_unload(JNIEnv *, jobject, jlong handle
 extern "C" JNIEXPORT jint JNICALL
 Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong handle, jobjectArray jroles,
                                                     jobjectArray jcontents, jint max_tokens, jfloat temperature,
-                                                    jfloat top_p, jobject callback) {
+                                                    jfloat top_p, jint n_ctx_req, jstring jprefix, jobject callback) {
     auto *s = reinterpret_cast<Session *>(handle);
     if (!s || !s->model) {
         set_error("Model not loaded");
@@ -104,6 +104,11 @@ Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong h
         return -1;
     }
     std::string prompt(buf.data(), len);
+    // Optional start of the assistant's reply (e.g. "```html"), so the model continues from it.
+    prompt += to_string(env, jprefix);
+    // Context for this request: the size the model was loaded with, or a larger one asked for
+    // by the caller (contexts are created per request, so this costs memory only while generating).
+    const int n_ctx = n_ctx_req > s->n_ctx ? n_ctx_req : s->n_ctx;
 
     // 2. Tokenize with the model's tokenizer.
     int32_t n_tokens = -llama_tokenize(vocab, prompt.c_str(), (int32_t) prompt.size(), nullptr, 0, true, true);
@@ -112,15 +117,15 @@ Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong h
         set_error("Tokenization failed");
         return -1;
     }
-    if (n_tokens >= s->n_ctx) {
-        set_error("Prompt (" + std::to_string(n_tokens) + " tokens) exceeds context size " + std::to_string(s->n_ctx));
+    if (n_tokens >= n_ctx) {
+        set_error("Prompt (" + std::to_string(n_tokens) + " tokens) exceeds context size " + std::to_string(n_ctx));
         return -1;
     }
 
     // 3. Fresh context per request (simple and robust across llama.cpp versions).
     llama_context_params cparams = llama_context_default_params();
-    cparams.n_ctx = s->n_ctx;
-    cparams.n_batch = s->n_ctx;
+    cparams.n_ctx = n_ctx;
+    cparams.n_batch = n_ctx;
     cparams.n_threads = s->n_threads;
     cparams.n_threads_batch = s->n_threads;
     llama_context *ctx = llama_init_from_model(s->model, cparams);
@@ -131,7 +136,7 @@ Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong h
 
     // Mild repetition penalty and min-p keep small models from looping on one token.
     llama_sampler *smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, 1.1f, 0.0f, 0.0f));
+    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, 1.05f, 0.0f, 0.0f));
     llama_sampler_chain_add(smpl, llama_sampler_init_top_k(40));
     llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
@@ -168,13 +173,30 @@ Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong h
             }
         }
         generated++;
-        if (++n_past >= s->n_ctx) break;
+        if (++n_past >= n_ctx) break;
         batch = llama_batch_get_one(&next, 1);
     }
 
     llama_sampler_free(smpl);
     llama_free(ctx);
     return generated;
+}
+
+// [n_ctx_train, n_layer, n_embd, n_head, n_head_kv] of a loaded model (for memory planning).
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_gravity_ide_ai_local_LlamaBridge_modelInfo(JNIEnv *env, jobject, jlong handle) {
+    auto *s = reinterpret_cast<Session *>(handle);
+    jint values[5] = {0, 0, 0, 0, 0};
+    if (s && s->model) {
+        values[0] = llama_model_n_ctx_train(s->model);
+        values[1] = llama_model_n_layer(s->model);
+        values[2] = llama_model_n_embd(s->model);
+        values[3] = llama_model_n_head(s->model);
+        values[4] = llama_model_n_head_kv(s->model);
+    }
+    jintArray out = env->NewIntArray(5);
+    env->SetIntArrayRegion(out, 0, 5, values);
+    return out;
 }
 
 extern "C" JNIEXPORT jstring JNICALL

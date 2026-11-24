@@ -357,3 +357,22 @@ class ModelPickerTest {
         assertFalse(com.gravity.ide.core.ModelPicker.isModelUnavailable(com.gravity.ide.ai.LlmException("Authentication failed", httpCode = 401)))
     }
 }
+
+class ContextPlannerTest {
+    private val mb = 1024L * 1024
+
+    @Test fun qwen15bPerTokenEstimate() {
+        // Qwen2.5 1.5B: 28 layers, 1536 dims, 12 heads, 2 KV heads (head size 128).
+        val perToken = com.gravity.ide.core.ContextPlanner.bytesPerToken(28, 1536, 12, 2)
+        assertEquals(28L * 2 * 256 * 2 + 512L * 12 * 4, perToken)
+    }
+
+    @Test fun growsOnlyWhenMemoryAllows() {
+        val perToken = com.gravity.ide.core.ContextPlanner.bytesPerToken(28, 1536, 12, 2) // ≈ 53 KB
+        assertEquals(8192, com.gravity.ide.core.ContextPlanner.choose(4096, 8192, 32768, perToken, 3000 * mb))
+        assertEquals(6144, com.gravity.ide.core.ContextPlanner.choose(4096, 8192, 32768, perToken, 900 * mb))
+        assertEquals(4096, com.gravity.ide.core.ContextPlanner.choose(4096, 8192, 32768, perToken, 300 * mb))
+        assertEquals(4096, com.gravity.ide.core.ContextPlanner.choose(4096, 8192, 2048, perToken, 3000 * mb))
+        assertEquals(8192, com.gravity.ide.core.ContextPlanner.choose(8192, 4096, 32768, perToken, 3000 * mb))
+    }
+}

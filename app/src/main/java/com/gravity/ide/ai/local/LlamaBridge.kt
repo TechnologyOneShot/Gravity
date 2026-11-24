@@ -50,8 +50,15 @@ object LlamaBridge {
         maxTokens: Int,
         temperature: Float,
         topP: Float,
+        /** Context for this request; 0 or less = the size the model was loaded with. */
+        contextSize: Int,
+        /** Text the reply starts with (the model continues from it); "" for none. */
+        prefix: String,
         callback: TokenCallback,
     ): Int
+
+    /** [n_ctx_train, n_layer, n_embd, n_head, n_head_kv] of a loaded model. */
+    external fun modelInfo(handle: Long): IntArray
 
     external fun lastError(): String
 

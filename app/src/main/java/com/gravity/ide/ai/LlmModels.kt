@@ -29,6 +29,12 @@ data class LlmRequest(
     val temperature: Double? = null,
     val maxOutputTokens: Int? = null,
     val webGrounding: Boolean = false,
+    /** On-device only: context for this request (larger than the loaded size when memory allows). */
+    val contextSize: Int? = null,
+    /** On-device only: the reply starts with this text and the model continues from it. */
+    val assistantPrefix: String? = null,
+    /** On-device only: stop as soon as the reply contains one of these (kept in the reply). */
+    val stop: List<String> = emptyList(),
 )
 
 sealed interface LlmEvent {

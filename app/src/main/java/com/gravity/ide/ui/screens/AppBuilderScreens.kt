@@ -427,7 +427,10 @@ fun AppScreen(projectId: String, go: (String) -> Unit) {
                     }
                     Text(current.stage ?: "Starting…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     events.takeLast(3).forEach { e -> Text("• ${e.title}", style = MaterialTheme.typography.labelSmall, maxLines = 1) }
-                    live[current.id]?.takeIf { it.isNotBlank() }?.let { MonoBlock(it.takeLast(240), maxLines = 3) }
+                    live[current.id]?.takeIf { it.isNotBlank() }?.let {
+                        Text("Written so far: ${"%,d".format(it.length)} characters", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        MonoBlock(it.takeLast(240), maxLines = 3)
+                    }
                 }
                 current.status == "FAILED" -> Column(Modifier.padding(horizontal = 12.dp)) {
                     MessageBanner("The AI run failed: ${current.error ?: "unknown error"}", isError = true)
@@ -435,7 +438,7 @@ fun AppScreen(projectId: String, go: (String) -> Unit) {
                         TextButton(onClick = {
                             scope.launch { runCatching { c.appBuilder.retry(p, current) }.onFailure { toast(context, it.message ?: "Could not retry") } }
                         }) { Text("Try again") }
-                        if ((current.error ?: "").let { "provider" in it.lowercase() || "local model" in it.lowercase() || "api key" in it.lowercase() }) {
+                        if ((current.error ?: "").lowercase().let { "provider" in it || "local model" in it || "api key" in it || "gemini" in it }) {
                             TextButton(onClick = { setupOpen = true }) { Text("Set up AI") }
                         }
                         TextButton(onClick = { go(Routes.task(current.id)) }) { Text("Details") }

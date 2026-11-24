@@ -324,6 +324,19 @@ class DeviceServicesTest {
         }
         Ci.log("local-ai", "Generated ${r.outputTokens} tokens in ${System.currentTimeMillis() - start} ms (finish=${r.finishReason}): ${r.text.take(300)}")
         assertTrue("The local model produced no tokens", r.outputTokens > 0)
+
+        // Model facts for memory planning, and a request with its own context size, a reply prefix and a stop string.
+        val info = com.gravity.ide.ai.local.LlamaBridge.modelInfo(loaded.handle).toList()
+        Ci.log("local-ai", "modelInfo [ctx_train, layers, embd, heads, kv_heads] = $info; long-answer context: ${c.localHost.contextForLongAnswer(loaded, 8192)}")
+        assertTrue("modelInfo returned no layer count: $info", info[1] > 0)
+        val r2 = runBlocking {
+            c.providers.local.complete(
+                LlmRequest(loaded.name, listOf(LlmMessage(Role.USER, "Tell a short story.")), maxOutputTokens = 96, contextSize = 1024, assistantPrefix = "Tim", stop = listOf(".")),
+            )
+        }
+        Ci.log("local-ai", "Prefix+stop request: ${r2.outputTokens} tokens, finish=${r2.finishReason}: ${r2.text.take(300)}")
+        assertTrue("The reply does not start with the prefix", r2.text.startsWith("Tim"))
+        if ("." in r2.text) assertTrue("Generation did not stop at the stop string", r2.text.substringAfter(".").length <= 12)
     }
 
     /**

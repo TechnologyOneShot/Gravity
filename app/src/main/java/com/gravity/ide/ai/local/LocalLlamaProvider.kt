@@ -41,15 +41,27 @@ class LocalLlamaProvider(
         val full = StringBuilder()
         val utf8 = Utf8Accumulator()
         val ctx = currentCoroutineContext()
+        val prefix = request.assistantPrefix.orEmpty()
+        if (prefix.isNotEmpty()) {
+            full.append(prefix)
+            onEvent(LlmEvent.TextDelta(prefix))
+        }
+        val stops = request.stop.filter { it.isNotEmpty() }
+        val longestStop = stops.maxOfOrNull { it.length } ?: 0
+        var stopped = false
         val generated = host.generationMutex.withLock {
             withContext(Dispatchers.Default) {
-                LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f) { bytes ->
+                LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
                     val piece = utf8.append(bytes)
                     if (piece.isNotEmpty()) {
                         full.append(piece)
                         onEvent(LlmEvent.TextDelta(piece))
+                        if (stops.isNotEmpty()) {
+                            val tail = full.substring(maxOf(0, full.length - piece.length - longestStop))
+                            if (stops.any { it in tail }) stopped = true
+                        }
                     }
-                    ctx.isActive
+                    ctx.isActive && !stopped
                 }
             }
         }
@@ -65,7 +77,7 @@ class LocalLlamaProvider(
             }
         }
         onEvent(LlmEvent.Usage(0, generated))
-        onEvent(LlmEvent.Done(if (generated >= maxTokens) "MAX_TOKENS" else "STOP"))
+        onEvent(LlmEvent.Done(if (!stopped && generated >= maxTokens) "MAX_TOKENS" else "STOP"))
     }
 
     /** Maps the conversation to plain (role, content) pairs for the GGUF chat template. */

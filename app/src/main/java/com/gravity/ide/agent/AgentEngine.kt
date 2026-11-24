@@ -493,11 +493,15 @@ class AgentEngine(
         role: AgentRole = AgentRole.DEVELOPER,
         maxOutputTokens: Int? = null,
         temperature: Double? = null,
+        contextSize: Int? = null,
+        assistantPrefix: String? = null,
+        stop: List<String> = emptyList(),
     ): com.gravity.ide.ai.LlmResult {
-        val budget = if (resolved.provider.isLocal) settings.current().localContextSize * 3 else 400_000
+        val budget = if (resolved.provider.isLocal) maxOf(settings.current().localContextSize, contextSize ?: 0) * 3 else 400_000
         val request = LlmRequest(
             resolved.model, ContextWindow.fit(conversation, budget), tools, mode,
             temperature = temperature, maxOutputTokens = maxOutputTokens,
+            contextSize = contextSize, assistantPrefix = assistantPrefix, stop = stop,
         )
         events.log(EventCategory.AGENT, "Calling ${resolved.model}", "${role.label} · ${request.messages.size} messages · ${tools.size} tools", taskId = taskId, agentRole = role.label, model = resolved.model)
         val result = try {
@@ -524,28 +528,42 @@ class AgentEngine(
         val isChange = AppBuilder.isChangeInstruction(task.instruction)
         val current = if (isChange && index.isFile) index.readText().takeUnless { AppBuilder.isPlaceholder(it) } else null
         val (system, user) = AppBuilder.directPrompt(AppBuilder.requestFrom(task.instruction), current)
-        val ctx = localHost.loadedOrNull()?.contextSize ?: settings.current().localContextSize
-        // Rough token estimate (≈3.5 characters per token) to leave room for the answer.
+        val loaded = localHost.loadedOrNull()
+        // A whole app in one answer needs room: use a bigger context for this request if free memory allows.
+        val ctx = if (loaded != null) localHost.contextForLongAnswer(loaded, 8192) else settings.current().localContextSize
+        // Rough token estimate (≈3 characters per token, on the safe side) to leave room for the answer.
         val promptTokens = (system.length + user.length) / 3 + 64
         val room = ctx - promptTokens
         if (room < 1200) {
             throw IllegalStateException(
-                "The app is too large for the on-device model's context (${ctx} tokens). Raise Local context size in Settings → Local AI " +
-                    "(e.g. 8192), or connect a free Gemini key on the Home screen."
+                "The app is too large for the on-device model's memory (${ctx} tokens). Use Gemini for this app (Home → connect a free key), " +
+                    "or raise Local context size in Settings → Local AI."
             )
         }
-        stage(task.id, if (current != null) "Rewriting the app with your change (on-device model)" else "Writing the app as one file (on-device model)")
+        stage(task.id, (if (current != null) "Rewriting the app with your change" else "Writing the app as one file") + " · phone model, up to ${room - 64} tokens")
+        events.log(EventCategory.AGENT, "Single-file app on the phone model", "context $ctx tokens (loaded with ${loaded?.contextSize}), answer up to ${room - 64} tokens", taskId = task.id, model = resolved.model)
         val result = call(
             task.id, resolved,
             listOf(LlmMessage(Role.SYSTEM, system), LlmMessage(Role.USER, user)),
             emptyList(), ReasoningMode.BALANCED,
-            maxOutputTokens = minOf(room - 64, 6000), temperature = 0.2,
+            maxOutputTokens = minOf(room - 64, 7500), temperature = 0.2,
+            contextSize = ctx, assistantPrefix = AppBuilder.DIRECT_PREFIX, stop = listOf("</html>"),
         )
         val html = AppBuilder.extractHtml(result.text)
-            ?: throw IllegalStateException(
-                if (result.finishReason == "MAX_TOKENS") "The on-device model ran out of room before finishing the file. Raise Local context size in Settings → Local AI, or use Gemini."
-                else "The on-device model did not return a complete HTML file, so nothing was written (its reply began: \"${result.text.trim().take(120)}\"). Try again, or connect Gemini for better results."
+        if (html == null) {
+            // Keep the whole reply in the task log (Details) so the user can see what the model wrote.
+            events.log(EventCategory.AGENT, "Phone model reply (${result.outputTokens} tokens, no complete page)", result.text.take(20_000), EventLevel.WARN, taskId = task.id, model = resolved.model)
+            val end = result.text.trim().replace(Regex("\\s+"), " ").takeLast(120)
+            throw IllegalStateException(
+                if (result.finishReason == "MAX_TOKENS") {
+                    "The phone model wrote ${result.outputTokens} tokens (all the room it had with a $ctx-token context) without finishing the app; it ended with: \"…$end\". " +
+                        "Try again, ask for a simpler app, or use Gemini (free key) for complete apps. The full reply is under Details."
+                } else {
+                    "The phone model stopped without writing a complete page (${result.outputTokens} tokens; it ended with: \"…$end\"). Nothing was written. " +
+                        "Try again, or use Gemini (free key) for better results. The full reply is under Details."
+                }
             )
+        }
         checkpoints.snapshot(project.id, root, index, "agent", task.id, AgentRole.DEVELOPER.label, resolved.model, "write_file (single-file app)")
         index.writeText(html)
         events.log(EventCategory.TOOL, "Wrote index.html (${html.length} characters)", taskId = task.id, projectId = project.id, model = resolved.model, tool = "write_file")

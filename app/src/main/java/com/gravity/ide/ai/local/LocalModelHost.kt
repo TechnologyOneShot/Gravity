@@ -90,4 +90,15 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
     val generationMutex = Mutex()
 
     fun loadedOrNull(): Loaded? = (state.value as? State.Ready)?.loaded
+
+    /**
+     * Context to use for one long answer from the loaded model: up to [wanted] tokens when free
+     * memory allows, otherwise the size it was loaded with.
+     */
+    fun contextForLongAnswer(loaded: Loaded, wanted: Int): Int {
+        val info = runCatching { LlamaBridge.modelInfo(loaded.handle) }.getOrNull() ?: return loaded.contextSize
+        if (info.size < 5) return loaded.contextSize
+        val perToken = com.gravity.ide.core.ContextPlanner.bytesPerToken(info[1], info[2], info[3], info[4])
+        return com.gravity.ide.core.ContextPlanner.choose(loaded.contextSize, wanted, info[0], perToken, availableRamBytes())
+    }
 }

@@ -114,18 +114,22 @@ class AppBuilder(
          * models cannot follow the multi-step tool protocol, but many can write one file.
          */
         fun directPrompt(request: String, currentHtml: String?): Pair<String, String> {
-            val system = "You are an expert web developer. You write complete, working mobile web apps as ONE self-contained HTML file " +
-                "with inline <style> and <script>. No external libraries, no CDNs, no explanations: reply with the code only, inside one ```html code block."
+            val system = "You are an expert web developer. You write small, complete, working mobile web apps as ONE self-contained HTML file " +
+                "with inline <style> and <script>. No external libraries, no CDNs, no comments, no explanations: output only the code."
+            val rules = "Rules: one HTML file with a viewport meta tag; large touch-friendly buttons; a clean modern look; keep it compact " +
+                "(about 100–200 lines, short CSS); every button and feature must really work. Use localStorage only if the app must remember " +
+                "data, and <input type=\"file\"> only if it needs the user's files (music, photos)."
             val user = if (currentHtml == null) {
-                "Build this app: $request\n\nRequirements: works on a phone screen, large touch-friendly buttons, clean modern look, " +
-                    "supports dark and light mode, keeps the user's data in localStorage where useful, and uses <input type=\"file\"> " +
-                    "for files on the device (music, photos). Make every feature fully functional."
+                "Build this app: $request\n\n$rules"
             } else {
                 "Here is the current app:\n```html\n$currentHtml\n```\n\nChange request: $request\n\n" +
-                    "Reply with the COMPLETE updated file (not a diff) in one ```html code block. Keep everything else working."
+                    "Reply with the COMPLETE updated file (not a diff), keeping everything else working. $rules"
             }
             return system to user
         }
+
+        /** The reply is started with this, so the model writes code at once instead of an introduction. */
+        const val DIRECT_PREFIX = "```html\n<!DOCTYPE html>\n<html"
 
         /** Extracts a complete HTML document from a model reply, or null if there is none. */
         fun extractHtml(reply: String): String? {
