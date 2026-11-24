@@ -19,6 +19,9 @@ import java.io.File
  * Holds at most one loaded local model (phones rarely have RAM for two). Loading another
  * model unloads the current one first; the orchestrator calls [unload] under memory pressure.
  */
+/** The phone model answered wrongly in every way Gravity can load it (see [LocalModelHost.load]). */
+class ModelUnhealthyException(message: String) : IllegalStateException(message)
+
 class LocalModelHost(private val context: Context, private val events: EventLog) {
     private companion object {
         const val KEY_LAST_MODEL = "last_model"
@@ -58,6 +61,21 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         }
     }
 
+    /** How a model is loaded on this phone: file mapped (mmap) or read into memory, and threads (0 = normal). */
+    private data class LoadConfig(val mmap: Boolean, val threads: Int) {
+        override fun toString() = "$mmap:$threads"
+    }
+
+    private fun parseConfig(s: String?): LoadConfig? =
+        s?.split(':')?.takeIf { it.size == 2 }?.let { LoadConfig(it[0].toBoolean(), it[1].toIntOrNull() ?: 0) }
+
+    /**
+     * Loads [model]. A chat model is checked with one easy question the first time it is loaded
+     * in a given way; if the answer is wrong (some phones return wrong data through mmap, which
+     * makes the model write random text), it is loaded again without mmap, then also with 1
+     * thread. The way that works is remembered for this model. If none works, the model is not
+     * used and [ModelUnhealthyException] explains why, instead of showing garbage in chats.
+     */
     suspend fun load(model: LocalModelEntity, contextSize: Int, threads: Int): Loaded = mutex.withLock {
         if (!LlamaBridge.isAvailable) throw IllegalStateException(LlamaBridge.loadError ?: "Local runtime unavailable")
         val file = File(model.filePath)
@@ -67,18 +85,71 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
             unloadLocked()
         }
         _state.value = State.Loading(model.name)
-        val handle = withContext(Dispatchers.Default) { LlamaBridge.load(file.absolutePath, contextSize, threads, 0) }
-        if (handle == 0L) {
-            val err = LlamaBridge.lastError().ifBlank { "llama.cpp failed to load the model" }
-            _state.value = State.Failed(err)
-            events.log(EventCategory.MODEL, "Failed to load ${model.name}", err, EventLevel.ERROR)
-            throw IllegalStateException(err)
+        val checkable = model.hasChatTemplate || Regex("(?i)instruct|chat|-it\\b").containsMatchIn(model.name + " " + file.name)
+        val known = parseConfig(prefs.getString("cfg_${model.id}", null))
+        val ladder = listOfNotNull(known, LoadConfig(true, 0), LoadConfig(false, 0), LoadConfig(false, 1)).distinct()
+        var lastAnswer = ""
+        for (cfg in ladder) {
+            val t = if (cfg.threads > 0) cfg.threads else threads
+            val handle = withContext(Dispatchers.Default) { LlamaBridge.load(file.absolutePath, contextSize, t, 0, cfg.mmap) }
+            if (handle == 0L) {
+                val err = LlamaBridge.lastError().ifBlank { "llama.cpp failed to load the model" }
+                _state.value = State.Failed(err)
+                events.log(EventCategory.MODEL, "Failed to load ${model.name}", err, EventLevel.ERROR)
+                throw IllegalStateException(err)
+            }
+            val loaded = Loaded(model.id, model.name, handle, contextSize, System.currentTimeMillis())
+            val verified = prefs.getString("ok_${model.id}", null) == cfg.toString()
+            if (checkable && !verified) {
+                _state.value = State.Loading("${model.name} (checking it answers correctly)")
+                val answer = quickCheck(handle)
+                if (answer == null) {
+                    prefs.edit().putString("ok_${model.id}", cfg.toString()).apply()
+                } else {
+                    lastAnswer = answer
+                    events.log(
+                        EventCategory.MODEL, "${model.name} answered wrongly (mmap=${cfg.mmap}, threads=$t)",
+                        "Asked \"What is the capital of France?\" and \"What is 12 + 30?\"; it answered: ${answer.take(300)}", EventLevel.WARN,
+                    )
+                    LlamaBridge.unload(handle)
+                    continue
+                }
+            }
+            if (cfg != known) prefs.edit().putString("cfg_${model.id}", cfg.toString()).apply()
+            _state.value = State.Ready(loaded)
+            prefs.edit().putString(KEY_LAST_MODEL, model.id).apply()
+            events.log(
+                EventCategory.MODEL, "Loaded local model ${model.name}",
+                "context=$contextSize threads=$t mmap=${cfg.mmap}" + if (cfg != LoadConfig(true, 0)) " (safe mode for this phone)" else "",
+            )
+            return@withLock loaded
         }
-        val loaded = Loaded(model.id, model.name, handle, contextSize, System.currentTimeMillis())
-        _state.value = State.Ready(loaded)
-        prefs.edit().putString(KEY_LAST_MODEL, model.id).apply()
-        events.log(EventCategory.MODEL, "Loaded local model ${model.name}", "context=$contextSize threads=$threads")
-        loaded
+        val msg = "${model.name} gives broken answers on this phone, even when read without mmap and with 1 thread " +
+            "(asked \"What is the capital of France?\", it answered \"${lastAnswer.take(80)}\"). Use Gemini, or try another model or quantization " +
+            "(Phone Models → Check the phone AI shows the details)."
+        _state.value = State.Failed(msg)
+        events.log(EventCategory.MODEL, "Not using ${model.name}: wrong answers in every mode", msg, EventLevel.ERROR)
+        throw ModelUnhealthyException(msg)
+    }
+
+    /** Asks two easy questions; returns null if either answer is right, else what the model said. */
+    private suspend fun quickCheck(handle: Long): String? = generationMutex.withLock {
+        withContext(Dispatchers.Default) {
+            val answers = ArrayList<String>()
+            for ((question, expect) in listOf("What is the capital of France? Answer with one word." to "paris", "What is 12 + 30? Reply with the number only." to "42")) {
+                val out = StringBuilder()
+                val utf8 = com.gravity.ide.core.Utf8Accumulator()
+                LlamaBridge.generate(
+                    handle, arrayOf("system", "user"), arrayOf("You are a helpful assistant. Answer briefly.", question),
+                    12, 0.1f, 0.95f, 0, "",
+                ) { bytes -> out.append(utf8.append(bytes)); true }
+                out.append(utf8.flush())
+                val answer = out.toString().trim()
+                if (answer.contains(expect, ignoreCase = true)) return@withContext null
+                answers += answer
+            }
+            answers.joinToString(" | ")
+        }
     }
 
     suspend fun unload() = mutex.withLock { unloadLocked() }
@@ -96,6 +167,12 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
     fun loadedOrNull(): Loaded? = (state.value as? State.Ready)?.loaded
 
     private val prefs by lazy { context.getSharedPreferences("local_model_host", Context.MODE_PRIVATE) }
+
+    /** How [modelId] is loaded on this phone, for diagnostics ("file mapped" / "read into memory, 1 thread"). */
+    fun loadMode(modelId: String): String {
+        val cfg = parseConfig(prefs.getString("cfg_${modelId}", null)) ?: return "file mapped (normal)"
+        return (if (cfg.mmap) "file mapped" else "read into memory (safe mode)") + if (cfg.threads > 0) ", ${cfg.threads} thread(s)" else ""
+    }
 
     /** The model that was loaded last (kept across restarts). */
     fun lastModelId(): String? = prefs.getString(KEY_LAST_MODEL, null)
@@ -119,7 +196,13 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         // A model the user loaded before is trusted; any other one only if it clearly fits in free memory.
         if (pick.id != last && memoryWarning(pick, ctx) != null) return null
         events.log(EventCategory.MODEL, "Loading ${pick.name} automatically", "The AI was needed and no phone model was loaded")
-        return runCatching { load(pick, ctx, com.gravity.ide.device.PerformanceManager.threads(settings, info)) }.getOrNull()
+        return try {
+            load(pick, ctx, com.gravity.ide.device.PerformanceManager.threads(settings, info))
+        } catch (e: ModelUnhealthyException) {
+            throw e // say why, instead of "no model"
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**

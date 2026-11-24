@@ -39,9 +39,10 @@ std::string to_string(JNIEnv *env, jstring s) {
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_gravity_ide_ai_local_LlamaBridge_load(JNIEnv *env, jobject, jstring jpath, jint n_ctx, jint n_threads, jint n_gpu_layers) {
+Java_com_gravity_ide_ai_local_LlamaBridge_load(JNIEnv *env, jobject, jstring jpath, jint n_ctx, jint n_threads, jint n_gpu_layers,
+                                                jboolean use_mmap) {
     std::string error;
-    gravity::Session *s = gravity::load(to_string(env, jpath), n_ctx, n_threads, n_gpu_layers, error);
+    gravity::Session *s = gravity::load(to_string(env, jpath), n_ctx, n_threads, n_gpu_layers, use_mmap == JNI_TRUE, error);
     if (!s) {
         set_error(error);
         return 0;

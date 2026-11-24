@@ -21,10 +21,11 @@ data class ResolvedModel(val provider: LlmProvider, val model: String, val entit
 class NoProviderException(message: String, val waitForNetwork: Boolean = false) : Exception(message)
 
 /** Every model of a cloud key has used up its free quota for now. */
-class QuotaExhaustedException(val providerName: String, val retryIn: String?, cause: LlmException) : LlmException(
-    "$providerName's free limit is used up for now" + (retryIn?.let { " (it resets in about $it)" } ?: "") +
+class QuotaExhaustedException(val providerName: String, val retryIn: String?, cause: LlmException, quota: Boolean = true) : LlmException(
+    (if (quota) "$providerName's free limit is used up for now" + (retryIn?.let { " (it resets in about $it)" } ?: "")
+    else "$providerName's models are busy right now") +
         ". Gravity tried this key's other models too. Wait and try again, or use the phone model.",
-    httpCode = 429,
+    httpCode = if (quota) 429 else 503,
 ) {
     init { initCause(cause) }
 }
@@ -192,7 +193,7 @@ class ProviderRegistry(
             } catch (e: LlmException) {
                 if (emitted) throw e
                 when {
-                    ModelPicker.isQuotaExhausted(e) -> streamWithQuotaFallback(request, start, e, onEvent)
+                    ModelPicker.isTemporarilyUnavailable(e) -> streamWithQuotaFallback(request, start, e, onEvent)
                     ModelPicker.isModelUnavailable(e) -> {
                         val replacement = repairModel(entity, start) ?: throw e
                         onEvent(LlmEvent.ModelSwitched(start, replacement))
@@ -203,27 +204,28 @@ class ProviderRegistry(
             }
         }
 
-        /** [failed]'s quota is used up: try the key's other Gemini models (each has its own free quota). */
+        /** [failed] is busy or out of free quota: try the key's other Gemini models (each has its own quota and load). */
         private suspend fun streamWithQuotaFallback(request: LlmRequest, failed: String, error: LlmException, onEvent: (LlmEvent) -> Unit) {
             markExhausted(entity, failed, error)
+            fun why(model: String, e: Throwable) = if (ModelPicker.isQuotaExhausted(e)) "$model's free limit is used up for now" else "$model is busy right now"
             val models = try { inner.listModels() } catch (_: Exception) { throw error }
             var last: LlmException = error
             var from = failed
             for (candidate in ModelPicker.quotaFallbacks(models, failed, exhaustedSet(entity)).take(4)) {
                 var emitted = false
                 try {
-                    onEvent(LlmEvent.ModelSwitched(from, candidate, "$from's free limit is used up for now"))
+                    onEvent(LlmEvent.ModelSwitched(from, candidate, why(from, last)))
                     inner.stream(request.copy(model = candidate)) { emitted = true; onEvent(it) }
-                    events.log(EventCategory.PROVIDER, "Free limit of $failed used up: answered with $candidate", error.message.orEmpty().take(300), EventLevel.WARN)
+                    events.log(EventCategory.PROVIDER, "${why(failed, error)}: answered with $candidate", error.message.orEmpty().take(300), EventLevel.WARN)
                     return
                 } catch (e: LlmException) {
-                    if (emitted || !(ModelPicker.isQuotaExhausted(e) || ModelPicker.isModelUnavailable(e))) throw e
+                    if (emitted || !(ModelPicker.isTemporarilyUnavailable(e) || ModelPicker.isModelUnavailable(e))) throw e
                     markExhausted(entity, candidate, e)
                     last = e
                     from = candidate
                 }
             }
-            throw QuotaExhaustedException(entity.name, ModelPicker.retryHint(error), last)
+            throw QuotaExhaustedException(entity.name, ModelPicker.retryHint(error), last, quota = ModelPicker.isQuotaExhausted(error))
         }
     }
 
@@ -234,7 +236,7 @@ class ProviderRegistry(
         val hint = Regex("retry in (?:(\\d+)h)?(?:(\\d+)m)?(\\d+(?:\\.\\d+)?)s", RegexOption.IGNORE_CASE).find(e.message.orEmpty())
         val ms = hint?.let { m ->
             ((m.groupValues[1].toLongOrNull() ?: 0) * 3600 + (m.groupValues[2].toLongOrNull() ?: 0) * 60 + (m.groupValues[3].toDoubleOrNull() ?: 0.0).toLong() + 1) * 1000
-        } ?: (60L * 60 * 1000)
+        } ?: (if (ModelPicker.isQuotaExhausted(e)) 60L * 60 * 1000 else 5L * 60 * 1000)
         exhausted["${entity.id}/$model"] = System.currentTimeMillis() + ms
     }
 

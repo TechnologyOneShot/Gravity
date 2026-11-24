@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
     const float temperature = argc > 6 ? (float) std::atof(argv[6]) : 0.2f;
     const int max_tokens = argc > 7 ? std::atoi(argv[7]) : 24;
     std::string error;
-    gravity::Session *s = gravity::load(argv[1], ctx, threads, 0, error);
+    gravity::Session *s = gravity::load(argv[1], ctx, threads, 0, std::getenv("NO_MMAP") == nullptr, error);
     if (!s) {
         std::fprintf(stderr, "load failed: %s\n", error.c_str());
         return 1;

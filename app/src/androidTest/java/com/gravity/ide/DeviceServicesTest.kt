@@ -415,6 +415,22 @@ class DeviceServicesTest {
         }
         Ci.log("local-qwen", "Answer in ${System.currentTimeMillis() - start} ms (${r.outputTokens} tokens, finish=${r.finishReason}): ${r.text.take(200)}")
         assertTrue("The model's answer is wrong or garbled: ${r.text.take(200)}", r.text.contains("Paris", ignoreCase = true))
+        Ci.log("local-qwen", "Load mode on this device: ${c.localHost.loadMode(done!!.id)}")
+
+        // Safe mode (model read into memory instead of mapped) must answer correctly too.
+        runBlocking { c.localHost.unload() }
+        val handle = com.gravity.ide.ai.local.LlamaBridge.load(done.filePath, 1024, 2, 0, false)
+        assertTrue("Loading without mmap failed: ${com.gravity.ide.ai.local.LlamaBridge.lastError()}", handle != 0L)
+        val out = StringBuilder()
+        val utf8 = com.gravity.ide.core.Utf8Accumulator()
+        com.gravity.ide.ai.local.LlamaBridge.generate(
+            handle, arrayOf("system", "user"), arrayOf("You are a helpful assistant. Answer briefly.", "What is the capital of France? Answer with one word."),
+            16, 0.1f, 0.95f, 0, "",
+        ) { bytes -> out.append(utf8.append(bytes)); true }
+        out.append(utf8.flush())
+        com.gravity.ide.ai.local.LlamaBridge.unload(handle)
+        Ci.log("local-qwen", "Without mmap: $out")
+        assertTrue("Without mmap the answer is wrong: $out", out.contains("Paris", ignoreCase = true))
     }
 
     @Test

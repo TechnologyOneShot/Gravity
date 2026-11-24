@@ -367,7 +367,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 answerWith(c.providers.resolve(chat.providerId, chat.model))
             } catch (e: Exception) {
                 // The cloud key's free quota is used up (all its models): answer with the phone model if there is one.
-                if (text.isNotEmpty() || !com.gravity.ide.core.ModelPicker.isQuotaExhausted(e)) throw e
+                if (text.isNotEmpty() || !com.gravity.ide.core.ModelPicker.isTemporarilyUnavailable(e)) throw e
                 val phone = runCatching { c.providers.resolve(LocalLlamaProvider.ID, null) }.getOrNull()?.takeIf { it.provider.isLocal } ?: throw e
                 notice.value = (e.message ?: "The cloud AI's free limit is used up") + " This answer is from the phone model (${phone.model})."
                 answerWith(phone)

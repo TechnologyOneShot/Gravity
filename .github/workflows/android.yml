@@ -213,6 +213,9 @@ jobs:
               done
             done
             ask /tmp/coder-q4_k_m.gguf 8 4096 max "hello" "hello\|hi\|help\|assist"
+            export NO_MMAP=1  # safe mode: the model read into memory instead of mapped
+            ask /tmp/coder-q4_k_m.gguf 4 4096 max "What is 12 + 30? Reply with the number only." 42
+            unset NO_MMAP
           fi
           # The app ships with llamafile OFF: that build must answer correctly.
           if [ "${{ matrix.llamafile }}" = "OFF" ]; then exit $ok; fi

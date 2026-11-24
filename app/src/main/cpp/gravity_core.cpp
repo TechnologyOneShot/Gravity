@@ -11,10 +11,11 @@ namespace {
 std::once_flag g_backend_once;
 }
 
-Session *load(const std::string &path, int n_ctx, int n_threads, int n_gpu_layers, std::string &error) {
+Session *load(const std::string &path, int n_ctx, int n_threads, int n_gpu_layers, bool use_mmap, std::string &error) {
     std::call_once(g_backend_once, [] { llama_backend_init(); });
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = n_gpu_layers;
+    mparams.use_mmap = use_mmap;
     llama_model *model = llama_model_load_from_file(path.c_str(), mparams);
     if (!model) {
         error = "llama_model_load_from_file failed for " + path;

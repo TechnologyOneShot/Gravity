@@ -256,7 +256,7 @@ class AgentEngine(
                 runSingleFileApp(task, project, resolved)
             } catch (e: Exception) {
                 // The cloud key's free quota is used up (all its models): build with the phone model if there is one.
-                if (resolved.provider.isLocal || !com.gravity.ide.core.ModelPicker.isQuotaExhausted(e)) throw e
+                if (resolved.provider.isLocal || !com.gravity.ide.core.ModelPicker.isTemporarilyUnavailable(e)) throw e
                 val phone = runCatching { registry.resolve(com.gravity.ide.ai.local.LocalLlamaProvider.ID, null) }.getOrNull()?.takeIf { it.provider.isLocal } ?: throw e
                 events.log(EventCategory.PROVIDER, "Cloud quota used up: building with the phone model", e.message.orEmpty(), EventLevel.WARN, taskId = task.id)
                 stage(task.id, "Cloud AI limit reached; continuing with the phone model (${phone.model})")
@@ -607,7 +607,7 @@ class AgentEngine(
                     ask(rs, ru, repairRoom)
                 } catch (e: Exception) {
                     // A used-up quota must not throw away the app that was already written.
-                    if (!com.gravity.ide.core.ModelPicker.isQuotaExhausted(e)) throw e
+                    if (!com.gravity.ide.core.ModelPicker.isTemporarilyUnavailable(e)) throw e
                     events.log(EventCategory.PROVIDER, "Could not ask for a fix: the AI's free limit is used up", e.message.orEmpty(), EventLevel.WARN, taskId = task.id)
                     null
                 }

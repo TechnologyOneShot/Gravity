@@ -496,7 +496,7 @@ private fun PhoneAiCheck() {
         val soc = if (android.os.Build.VERSION.SDK_INT >= 31) "${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}" else android.os.Build.HARDWARE
         sb.appendLine("Phone: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · $soc · ${info.cpuCores} cores · ${android.os.Build.SUPPORTED_ABIS.firstOrNull()}")
         sb.appendLine("Model: ${model.name} · ${model.quantization ?: "?"} · ${formatBytes(model.sizeBytes)} · ${java.io.File(model.filePath).name}")
-        sb.appendLine("Context ${loaded.contextSize} · threads $threads · ${com.gravity.ide.ai.local.LlamaBridge.systemInfo().trim()}")
+        sb.appendLine("Context ${loaded.contextSize} · threads $threads · loaded: ${c.localHost.loadMode(model.id)} · ${com.gravity.ide.ai.local.LlamaBridge.systemInfo().trim()}")
         val questions = listOf("What is the capital of France? Answer with one word." to "paris", "What is 12 + 30? Reply with the number only." to "42")
 
         suspend fun round(label: String, handleName: String): Boolean {

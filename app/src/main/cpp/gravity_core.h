@@ -16,8 +16,11 @@ struct Session {
     int n_threads = 4;
 };
 
-/** Loads a GGUF model. Returns nullptr on failure and sets [error]. */
-Session *load(const std::string &path, int n_ctx, int n_threads, int n_gpu_layers, std::string &error);
+/**
+ * Loads a GGUF model. [use_mmap] false reads the file into memory instead of mapping it (some
+ * phones' file systems return wrong data through mmap). Returns nullptr on failure and sets [error].
+ */
+Session *load(const std::string &path, int n_ctx, int n_threads, int n_gpu_layers, bool use_mmap, std::string &error);
 
 void unload(Session *s);
 

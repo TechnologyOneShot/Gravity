@@ -35,7 +35,8 @@ object LlamaBridge {
     }
 
     /** Returns a native handle, or 0 on failure (see [lastError]). */
-    external fun load(path: String, contextSize: Int, threads: Int, gpuLayers: Int): Long
+    /** [useMmap] false reads the model into memory instead of mapping the file. */
+    external fun load(path: String, contextSize: Int, threads: Int, gpuLayers: Int, useMmap: Boolean): Long
 
     external fun unload(handle: Long)
 

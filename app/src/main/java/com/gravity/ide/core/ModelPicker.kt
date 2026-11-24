@@ -65,6 +65,16 @@ object ModelPicker {
         return (e is LlmException && e.httpCode == 429) && ("quota" in msg || "rate limit" in msg || "resource_exhausted" in msg || "resource has been exhausted" in msg)
     }
 
+    /** True when the model is overloaded or briefly unavailable (e.g. HTTP 503 "high demand"). */
+    fun isOverloaded(e: Throwable): Boolean {
+        val msg = e.message.orEmpty().lowercase()
+        val code = (e as? LlmException)?.httpCode
+        return code in setOf(500, 502, 503, 504) || "high demand" in msg || "overloaded" in msg
+    }
+
+    /** Busy or out of free quota: another model of the same key may still answer. */
+    fun isTemporarilyUnavailable(e: Throwable) = isQuotaExhausted(e) || isOverloaded(e)
+
     /** "Please retry in 25m25.07s" → "25 min"; null if the provider did not say. */
     fun retryHint(e: Throwable): String? {
         val m = Regex("retry in (?:(\\d+)h)?(?:(\\d+)m)?(\\d+(?:\\.\\d+)?)s", RegexOption.IGNORE_CASE).find(e.message.orEmpty()) ?: return null
