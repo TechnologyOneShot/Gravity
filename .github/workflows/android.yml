@@ -148,7 +148,8 @@ jobs:
   arm64-native-check:
     # The app's inference core (gravity_core.cpp), built for arm64 phones with the same NDK, API
     # level and llama.cpp settings as the APK, run under ARM emulation (qemu) with a real small
-    # instruct model. Built with and without llamafile, which llama.cpp says is not for Android.
+    # instruct model and Qwen2.5-Coder-1.5B (Q4_K_M, Q4_0, Q8_0). The APK's native library is a
+    # Release build (the llama job prints its CMakeCache), so the check builds Release too.
     runs-on: ubuntu-latest
     timeout-minutes: 75
     strategy:
@@ -157,7 +158,6 @@ jobs:
         include:
           - { llamafile: "OFF", build: Release }
           - { llamafile: "ON", build: Release }
-          - { llamafile: "OFF", build: Debug }
     name: arm64-native-check (llamafile ${{ matrix.llamafile }}, ${{ matrix.build }})
     steps:
       - uses: actions/checkout@v4

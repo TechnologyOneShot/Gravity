@@ -54,7 +54,7 @@ How results get recorded on a phone:
 | 39 | Survives process interruption | `t08`: a task left RUNNING is marked INTERRUPTED by startup recovery | **Partial**: a real force-stop was not performed |
 | 40 | No placeholder core features | Git Manager and Plugins state in the app that they are not implemented | **Not met**: see KNOWN_LIMITATIONS.md |
 
-Counts for the latest run (commit 8e655e9, 2026-11-24): standard APK 24 passed and 2 skipped (both need the llama.cpp engine); llama.cpp APK 26/26 passed; App Builder end to end (build, change, undo, APK, install, launch, and Home chat → App mode → app card → App screen in the UI) passed in both; no FATAL EXCEPTION from Gravity or its generated apps in logcat; 59/59 JVM unit tests pass.
+Counts for the latest run (commit ad1f410, 2026-11-24): standard APK 25 passed and 3 skipped (they need the llama.cpp engine); llama.cpp APK 28/28 passed; App Builder end to end passed in both; no FATAL EXCEPTION from Gravity or its generated apps in logcat; JVM unit tests pass.
 
 ## App Builder (added after the original spec)
 
@@ -72,6 +72,9 @@ Counts for the latest run (commit 8e655e9, 2026-11-24): standard APK 24 passed a
 | Phone-sized models with App Builder's single-file prompt | `phone-model-app-check` job: the exact prompts (from a unit test) run with llama.cpp b6000 and the app's sampler settings; each app is then used in jsdom (calculator: 7 + 8 = 15; to-do: a typed task is listed; music player: file picker, audio, play button). 2 runs per app, after the test-and-fix step, over the last runs: Qwen2.5-Coder-1.5B Q4_K_M 3–4 of 6 working, 3B Q4_K_M 4 of 6 (calculator 0 of 2), 7B Q4_K_M 6 of 6 | Measured by CI on each push; results vary from run to run |
 | Phone model loads by itself and answers in chat | `UiNavigationTest.t03` (llama.cpp APK): no cloud key, a downloaded model, Gravity loads it on the first message and the reply is saved | Verified by CI on each push (llama.cpp APK) |
 | One-screen layout: sidebar, developer tools folded, every screen opens | `UiNavigationTest.t02`: all 29 sidebar entries open (6 everyday, 23 under Developer tools) | Verified by CI on each push |
+| Phone code on ARM | `arm64-native-check`: gravity_core.cpp built for arm64-v8a with NDK 27 / API 26 / Release, exactly like the APK, run under qemu: Qwen2.5-0.5B-Instruct answers "Paris" (CPU models max and cortex-a76); Qwen2.5-Coder-1.5B-Instruct Q4_K_M, Q4_0 and Q8_0 answer "42" with 4 and 8 threads and a 4096 context, and reply "Hello! How can I assist you today?" to "hello" with the app's chat prompt | Verified by CI on each push (emulated ARM; not a real phone) |
+| Real instruct model through the app | `DeviceServicesTest.t12d`: Qwen2.5-0.5B-Instruct Q4_K_M downloaded, SHA-256 checked, loaded and asked through the app's own path answers "Paris" | Verified by CI on each push (llama.cpp APK) |
+| On-device AI check | `UiNavigationTest.t05`: Phone Models → Run check asks two questions and reports correct answers with the phone's details | Verified by CI on each push (llama.cpp APK) |
 | Native options for long answers | `DeviceServicesTest.t12b`: per-request context, reply prefix, stop string and model info on the real llama.cpp engine | Verified by CI on each push (llama.cpp APK) |
 | Real AI output quality | | **Not tested automatically** (needs an API key, or a model too large for CI) |
 
