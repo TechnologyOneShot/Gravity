@@ -41,12 +41,25 @@ if full.exists():
     for i in mains[:2]:
         print("\n== Main thread state (test runner dump) ==")
         print("\n".join(lines[i:i + 45]))
-    crashes = [i for i, l in enumerate(lines) if "AndroidRuntime: FATAL EXCEPTION" in l]
+    all_crashes = [i for i, l in enumerate(lines) if "AndroidRuntime: FATAL EXCEPTION" in l]
+
+    def crash_process(i):
+        for l in lines[i:i + 3]:
+            if "Process: " in l:
+                return l.split("Process: ", 1)[1].split(",")[0].strip()
+        return "?"
+
+    # Crashes of Gravity and the apps it generates count; other emulator apps (e.g. Gmail) are listed only.
+    crashes = [i for i in all_crashes if crash_process(i).startswith("com.gravity")]
+    others = [f"{crash_process(i)}: {lines[i + 2].split('AndroidRuntime: ', 1)[-1] if i + 2 < len(lines) else ''}" for i in all_crashes if i not in crashes]
+    if others:
+        print(f"\n== Crashes of other apps on the emulator (not Gravity): {len(others)} ==")
+        print("\n".join(others[:10]))
     for i in crashes[:2]:
         print("\n== Log lines before crash (warnings/errors) ==")
         before = [l for l in lines[max(0, i - 400):i] if (" E " in l or " W " in l) and "chatty" not in l]
         print("\n".join(before[-40:]))
-    print(f"\n== FATAL EXCEPTION blocks in logcat: {len(crashes)} ==")
+    print(f"\n== FATAL EXCEPTION blocks in logcat (Gravity and its generated apps): {len(crashes)} ==")
     for i in crashes[:5]:
         print("\n".join(lines[i:i + 40]))
         print("-----")

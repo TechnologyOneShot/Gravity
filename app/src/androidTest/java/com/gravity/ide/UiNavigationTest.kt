@@ -134,13 +134,17 @@ class UiNavigationTest {
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 
-    /** The chat screen's controls: model pill and picker sheet, the attach menu and the mic. */
-    @Test
-    fun t03a_chatHasModelPickerAttachMenuAndMic() {
+    private fun openNewChat() {
         waitForTitle("Gravity")
         openDrawerEntry("New Chat")
         waitForTitle("Chat")
         compose.waitUntil(15_000) { compose.onAllNodesWithText("How can I help?").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    /** The chat composer: + menu with files and photos, the mic and the text box. Ends with the menu open. */
+    @Test
+    fun t03a_chatComposerHasAttachMenuAndMic() {
+        openNewChat()
         compose.onNodeWithTag("model-pill").assertExists()
         compose.onNodeWithTag("mic-button").assertExists()
         compose.onNodeWithTag("chat-input").assertExists()
@@ -148,7 +152,12 @@ class UiNavigationTest {
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Photos and images").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Files (code, text, PDF, ZIP)").assertExists()
         Ci.screenshot("03a_chat_attach_menu")
-        backUntilGone("Photos and images") // close the menu
+    }
+
+    /** The model picker sheet opened from the pill. Ends with the sheet open. */
+    @Test
+    fun t03b_chatModelPickerSheet() {
+        openNewChat()
         compose.onNodeWithTag("model-pill").performClick()
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Choose AI model").fetchSemanticsNodes().isNotEmpty() }
         Thread.sleep(800)
@@ -159,19 +168,6 @@ class UiNavigationTest {
         assertTrue("Auto option missing", sheet.contains("Auto (best available)"))
         assertTrue("Phone models section missing", sheet.contains("ON THIS PHONE (OFFLINE)"))
         assertTrue("Cloud section missing", sheet.contains("CLOUD AI"))
-        backUntilGone("Choose AI model") // close the sheet
-    }
-
-    /** Presses Back (system action) until [text] is gone; at most 3 presses, so it never leaves the screen by accident. */
-    private fun backUntilGone(text: String) {
-        repeat(3) {
-            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
-                .performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
-            val gone = runCatching { compose.waitUntil(4_000) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty() } }.isSuccess
-            if (gone) return
-            Ci.log("chat-ui", "'$text' still shown after Back; pressing again")
-        }
-        throw AssertionError("'$text' was still shown after pressing Back 3 times")
     }
 
     @Test
