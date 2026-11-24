@@ -23,7 +23,13 @@ struct Session {
 
 std::mutex g_error_mutex;
 std::string g_last_error;
+std::string g_last_finish;  // why the last generation ended: eos, stop, max, ctx or error
 bool g_backend_ready = false;
+
+void set_finish(const char *why) {
+    std::lock_guard<std::mutex> lock(g_error_mutex);
+    g_last_finish = why;
+}
 
 void set_error(const std::string &msg) {
     std::lock_guard<std::mutex> lock(g_error_mutex);
@@ -147,6 +153,7 @@ Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong h
     jmethodID onToken = env->GetMethodID(cbClass, "onToken", "([B)Z");
 
     int generated = 0;
+    const char *finish = "max";
     llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
     llama_token next = 0;
     int n_past = n_tokens;
@@ -154,10 +161,14 @@ Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong h
         if (llama_decode(ctx, batch) != 0) {
             set_error("llama_decode failed");
             generated = generated > 0 ? generated : -1;
+            finish = "error";
             break;
         }
         next = llama_sampler_sample(smpl, ctx, -1);
-        if (llama_vocab_is_eog(vocab, next)) break;
+        if (llama_vocab_is_eog(vocab, next)) {
+            finish = "eos";
+            break;
+        }
 
         char piece[256];
         int plen = llama_token_to_piece(vocab, next, piece, sizeof(piece), 0, true);
@@ -169,16 +180,21 @@ Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong h
             if (env->ExceptionCheck() || !keepGoing) {
                 env->ExceptionClear();
                 generated++;
+                finish = "stop";
                 break;
             }
         }
         generated++;
-        if (++n_past >= n_ctx) break;
+        if (++n_past >= n_ctx) {
+            finish = "ctx";  // the context is full
+            break;
+        }
         batch = llama_batch_get_one(&next, 1);
     }
 
     llama_sampler_free(smpl);
     llama_free(ctx);
+    set_finish(finish);
     return generated;
 }
 
@@ -197,6 +213,12 @@ Java_com_gravity_ide_ai_local_LlamaBridge_modelInfo(JNIEnv *env, jobject, jlong 
     jintArray out = env->NewIntArray(5);
     env->SetIntArrayRegion(out, 0, 5, values);
     return out;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_gravity_ide_ai_local_LlamaBridge_lastFinish(JNIEnv *env, jobject) {
+    std::lock_guard<std::mutex> lock(g_error_mutex);
+    return env->NewStringUTF(g_last_finish.c_str());
 }
 
 extern "C" JNIEXPORT jstring JNICALL

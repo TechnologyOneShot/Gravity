@@ -1,5 +1,6 @@
 // Functional smoke test of a generated single-file app, in jsdom (no browser needed).
-// Usage: node app-smoke-test.js <calculator|todo|music-player> <page.html>
+// Usage: node app-smoke-test.js <calculator|todo|music-player|tap> <page.html>
+// "tap" does what Gravity's on-device PageChecker does: tap every button once and report errors.
 // Prints one JSON line: {"ok": bool, "detail": "...", "errors": [...]}
 const fs = require('fs');
 const { JSDOM, VirtualConsole } = require('jsdom');
@@ -19,6 +20,12 @@ const dom = new JSDOM(html, {
   url: 'https://appassets.androidplatform.net/index.html',
   virtualConsole: vc,
   beforeParse(w) {
+    // jsdom has no innerText; WebView does.
+    Object.defineProperty(w.HTMLElement.prototype, 'innerText', {
+      configurable: true,
+      get() { return this.textContent; },
+      set(v) { this.textContent = v; },
+    });
     w.alert = () => {};
     w.confirm = () => true;
     w.prompt = () => '';
@@ -87,11 +94,21 @@ async function musicPlayer() {
   return { ok: problems.length === 0, detail: problems.length ? problems.join('; ') : 'file picker, audio player and play button present' };
 }
 
+async function tapAll() {
+  d.addEventListener('submit', (e) => e.preventDefault(), true);
+  let n = 0;
+  for (const e of [...d.querySelectorAll('button, input[type=button], input[type=submit], [onclick]')].slice(0, 60)) {
+    try { e.click(); n++; } catch (x) { errors.push(`Tapping a button failed: ${x}`); }
+    await wait(5);
+  }
+  return { ok: errors.length === 0, detail: `tapped ${n} button(s)` };
+}
+
 (async () => {
   await wait(200); // DOMContentLoaded / load handlers
   let result;
   try {
-    result = await ({ calculator, todo, 'music-player': musicPlayer }[kind] || (async () => ({ ok: true, detail: 'no check for this app' })))();
+    result = await ({ calculator, todo, 'music-player': musicPlayer, tap: tapAll }[kind] || (async () => ({ ok: true, detail: 'no check for this app' })))();
   } catch (e) {
     result = { ok: false, detail: `the check crashed: ${e}` };
   }

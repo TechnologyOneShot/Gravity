@@ -564,11 +564,58 @@ class AgentEngine(
                 }
             )
         }
-        checkpoints.snapshot(project.id, root, index, "agent", task.id, AgentRole.DEVELOPER.label, resolved.model, "write_file (single-file app)")
-        index.writeText(html)
-        events.log(EventCategory.TOOL, "Wrote index.html (${html.length} characters)", taskId = task.id, projectId = project.id, model = resolved.model, tool = "write_file")
-        complete(task.id, if (current != null) "Applied your change with ${resolved.model}." else "Built the app as a single file with ${resolved.model}. Ask for changes below.")
+        suspend fun write(page: String, note: String) {
+            checkpoints.snapshot(project.id, root, index, "agent", task.id, AgentRole.DEVELOPER.label, resolved.model, note)
+            index.writeText(page)
+            events.log(EventCategory.TOOL, "Wrote index.html (${page.length} characters)", note, taskId = task.id, projectId = project.id, model = resolved.model, tool = "write_file")
+        }
+        write(html, "write_file (single-file app)")
+
+        // Test it for real: open the page off-screen, tap every button, collect JavaScript errors.
+        stage(task.id, "Testing the app (opening it and tapping every button)")
+        var report = pageChecker.check(root)
+        events.log(EventCategory.TEST, "App test: ${report.errors.size} error(s), ${report.controlsTapped} button(s) tapped", report.errors.joinToString("\n"), if (report.errors.isEmpty()) EventLevel.INFO else EventLevel.WARN, taskId = task.id)
+        if (report.errors.isNotEmpty()) {
+            val (rs, ru) = AppBuilder.repairPrompt(html, report.errors)
+            val repairRoom = ctx - ((rs.length + ru.length) / 3 + 64)
+            if (repairRoom >= 1200) {
+                stage(task.id, "The test found ${report.errors.size} error(s); the phone model is fixing them")
+                val fix = call(
+                    task.id, resolved,
+                    listOf(LlmMessage(Role.SYSTEM, rs), LlmMessage(Role.USER, ru)),
+                    emptyList(), ReasoningMode.BALANCED,
+                    maxOutputTokens = minOf(repairRoom - 64, 7500), temperature = 0.2,
+                    contextSize = ctx, assistantPrefix = AppBuilder.DIRECT_PREFIX, stop = listOf("</html>"),
+                )
+                val fixed = AppBuilder.extractHtml(fix.text)
+                if (fixed != null && fixed != html) {
+                    write(fixed, "write_file (fix after test)")
+                    stage(task.id, "Testing the fixed app")
+                    val after = pageChecker.check(root)
+                    events.log(EventCategory.TEST, "App test after the fix: ${after.errors.size} error(s)", after.errors.joinToString("\n"), taskId = task.id)
+                    if (after.errors.size < report.errors.size) {
+                        report = after
+                    } else {
+                        write(html, "write_file (fix made it worse; first version restored)")
+                    }
+                } else {
+                    events.log(EventCategory.AGENT, "The phone model's fix was not a complete page; keeping the first version", fix.text.take(20_000), EventLevel.WARN, taskId = task.id)
+                }
+            }
+        }
+        val verb = if (current != null) "Applied your change" else "Built the app as a single file"
+        complete(
+            task.id,
+            if (report.errors.isEmpty()) {
+                "$verb with ${resolved.model}. Gravity opened it and tapped ${report.controlsTapped} button(s): no errors. Ask for changes below."
+            } else {
+                "$verb with ${resolved.model}, but Gravity's test still finds ${report.errors.size} error(s), so parts may not work: " +
+                    report.errors.take(3).joinToString("; ") + ". Describe the problem below to try a fix, or use Gemini for a better app."
+            },
+        )
     }
+
+    private val pageChecker by lazy { com.gravity.ide.build.PageChecker(context, workspace.workspacesRoot) }
 
     private fun shellFor(taskId: String, root: File): ShellSession =
         shells.getOrPut(taskId) { terminals.ephemeral(root, "Agent ${taskId.take(6)}") }

@@ -118,13 +118,24 @@ class AppBuilder(
                 "with inline <style> and <script>. No external libraries, no CDNs, no comments, no explanations: output only the code."
             val rules = "Rules: one HTML file with a viewport meta tag; large touch-friendly buttons; a clean modern look; keep it compact " +
                 "(about 100–200 lines, short CSS); every button and feature must really work: define every function you call, and show results in an element that is on screen. Use localStorage only if the app must remember " +
-                "data, and <input type=\"file\"> only if it needs the user's files (music, photos)."
+                "data. If the app works with the user's own files (music, photos, videos, documents), let them choose files with " +
+                "<input type=\"file\"> (multiple where useful) and use URL.createObjectURL; never use made-up file names or URLs."
             val user = if (currentHtml == null) {
                 "Build this app: $request\n\n$rules"
             } else {
                 "Here is the current app:\n```html\n$currentHtml\n```\n\nChange request: $request\n\n" +
                     "Reply with the COMPLETE updated file (not a diff), keeping everything else working. $rules"
             }
+            return system to user
+        }
+
+        /** Asks the model to fix the errors Gravity's test of the app found (see PageChecker). */
+        fun repairPrompt(html: String, errors: List<String>): Pair<String, String> {
+            val (system, _) = directPrompt("", null)
+            val user = "Here is an app:\n```html\n$html\n```\n\nWhen it was opened and its buttons were tapped, the browser reported these errors:\n" +
+                errors.joinToString("\n") { "- $it" } +
+                "\n\nFix the cause of every error (for example a name declared twice, or a function that is called but never defined) " +
+                "and keep everything else working. Reply with the COMPLETE fixed file."
             return system to user
         }
 

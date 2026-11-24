@@ -49,9 +49,9 @@ class LocalLlamaProvider(
         val stops = request.stop.filter { it.isNotEmpty() }
         val longestStop = stops.maxOfOrNull { it.length } ?: 0
         var stopped = false
-        val generated = host.generationMutex.withLock {
+        val (generated, nativeFinish) = host.generationMutex.withLock {
             withContext(Dispatchers.Default) {
-                LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
+                val count = LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
                     val piece = utf8.append(bytes)
                     if (piece.isNotEmpty()) {
                         full.append(piece)
@@ -63,6 +63,7 @@ class LocalLlamaProvider(
                     }
                     ctx.isActive && !stopped
                 }
+                count to runCatching { LlamaBridge.lastFinish() }.getOrDefault("")
             }
         }
         val tail = utf8.flush()
@@ -77,7 +78,9 @@ class LocalLlamaProvider(
             }
         }
         onEvent(LlmEvent.Usage(0, generated))
-        onEvent(LlmEvent.Done(if (!stopped && generated >= maxTokens) "MAX_TOKENS" else "STOP"))
+        // Out of room = the token limit or a full context (the native side reports which).
+        val outOfRoom = !stopped && (generated >= maxTokens || nativeFinish == "ctx")
+        onEvent(LlmEvent.Done(if (outOfRoom) "MAX_TOKENS" else "STOP"))
     }
 
     /** Maps the conversation to plain (role, content) pairs for the GGUF chat template. */

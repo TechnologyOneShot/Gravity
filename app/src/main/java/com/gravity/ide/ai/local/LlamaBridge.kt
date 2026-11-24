@@ -62,5 +62,8 @@ object LlamaBridge {
 
     external fun lastError(): String
 
+    /** Why the last generation ended: "eos", "stop", "max", "ctx" (context full) or "error". */
+    external fun lastFinish(): String
+
     external fun systemInfo(): String
 }

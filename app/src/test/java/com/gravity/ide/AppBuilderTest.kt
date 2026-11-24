@@ -150,6 +150,11 @@ class AppBuilderPromptExportTest {
                 .put("prefix", AppBuilder.DIRECT_PREFIX).put("stop", org.json.JSONArray().put("</html>"))
             File(dir, "$name.json").writeText(json.toString(2))
         }
+        val (repairSystem, repairUser) = AppBuilder.repairPrompt("{{HTML}}", listOf("{{ERRORS}}"))
+        File(dir.parentFile, "app-builder-repair.json").writeText(
+            org.json.JSONObject().put("system", repairSystem).put("user", repairUser).put("prefix", AppBuilder.DIRECT_PREFIX).toString(2),
+        )
+        assertTrue(repairUser.contains("- {{ERRORS}}"))
         assertEquals(3, dir.listFiles { f -> f.name.endsWith(".json") }!!.size)
     }
 }

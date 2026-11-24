@@ -67,6 +67,33 @@ class AppBuilderDeviceTest {
 
     private fun finished(taskId: String) = poll(120_000) { c.db.tasks().get(taskId)?.takeIf { it.status !in ACTIVE } }
 
+    /** Gravity's own test of a generated page (off-screen WebView, every button tapped) reports real errors only. */
+    @Test
+    fun t00_pageCheckerReportsRealJavaScriptErrors() {
+        val project = runBlocking { c.workspace.createProject("Checker Test", com.gravity.ide.workspace.ProjectTemplate.WEB_APP) }
+        val index = File(project.rootPath, "index.html")
+        val checker = com.gravity.ide.build.PageChecker(ctx, c.workspace.workspacesRoot)
+        index.writeText(
+            "<!DOCTYPE html><html><body><div id=\"d\">0</div><button onclick=\"missing()\">Go</button>" +
+                "<script>let operator = '';\nfunction operator() {}</script></body></html>",
+        )
+        val bad = runBlocking { checker.check(File(project.rootPath)) }
+        Ci.log("checker", "Broken page → loaded=${bad.loaded} tapped=${bad.controlsTapped} errors=${bad.errors}")
+        assertTrue("The page did not load", bad.loaded)
+        assertTrue("The duplicate declaration was not reported: ${bad.errors}", bad.errors.any { "already been declared" in it })
+        assertTrue("The missing function was not reported: ${bad.errors}", bad.errors.any { "missing" in it && "not defined" in it })
+        index.writeText(
+            "<!DOCTYPE html><html><body><div id=\"d\">0</div><button onclick=\"add()\">+1</button>" +
+                "<script>let n = 0;\nfunction add() { n++; document.getElementById('d').innerText = n; }</script></body></html>",
+        )
+        val good = runBlocking { checker.check(File(project.rootPath)) }
+        Ci.log("checker", "Working page → loaded=${good.loaded} tapped=${good.controlsTapped} errors=${good.errors}")
+        assertTrue(good.loaded)
+        assertEquals(1, good.controlsTapped)
+        assertTrue("A working page was reported as broken: ${good.errors}", good.errors.isEmpty())
+        runBlocking { c.db.projects().get(project.id)?.let { c.db.projects().upsert(it.copy(archived = true)) } }
+    }
+
     @Test
     fun t01_buildChangeUndoPackageInstallLaunch() {
         val (project, buildId) = runBlocking { c.appBuilder.create("music player bana do") }
