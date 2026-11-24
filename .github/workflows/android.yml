@@ -154,8 +154,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        llamafile: [OFF, ON]
-    name: arm64-native-check (llamafile ${{ matrix.llamafile }})
+        include:
+          - { llamafile: "OFF", build: Release }
+          - { llamafile: "ON", build: Release }
+          - { llamafile: "OFF", build: Debug }
+    name: arm64-native-check (llamafile ${{ matrix.llamafile }}, ${{ matrix.build }})
     steps:
       - uses: actions/checkout@v4
 
@@ -175,7 +178,7 @@ jobs:
         run: |
           NDK="$ANDROID_HOME/ndk/27.0.12077973"
           cmake -S tools/arm-check -B /tmp/arm-build -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DCMAKE_BUILD_TYPE=Release \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
             -DLLAMA_DIR=/tmp/llama.cpp -DCHECK_LLAMAFILE=${{ matrix.llamafile }} > /tmp/cmake.log
           grep -i "llamafile\|ARM" /tmp/cmake.log | head -20 || true
           cmake --build /tmp/arm-build --target gravity-cli -j"$(nproc)"
@@ -184,7 +187,7 @@ jobs:
       - name: Download models (the 0.5B check model and Qwen2.5-Coder-1.5B, the model a user runs)
         run: |
           curl -fsSL --retry 3 -o /tmp/q05.gguf https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
-          if [ "${{ matrix.llamafile }}" = "OFF" ]; then
+          if [ "${{ matrix.llamafile }}" = "OFF" ] && [ "${{ matrix.build }}" = "Release" ]; then
             for q in q4_k_m q4_0 q8_0; do
               curl -fsSL --retry 3 -o /tmp/coder-$q.gguf https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-$q.gguf
             done
@@ -203,7 +206,7 @@ jobs:
           }
           ask /tmp/q05.gguf 4 1024 max "What is the capital of France? Answer with one word." paris
           ask /tmp/q05.gguf 4 1024 cortex-a76 "What is the capital of France? Answer with one word." paris
-          if [ "${{ matrix.llamafile }}" = "OFF" ]; then
+          if [ "${{ matrix.llamafile }}" = "OFF" ] && [ "${{ matrix.build }}" = "Release" ]; then
             for q in q4_k_m q4_0 q8_0; do
               for t in 4 8; do
                 ask /tmp/coder-$q.gguf $t 4096 max "What is 12 + 30? Reply with the number only." 42
@@ -309,6 +312,10 @@ jobs:
           ls -l app/build/outputs/apk/debug/app-debug.apk
           "$BT/aapt2" dump badging app/build/outputs/apk/debug/app-debug.apk | grep -E "^(package|native-code)"
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "lib/" || true
+          # How the native library in the APK was configured (build type and flags).
+          for f in app/.cxx/*/*/arm64-v8a/CMakeCache.txt; do
+            echo "== $f"; grep -E "^(CMAKE_BUILD_TYPE|CMAKE_C_FLAGS|CMAKE_C_FLAGS_DEBUG|CMAKE_C_FLAGS_RELEASE|GGML_LLAMAFILE|GGML_NATIVE|ANDROID_PLATFORM):" "$f" || true
+          done
 
       - name: Publish to the "debug-latest" pre-release (one APK, with on-device AI)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
