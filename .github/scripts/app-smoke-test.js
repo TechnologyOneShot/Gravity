@@ -57,7 +57,7 @@ async function calculator() {
   }
   const shown = [...d.querySelectorAll('input, output, textarea')].map((e) => e.value)
     .concat([...d.querySelectorAll('body *')].filter((e) => e.children.length === 0).map((e) => e.textContent.trim()));
-  const ok = shown.some((t) => t === '15' || t === '15.0');
+  const ok = shown.some((t) => /^-?\d+(\.\d+)?$/.test(t) && parseFloat(t) === 15);
   return { ok, detail: ok ? 'tapping 7 + 8 = shows 15' : `after tapping 7 + 8 = the screen shows: ${shown.filter(Boolean).slice(0, 30).join(' / ').slice(0, 300)}` };
 }
 

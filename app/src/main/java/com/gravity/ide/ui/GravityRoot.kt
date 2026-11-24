@@ -108,16 +108,17 @@ fun GravityRoot() {
     val approvals by container.approvals.pending.collectAsState()
     val isTopLevel = route == null || route == Routes.HOME
 
-    fun go(target: String) {
-        val navigate = {
-            nav.navigate(target) {
-                launchSingleTop = true
-                if (target == Routes.HOME) popUpTo(Routes.HOME) { inclusive = false }
-            }
+    // Screens navigate from coroutines too; NavController must only be used on the main thread.
+    fun onMain(block: () -> Unit) {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) block()
+        else android.os.Handler(android.os.Looper.getMainLooper()).post { block() }
+    }
+
+    fun go(target: String) = onMain {
+        nav.navigate(target) {
+            launchSingleTop = true
+            if (target == Routes.HOME) popUpTo(Routes.HOME) { inclusive = false }
         }
-        // Screens call go() from coroutines too; NavController must only be used on the main thread.
-        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) navigate()
-        else android.os.Handler(android.os.Looper.getMainLooper()).post { navigate() }
     }
 
     ModalNavigationDrawer(
@@ -227,7 +228,7 @@ private fun GravityNavHost(nav: NavHostController, go: (String) -> Unit) {
             AppScreen(e.arguments?.getString("projectId").orEmpty(), go)
         }
         composable(Routes.DASHBOARD) { DashboardScreen(go) }
-        composable(Routes.NEW_CHAT) { NewChatRedirect { id -> nav.navigate(Routes.chat(id)) { popUpTo(Routes.NEW_CHAT) { inclusive = true } } } }
+        composable(Routes.NEW_CHAT) { NewChatRedirect { id -> onMain { nav.navigate(Routes.chat(id)) { popUpTo(Routes.NEW_CHAT) { inclusive = true } } } } }
         composable(Routes.CHATS) { ChatListScreen(go) }
         composable(Routes.CHAT) { e -> ChatScreen(e.arguments?.getString("chatId").orEmpty(), go) }
         composable(Routes.PROJECTS, arguments = listOf(optionalString("new"))) { e -> ProjectsScreen(e.arguments?.getString("new") == "1", go) }
@@ -238,7 +239,7 @@ private fun GravityNavHost(nav: NavHostController, go: (String) -> Unit) {
         }
         composable(Routes.SEARCH) { GlobalSearchScreen(go) }
         composable(Routes.AGENT_NEW, arguments = listOf(optionalString("projectId"))) { e ->
-            AgentNewTaskScreen(e.arguments?.getString("projectId")) { id -> nav.navigate(Routes.task(id)) { popUpTo(Routes.AGENT_NEW) { inclusive = true } } }
+            AgentNewTaskScreen(e.arguments?.getString("projectId")) { id -> onMain { nav.navigate(Routes.task(id)) { popUpTo(Routes.AGENT_NEW) { inclusive = true } } } }
         }
         composable(Routes.TASKS) { TasksScreen(go) }
         composable(Routes.TASK) { e -> TaskDetailScreen(e.arguments?.getString("taskId").orEmpty(), go) }
