@@ -9,6 +9,19 @@
 #include <cstdint>
 #include <cstdlib>
 #include "gravity_core.h"
+#if defined(__aarch64__)
+#include <sys/auxv.h>
+#endif
+
+// The same source is built twice for arm64 phones: the standard engine (Armv8.0, class
+// NativeBase) and a fast engine (Armv8.2 dot product + fp16, class NativeFast). The Kotlin
+// class that a build binds to is set by CMake (GRAVITY_JNI_CLASS).
+#ifndef GRAVITY_JNI_CLASS
+#define GRAVITY_JNI_CLASS NativeBase
+#endif
+#define GRAVITY_CAT2(a, b) a##b
+#define GRAVITY_CAT(a, b) GRAVITY_CAT2(a, b)
+#define GRAVITY_JNI(name) GRAVITY_CAT(GRAVITY_CAT(Java_com_gravity_ide_ai_local_, GRAVITY_JNI_CLASS), GRAVITY_CAT(_, name))
 
 #define TAG "GravityLlama"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
@@ -41,7 +54,7 @@ std::string to_string(JNIEnv *env, jstring s) {
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_gravity_ide_ai_local_LlamaBridge_load(JNIEnv *env, jobject, jstring jpath, jint n_ctx, jint n_threads, jint n_gpu_layers,
+GRAVITY_JNI(load)(JNIEnv *env, jobject, jstring jpath, jint n_ctx, jint n_threads, jint n_gpu_layers,
                                                 jboolean use_mmap) {
     std::string error;
     gravity::Session *s = gravity::load(to_string(env, jpath), n_ctx, n_threads, n_gpu_layers, use_mmap == JNI_TRUE, error);
@@ -53,12 +66,12 @@ Java_com_gravity_ide_ai_local_LlamaBridge_load(JNIEnv *env, jobject, jstring jpa
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_gravity_ide_ai_local_LlamaBridge_unload(JNIEnv *, jobject, jlong handle) {
+GRAVITY_JNI(unload)(JNIEnv *, jobject, jlong handle) {
     gravity::unload(reinterpret_cast<gravity::Session *>(handle));
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong handle, jobjectArray jroles,
+GRAVITY_JNI(generate)(JNIEnv *env, jobject, jlong handle, jobjectArray jroles,
                                                     jobjectArray jcontents, jint max_tokens, jfloat temperature,
                                                     jfloat top_p, jint n_ctx_req, jstring jprefix, jobject callback) {
     const jsize n = env->GetArrayLength(jroles);
@@ -95,7 +108,7 @@ Java_com_gravity_ide_ai_local_LlamaBridge_generate(JNIEnv *env, jobject, jlong h
 
 // [n_ctx_train, n_layer, n_embd, n_head, n_head_kv] of a loaded model (for memory planning).
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_gravity_ide_ai_local_LlamaBridge_modelInfo(JNIEnv *env, jobject, jlong handle) {
+GRAVITY_JNI(modelInfo)(JNIEnv *env, jobject, jlong handle) {
     auto *s = reinterpret_cast<gravity::Session *>(handle);
     jint values[5] = {0, 0, 0, 0, 0};
     if (s && s->model) {
@@ -111,27 +124,37 @@ Java_com_gravity_ide_ai_local_LlamaBridge_modelInfo(JNIEnv *env, jobject, jlong 
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_gravity_ide_ai_local_LlamaBridge_lastFinish(JNIEnv *env, jobject) {
+GRAVITY_JNI(lastFinish)(JNIEnv *env, jobject) {
     std::lock_guard<std::mutex> lock(g_error_mutex);
     return env->NewStringUTF(g_last_finish.c_str());
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_gravity_ide_ai_local_LlamaBridge_lastError(JNIEnv *env, jobject) {
+GRAVITY_JNI(lastError)(JNIEnv *env, jobject) {
     std::lock_guard<std::mutex> lock(g_error_mutex);
     return env->NewStringUTF(g_last_error.c_str());
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_gravity_ide_ai_local_LlamaBridge_systemInfo(JNIEnv *env, jobject) {
+GRAVITY_JNI(systemInfo)(JNIEnv *env, jobject) {
     return env->NewStringUTF(llama_print_system_info());
 }
 
 // True if heap pointers carry an Android pointer tag in the top byte (for diagnostics).
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_gravity_ide_ai_local_LlamaBridge_heapTagged(JNIEnv *, jobject) {
+GRAVITY_JNI(heapTagged)(JNIEnv *, jobject) {
     void *p = std::malloc(64);
     const bool tagged = (reinterpret_cast<uintptr_t>(p) >> 56) != 0;
     std::free(p);
     return tagged ? JNI_TRUE : JNI_FALSE;
+}
+
+// The CPU features the kernel reports (AT_HWCAP) on arm64; 0 elsewhere.
+extern "C" JNIEXPORT jlong JNICALL
+GRAVITY_JNI(cpuHwcap)(JNIEnv *, jobject) {
+#if defined(__aarch64__)
+    return (jlong) getauxval(AT_HWCAP);
+#else
+    return 0;
+#endif
 }

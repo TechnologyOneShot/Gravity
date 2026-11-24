@@ -61,18 +61,26 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         }
     }
 
-    /** How a model is loaded on this phone: file mapped (mmap) or read into memory, and threads (0 = normal). */
-    private data class LoadConfig(val mmap: Boolean, val threads: Int) {
-        override fun toString() = "$mmap:$threads"
+    /** How a model is loaded on this phone: engine, file mapped (mmap) or read into memory, threads (0 = normal). */
+    private data class LoadConfig(val engine: EngineKind, val mmap: Boolean, val threads: Int) {
+        override fun toString() = "${engine.name}:$mmap:$threads"
+        fun describe(t: Int) = "${engine.label}, ${if (mmap) "file mapped" else "read into memory"}, $t thread(s)"
     }
 
-    private fun parseConfig(s: String?): LoadConfig? =
-        s?.split(':')?.takeIf { it.size == 2 }?.let { LoadConfig(it[0].toBoolean(), it[1].toIntOrNull() ?: 0) }
+    private fun parseConfig(s: String?): LoadConfig? {
+        val p = s?.split(':') ?: return null
+        return when (p.size) {
+            2 -> LoadConfig(EngineKind.BASE, p[0].toBoolean(), p[1].toIntOrNull() ?: 0) // saved by older versions
+            3 -> runCatching { EngineKind.valueOf(p[0]) }.getOrNull()?.let { LoadConfig(it, p[1].toBoolean(), p[2].toIntOrNull() ?: 0) }
+            else -> null
+        }?.takeIf { it.engine in LlamaBridge.engines }
+    }
 
     /**
-     * Loads [model]. A chat model is checked with one easy question the first time it is loaded
-     * in a given way; if the answer is wrong (some phones return wrong data through mmap, which
-     * makes the model write random text), it is loaded again without mmap, then also with 1
+     * Loads [model]. A chat model is checked with two easy questions the first time it is loaded
+     * in a given way. If the answers are wrong (the model writes random text on some phones), it
+     * is loaded again another way: on each engine this phone can run ([LlamaBridge.engines]: the
+     * fast Armv8.2 build, then the standard one), file mapped, read into memory, then with 1
      * thread. The way that works is remembered for this model. If none works, the model is not
      * used and [ModelUnhealthyException] explains why, instead of showing garbage in chats.
      */
@@ -87,13 +95,26 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         _state.value = State.Loading(model.name)
         val checkable = model.hasChatTemplate || Regex("(?i)instruct|chat|-it\\b").containsMatchIn(model.name + " " + file.name)
         val known = parseConfig(prefs.getString("cfg_${model.id}", null))
-        val ladder = listOfNotNull(known, LoadConfig(true, 0), LoadConfig(false, 0), LoadConfig(false, 1)).distinct()
+        val ladder = (listOfNotNull(known) + LlamaBridge.engines.flatMap { e ->
+            listOf(LoadConfig(e, true, 0), LoadConfig(e, false, 0), LoadConfig(e, false, 1))
+        }).distinct()
         var lastAnswer = ""
         val attempts = ArrayList<String>()
         lastAttempts = attempts
         for (cfg in ladder) {
             val t = if (cfg.threads > 0) cfg.threads else threads
-            val handle = withContext(Dispatchers.Default) { LlamaBridge.load(file.absolutePath, contextSize, t, 0, cfg.mmap) }
+            val handle = try {
+                withContext(Dispatchers.Default) { LlamaBridge.load(file.absolutePath, contextSize, t, 0, cfg.mmap, cfg.engine) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                attempts += "${cfg.describe(t)}: could not start (${e.message})"
+                continue
+            }
+            if (handle == 0L && cfg.engine != EngineKind.BASE) {
+                attempts += "${cfg.describe(t)}: did not load (${LlamaBridge.lastError()})"
+                continue
+            }
             if (handle == 0L) {
                 val err = LlamaBridge.lastError().ifBlank { "llama.cpp failed to load the model" }
                 _state.value = State.Failed(err)
@@ -106,13 +127,13 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
                 _state.value = State.Loading("${model.name} (checking it answers correctly)")
                 val answer = quickCheck(handle)
                 if (answer == null) {
-                    attempts += "${if (cfg.mmap) "file mapped" else "read into memory"}, $t thread(s): correct"
+                    attempts += "${cfg.describe(t)}: correct"
                     prefs.edit().putString("ok_${model.id}", cfg.toString()).apply()
                 } else {
-                    attempts += "${if (cfg.mmap) "file mapped" else "read into memory"}, $t thread(s): WRONG → \"${answer.take(70)}\""
+                    attempts += "${cfg.describe(t)}: WRONG → \"${answer.take(70)}\""
                     lastAnswer = answer
                     events.log(
-                        EventCategory.MODEL, "${model.name} answered wrongly (mmap=${cfg.mmap}, threads=$t)",
+                        EventCategory.MODEL, "${model.name} answered wrongly (${cfg.describe(t)})",
                         "Asked \"What is the capital of France?\" and \"What is 12 + 30?\"; it answered: ${answer.take(300)}", EventLevel.WARN,
                     )
                     LlamaBridge.unload(handle)
@@ -124,11 +145,13 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
             prefs.edit().putString(KEY_LAST_MODEL, model.id).apply()
             events.log(
                 EventCategory.MODEL, "Loaded local model ${model.name}",
-                "context=$contextSize threads=$t mmap=${cfg.mmap}" + if (cfg != LoadConfig(true, 0)) " (safe mode for this phone)" else "",
+                "context=$contextSize threads=$t mmap=${cfg.mmap} engine=${cfg.engine.label}" +
+                    if (!cfg.mmap || cfg.threads > 0) " (safe mode for this phone)" else "",
             )
             return@withLock loaded
         }
-        val msg = "${model.name} gives broken answers on this phone, even when read without mmap and with 1 thread " +
+        val msg = "${model.name} gives broken answers on this phone in every way Gravity can run it " +
+            "(${LlamaBridge.engines.joinToString(" and ") { it.label }}; file mapped, read into memory, 1 thread) " +
             "(asked \"What is the capital of France?\", it answered \"${lastAnswer.take(80)}\"). Use Gemini, or try another model or quantization " +
             "(Phone Models → Check the phone AI shows the details)."
         _state.value = State.Failed(msg)
@@ -179,8 +202,9 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
 
     /** How [modelId] is loaded on this phone, for diagnostics ("file mapped" / "read into memory, 1 thread"). */
     fun loadMode(modelId: String): String {
-        val cfg = parseConfig(prefs.getString("cfg_${modelId}", null)) ?: return "file mapped (normal)"
-        return (if (cfg.mmap) "file mapped" else "read into memory (safe mode)") + if (cfg.threads > 0) ", ${cfg.threads} thread(s)" else ""
+        val cfg = parseConfig(prefs.getString("cfg_${modelId}", null)) ?: return "not checked yet"
+        return cfg.engine.label + ", " + (if (cfg.mmap) "file mapped" else "read into memory (safe mode)") +
+            if (cfg.threads > 0) ", ${cfg.threads} thread(s)" else ""
     }
 
     /** The model that was loaded last (kept across restarts). */

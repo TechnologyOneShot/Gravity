@@ -496,6 +496,17 @@ private fun PhoneAiCheck() {
         val parts = runCatching { java.io.File("/proc/cpuinfo").readLines().filter { it.startsWith("CPU part") }.map { it.substringAfter(':').trim() }.distinct() }.getOrNull()
         sb.appendLine("CPU features: ${cpuFeatures ?: "?"} · parts ${parts?.joinToString(",") ?: "?"}")
         sb.appendLine("Native heap tagging: ${runCatching { com.gravity.ide.ai.local.LlamaBridge.heapTagged() }.getOrNull() ?: "?"} · app ${context.packageManager.getPackageInfo(context.packageName, 0).versionName}")
+        val bridge = com.gravity.ide.ai.local.LlamaBridge
+        sb.appendLine("Engines: ${bridge.engines.joinToString(", ") { it.label }.ifEmpty { "none" }}" +
+            (bridge.fastUnavailableReason?.let { " (fast engine: $it)" } ?: "") + " · HWCAP 0x${java.lang.Long.toHexString(bridge.cpuHwcap())}")
+        c.db.models().all().filter { it.status == "READY" }.forEach { m ->
+            val hash = when {
+                m.sha256Expected == null -> "no published checksum to compare"
+                m.sha256Expected.equals(m.sha256Actual, ignoreCase = true) -> "checksum matches Hugging Face"
+                else -> "CHECKSUM DIFFERS from Hugging Face"
+            }
+            sb.appendLine("File: ${m.name} · ${formatBytes(m.sizeBytes)} · $hash")
+        }
         val loaded = try {
             c.localHost.loadedOrNull() ?: c.localHost.autoLoad(c.db.models().all(), settings)
         } catch (e: Exception) {
@@ -509,7 +520,7 @@ private fun PhoneAiCheck() {
         val model = c.db.models().get(loaded.modelId) ?: return "The loaded model is not in the list any more."
         c.localHost.lastAttempts.forEach { sb.appendLine("Load: $it") }
         sb.appendLine("Model: ${model.name} · ${model.quantization ?: "?"} · ${formatBytes(model.sizeBytes)} · ${java.io.File(model.filePath).name}")
-        sb.appendLine("Context ${loaded.contextSize} · threads $threads · loaded: ${c.localHost.loadMode(model.id)} · ${com.gravity.ide.ai.local.LlamaBridge.systemInfo().trim()}")
+        sb.appendLine("Context ${loaded.contextSize} · threads $threads · loaded: ${c.localHost.loadMode(model.id)} · ${bridge.systemInfo(bridge.engineOf(loaded.handle)).trim()}")
         val questions = listOf("What is the capital of France? Answer with one word." to "paris", "What is 12 + 30? Reply with the number only." to "42")
 
         suspend fun round(label: String, handleName: String): Boolean {

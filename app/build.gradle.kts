@@ -14,6 +14,8 @@ val llamaDir = file("src/main/cpp/llama.cpp")
 // ABIs for the native runtime; override with -Pgravity.abis=x86_64 (e.g. emulator-only builds).
 val llamaAbis = (project.findProperty("gravity.abis") as String?)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
     ?: listOf("arm64-v8a", "x86_64")
+// Second engine build for Armv8.2 phones (module :engine-fast, included by settings.gradle.kts).
+val fastEngine = rootProject.findProject(":engine-fast") != null
 if (llamaEnabled && !llamaDir.resolve("CMakeLists.txt").exists()) {
     throw GradleException(
         "gravity.llama=true but llama.cpp was not found at ${llamaDir.path}. " +
@@ -46,6 +48,7 @@ android {
         versionName = if (ciBuild != null) "0.1.$ciBuild" else "0.1.0-local"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "LLAMA_BUNDLED", llamaEnabled.toString())
+        buildConfigField("boolean", "ENGINE_FAST_BUNDLED", fastEngine.toString())
 
         if (llamaEnabled) {
             ndk {
@@ -139,6 +142,7 @@ ksp {
 android.sourceSets["main"].assets.srcDir(webShellOut)
 
 dependencies {
+    if (fastEngine) implementation(project(":engine-fast"))
     implementation(libs.apksig)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

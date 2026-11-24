@@ -156,9 +156,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { llamafile: "OFF", build: Release }
-          - { llamafile: "ON", build: Release }
-    name: arm64-native-check (llamafile ${{ matrix.llamafile }}, ${{ matrix.build }})
+          - { llamafile: "OFF", build: Release, engine: standard, arch: "" }
+          - { llamafile: "OFF", build: Release, engine: fast, arch: "armv8.2-a+dotprod+fp16" }
+    name: arm64-native-check (${{ matrix.engine }} engine)
     steps:
       - uses: actions/checkout@v4
 
@@ -179,7 +179,7 @@ jobs:
           NDK="$ANDROID_HOME/ndk/27.0.12077973"
           cmake -S tools/arm-check -B /tmp/arm-build -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
-            -DLLAMA_DIR=/tmp/llama.cpp -DCHECK_LLAMAFILE=${{ matrix.llamafile }} > /tmp/cmake.log
+            -DLLAMA_DIR=/tmp/llama.cpp -DCHECK_LLAMAFILE=${{ matrix.llamafile }} -DGGML_CPU_ARM_ARCH="${{ matrix.arch }}" > /tmp/cmake.log
           grep -i "llamafile\|ARM" /tmp/cmake.log | head -20 || true
           cmake --build /tmp/arm-build --target gravity-cli -j"$(nproc)"
           file /tmp/arm-build/gravity-cli
@@ -213,6 +213,7 @@ jobs:
               done
             done
             ask /tmp/coder-q4_k_m.gguf 8 4096 max "hello" "hello\|hi\|help\|assist"
+            ask /tmp/coder-q4_k_m.gguf 4 4096 cortex-a76 "What is the capital of France? Answer with one word." paris
             export NO_MMAP=1  # safe mode: the model read into memory instead of mapped
             ask /tmp/coder-q4_k_m.gguf 4 4096 max "What is 12 + 30? Reply with the number only." 42
             unset NO_MMAP

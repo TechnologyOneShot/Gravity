@@ -16,6 +16,15 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${LLAMA_DIR} llama-build)
 
-add_library(gravity_llama SHARED gravity_llama.cpp gravity_core.cpp)
-target_include_directories(gravity_llama PRIVATE ${LLAMA_DIR}/include)
-target_link_libraries(gravity_llama llama ggml android log)
+# The library and the Kotlin class it binds to. The app builds the standard engine; the
+# :engine-fast module builds this same file again for Armv8.2 phones (GGML_CPU_ARM_ARCH).
+set(GRAVITY_LIB_NAME gravity_llama CACHE STRING "Name of the engine library")
+set(GRAVITY_JNI_CLASS NativeBase CACHE STRING "Kotlin class in com.gravity.ide.ai.local")
+message(STATUS "Gravity engine ${GRAVITY_LIB_NAME} (${GRAVITY_JNI_CLASS}), GGML_CPU_ARM_ARCH='${GGML_CPU_ARM_ARCH}'")
+
+add_library(${GRAVITY_LIB_NAME} SHARED gravity_llama.cpp gravity_core.cpp)
+target_include_directories(${GRAVITY_LIB_NAME} PRIVATE ${LLAMA_DIR}/include)
+target_compile_definitions(${GRAVITY_LIB_NAME} PRIVATE GRAVITY_JNI_CLASS=${GRAVITY_JNI_CLASS})
+target_link_libraries(${GRAVITY_LIB_NAME} llama ggml android log)
+# Keep llama.cpp's symbols private, so two engine builds in one app never mix.
+target_link_options(${GRAVITY_LIB_NAME} PRIVATE -Wl,--exclude-libs,ALL)
