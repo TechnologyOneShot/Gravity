@@ -109,14 +109,18 @@ object Routes {
 
 data class NavItem(val label: String, val route: String, val icon: ImageVector, val group: String)
 
-val drawerItems = listOf(
-    NavItem("Create App", Routes.HOME, Icons.Filled.AutoAwesome, "Create"),
-    NavItem("My Apps", Routes.APPS, Icons.Filled.Apps, "Create"),
-    NavItem("New Chat", Routes.NEW_CHAT, Icons.Filled.AddComment, "Create"),
-    NavItem("Chat History", Routes.CHATS, Icons.Filled.History, "Create"),
-    NavItem("AI Providers", Routes.PROVIDERS, Icons.Filled.Cloud, "Setup"),
-    NavItem("Model Manager", Routes.models(0), Icons.Filled.Memory, "Setup"),
-    NavItem("Settings", Routes.SETTINGS, Icons.Filled.Settings, "Setup"),
+/** Everyday entries, always shown in the sidebar. */
+val mainItems = listOf(
+    NavItem("New Chat", Routes.NEW_CHAT, Icons.Filled.AddComment, "Main"),
+    NavItem("My Apps", Routes.APPS, Icons.Filled.Apps, "Main"),
+    NavItem("Phone Models", Routes.models(0), Icons.Filled.Memory, "Main"),
+    NavItem("Cloud AI", Routes.PROVIDERS, Icons.Filled.Cloud, "Main"),
+    NavItem("Chat History", Routes.CHATS, Icons.Filled.History, "Main"),
+    NavItem("Settings", Routes.SETTINGS, Icons.Filled.Settings, "Main"),
+)
+
+/** Advanced tools, folded away under "Developer tools" so the app stays simple. */
+val devItems = listOf(
     NavItem("Dashboard", Routes.DASHBOARD, Icons.Filled.Dashboard, "Developer tools"),
     NavItem("Projects", "projects", Icons.Filled.Folder, "Developer tools"),
     NavItem("Workspaces", Routes.WORKSPACES, Icons.Filled.Workspaces, "Developer tools"),
@@ -133,14 +137,16 @@ val drawerItems = listOf(
     NavItem("Screenshot Gallery", Routes.SCREENSHOTS, Icons.Filled.PhotoLibrary, "Developer tools"),
     NavItem("Browser Preview", "browser", Icons.Filled.Public, "Developer tools"),
     NavItem("Git Manager", Routes.GIT, Icons.Filled.AccountTree, "Developer tools"),
-    NavItem("Plugins", Routes.PLUGINS, Icons.Filled.Extension, "System"),
-    NavItem("Activity Logs", Routes.ACTIVITY, Icons.Filled.Rule, "System"),
-    NavItem("Notifications", Routes.NOTIFICATIONS, Icons.Filled.Notifications, "System"),
-    NavItem("Export Center", Routes.EXPORT, Icons.Filled.Upload, "System"),
-    NavItem("Backup and Recovery", Routes.BACKUP, Icons.Filled.Backup, "System"),
-    NavItem("Help and Diagnostics", Routes.HELP, Icons.Filled.Help, "System"),
-    NavItem("About Gravity", Routes.ABOUT, Icons.Filled.Info, "System"),
+    NavItem("Plugins", Routes.PLUGINS, Icons.Filled.Extension, "Developer tools"),
+    NavItem("Activity Logs", Routes.ACTIVITY, Icons.Filled.Rule, "Developer tools"),
+    NavItem("Notifications", Routes.NOTIFICATIONS, Icons.Filled.Notifications, "Developer tools"),
+    NavItem("Export Center", Routes.EXPORT, Icons.Filled.Upload, "Developer tools"),
+    NavItem("Backup and Recovery", Routes.BACKUP, Icons.Filled.Backup, "Developer tools"),
+    NavItem("Help and Diagnostics", Routes.HELP, Icons.Filled.Help, "Developer tools"),
+    NavItem("About Gravity", Routes.ABOUT, Icons.Filled.Info, "Developer tools"),
 )
+
+val drawerItems = mainItems + devItems
 
 fun titleFor(route: String?): String {
     val base = route?.substringBefore('?')?.substringBefore('/') ?: return "Gravity"
@@ -160,8 +166,8 @@ fun titleFor(route: String?): String {
         "tasks" -> "Agent Tasks"
         "task" -> "Agent Task"
         "terminal" -> "Terminal"
-        "models" -> "Model Manager"
-        "providers" -> "AI Providers"
+        "models" -> "Phone Models"
+        "providers" -> "Cloud AI"
         "teams" -> "Hybrid AI Teams"
         "build" -> "Build Center"
         "devices" -> "Device Manager"

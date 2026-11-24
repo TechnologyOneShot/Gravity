@@ -15,19 +15,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.gravity.ide.data.settings.ThemeMode
 
+/**
+ * Warm, calm palette (dark). "Cyan" is the accent everywhere in the app (a warm terracotta);
+ * the old names are kept so every screen picks up the new look.
+ */
 object GravityColors {
-    val Cyan = Color(0xFF22D3EE)
-    val Blue = Color(0xFF60A5FA)
-    val Purple = Color(0xFFA78BFA)
-    val Green = Color(0xFF34D399)
-    val Amber = Color(0xFFFBBF24)
-    val Red = Color(0xFFF87171)
-    val Bg = Color(0xFF0B0F17)
-    val Surface = Color(0xFF111827)
-    val SurfaceHigh = Color(0xFF1A2232)
-    val Outline = Color(0xFF263042)
-    val Text = Color(0xFFE5E7EB)
-    val Muted = Color(0xFF94A3B8)
+    val Accent = Color(0xFFD97757)
+    val Cyan = Accent
+    val Blue = Color(0xFF8AB4F8)
+    val Purple = Color(0xFFC4A7E7)
+    val Green = Color(0xFF8BC48A)
+    val Amber = Color(0xFFE5B567)
+    val Red = Color(0xFFE5736A)
+    val Bg = Color(0xFF1F1E1D)
+    val Surface = Color(0xFF262624)
+    val SurfaceHigh = Color(0xFF30302E)
+    val Outline = Color(0xFF3D3D3A)
+    val Text = Color(0xFFEDEBE4)
+    val Muted = Color(0xFFA3A097)
 }
 
 /** Syntax colours used by the editor (separate from Material roles). */
@@ -53,8 +58,8 @@ data class CodeColors(
 val DarkCode = CodeColors(
     keyword = Color(0xFFC792EA), type = Color(0xFF82AAFF), string = Color(0xFFC3E88D), number = Color(0xFFF78C6C),
     comment = Color(0xFF64748B), annotation = Color(0xFFFFCB6B), tag = Color(0xFF89DDFF), attribute = Color(0xFFFFCB6B),
-    punctuation = Color(0xFF89DDFF), heading = Color(0xFF22D3EE), plain = Color(0xFFE5E7EB), gutter = Color(0xFF4B5563),
-    background = Color(0xFF0D1320), bracketMatch = Color(0x5522D3EE), search = Color(0x66FBBF24),
+    punctuation = Color(0xFF89DDFF), heading = Color(0xFFD97757), plain = Color(0xFFEDEBE4), gutter = Color(0xFF5A5852),
+    background = Color(0xFF1A1918), bracketMatch = Color(0x55D97757), search = Color(0x66E5B567),
 )
 
 val LightCode = CodeColors(
@@ -67,14 +72,14 @@ val LightCode = CodeColors(
 val LocalCodeColors = staticCompositionLocalOf { DarkCode }
 
 private val DarkScheme = darkColorScheme(
-    primary = GravityColors.Cyan,
-    onPrimary = Color(0xFF00313A),
-    primaryContainer = Color(0xFF0E3A47),
-    onPrimaryContainer = Color(0xFFBDF4FF),
+    primary = GravityColors.Accent,
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFF4A2E24),
+    onPrimaryContainer = Color(0xFFFFDBCF),
     secondary = GravityColors.Purple,
-    onSecondary = Color(0xFF2A1659),
-    secondaryContainer = Color(0xFF2E2552),
-    onSecondaryContainer = Color(0xFFE9DDFF),
+    onSecondary = Color(0xFF2B2140),
+    secondaryContainer = Color(0xFF3A3346),
+    onSecondaryContainer = Color(0xFFEADDFF),
     tertiary = GravityColors.Blue,
     background = GravityColors.Bg,
     onBackground = GravityColors.Text,
@@ -84,23 +89,26 @@ private val DarkScheme = darkColorScheme(
     onSurfaceVariant = GravityColors.Muted,
     surfaceContainer = GravityColors.Surface,
     surfaceContainerHigh = GravityColors.SurfaceHigh,
-    surfaceContainerHighest = Color(0xFF212B3D),
-    surfaceContainerLow = Color(0xFF0F1521),
+    surfaceContainerHighest = Color(0xFF383835),
+    surfaceContainerLow = Color(0xFF232221),
     outline = GravityColors.Outline,
-    outlineVariant = Color(0xFF1E2636),
+    outlineVariant = Color(0xFF33332F),
     error = GravityColors.Red,
 )
 
 private val LightScheme = lightColorScheme(
-    primary = Color(0xFF0891B2),
-    secondary = Color(0xFF7C3AED),
+    primary = Color(0xFFC96442),
+    secondary = Color(0xFF7C5CC4),
     tertiary = Color(0xFF2563EB),
-    background = Color(0xFFF8FAFC),
+    background = Color(0xFFFAF9F5),
     surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFEFF3F8),
+    surfaceVariant = Color(0xFFF0EEE6),
 )
 
 val MonoFamily = FontFamily.Monospace
+
+/** Serif face for large, calm headings (greetings, empty states). */
+val DisplayFamily = FontFamily.Serif
 
 private val GravityTypography = Typography().let { t ->
     t.copy(

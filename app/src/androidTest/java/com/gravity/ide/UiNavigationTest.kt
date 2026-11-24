@@ -9,6 +9,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onFirst
@@ -75,6 +76,11 @@ class UiNavigationTest {
     private fun openDrawerEntry(label: String) {
         compose.onNodeWithContentDescription("Open navigation").performClick()
         compose.waitForIdle()
+        if (compose.onAllNodesWithTag("nav:$label").fetchSemanticsNodes().isEmpty()) {
+            // Advanced screens are folded under "Developer tools".
+            compose.onNodeWithTag("nav:Developer tools").performScrollTo().performClick()
+            compose.waitForIdle()
+        }
         compose.onNodeWithTag("nav:$label").performScrollTo().performClick()
         compose.waitForIdle()
     }
@@ -89,14 +95,16 @@ class UiNavigationTest {
     }
 
     @Test
-    fun t01_appLaunchesOnCreateAppHome_andDashboardStillWorks() {
+    fun t01_appLaunchesOnChatHome_andDashboardStillWorks() {
         waitForTitle("Gravity")
-        compose.onNodeWithText("What do you want to build?").assertExists()
-        compose.onNodeWithText("Build my app").assertExists()
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("How can I help you today?").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("chat-input").assertExists()
+        compose.onNodeWithTag("mode-chat").assertExists()
+        compose.onNodeWithTag("mode-app").assertExists()
         Thread.sleep(1500)
         compose.waitForIdle()
         Ci.log("launch", "Home: ${visibleText().take(2500)}")
-        Ci.screenshot("01_home_create_app")
+        Ci.screenshot("01_home")
 
         openDrawerEntry("Dashboard")
         waitForTitle("Dashboard")
@@ -138,7 +146,7 @@ class UiNavigationTest {
         waitForTitle("Gravity")
         openDrawerEntry("New Chat")
         waitForTitle("Chat")
-        compose.waitUntil(15_000) { compose.onAllNodesWithText("How can I help?").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("How can I help you today?").fetchSemanticsNodes().isNotEmpty() }
     }
 
     /** The chat composer: + menu with files and photos, the mic and the text box. Ends with the menu open. */
@@ -151,6 +159,8 @@ class UiNavigationTest {
         compose.onNodeWithTag("attach-button").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Photos and images").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Files (code, text, PDF, ZIP)").assertExists()
+        compose.onNodeWithTag("mode-chat").assertExists()
+        compose.onNodeWithTag("mode-app").assertExists()
         Ci.screenshot("03a_chat_attach_menu")
     }
 
@@ -187,8 +197,15 @@ class UiNavigationTest {
         assertNotNull("No assistant row was written for the message", reply)
         reply!!
         Ci.log("chat", "Assistant row: content='${reply.content}' error='${reply.error}' model=${reply.model}")
-        assertTrue("A reply was produced with no provider configured: '${reply.content}'", reply.content.isBlank())
-        assertTrue("No error was recorded", !reply.error.isNullOrBlank())
+        val phoneModel = Ci.container.localHost.runtimeAvailable && runBlocking { db.models().all() }.any { it.status == "READY" }
+        if (phoneModel) {
+            // No cloud key, but a downloaded phone model: Gravity loads it by itself and it answers.
+            Ci.log("chat", "Answered by the phone model, loaded automatically: ${Ci.container.localHost.loadedOrNull()?.name}")
+            assertTrue("The phone model did not answer: ${reply.error}", reply.error.isNullOrBlank() && reply.content.isNotBlank())
+        } else {
+            assertTrue("A reply was produced with no AI configured: '${reply.content}'", reply.content.isBlank())
+            assertTrue("No error was recorded", !reply.error.isNullOrBlank())
+        }
         Thread.sleep(800)
         compose.waitForIdle()
         Ci.log("chat", "Chat screen: ${visibleText().take(2000)}")

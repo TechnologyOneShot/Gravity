@@ -304,10 +304,15 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 if (f.isNotEmpty()) c.events.log(EventCategory.SECURITY, "Redacted ${f.size} secret(s) from chat content sent to ${resolved.model}", level = EventLevel.WARN)
                 return r
             }
-            val history = c.db.chats().messages(chatId).filter { it.error == null }
+            // App cards and failed replies are not part of the conversation the model sees.
+            val history = c.db.chats().messages(chatId).filter { it.error == null && it.content.isNotBlank() }
             val llm = mutableListOf<LlmMessage>()
             val system = buildString {
-                append("You are Gravity's coding assistant on an Android device. Be precise; use Markdown code blocks for code.")
+                append(
+                    "You are Gravity, a friendly and capable AI assistant in an Android app. Reply in the language and script the user writes in " +
+                        "(Hindi, Hinglish or English). Give clear, correct, well-organised answers; keep them as short as the question allows. " +
+                        "Use Markdown, and put code in fenced code blocks. If you are not sure, say so instead of guessing."
+                )
                 if (project != null) {
                     val root = File(project.rootPath)
                     append("\n\nThe user is working on project '${project.name}' (${project.type}). Files:\n")
@@ -380,20 +385,102 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
     }
 
     fun deleteMessage(id: Long) = viewModelScope.launch { c.db.chats().deleteMessage(id) }
+
+    /** App mode: messages build an app, or change the app this chat is about. */
+    val appMode = MutableStateFlow(false)
+    private var modeChosen = false
+
+    fun chooseMode(app: Boolean) {
+        modeChosen = true
+        appMode.value = app
+    }
+
+    /** Switches to App mode when the text clearly asks for an app, unless the user picked a mode. */
+    fun suggestMode(text: String) {
+        if (!modeChosen && !appMode.value && com.gravity.ide.agent.AppBuilder.looksLikeAppRequest(text)) appMode.value = true
+    }
+
+    init {
+        viewModelScope.launch {
+            val chat = c.db.chats().get(chatId)
+            val linked = chat?.projectId?.let { c.db.projects().get(it) }
+            if (linked?.type == "APP") appMode.value = true
+        }
+    }
+
+    fun sendApp(text: String) {
+        if (busy.value || text.isBlank()) return
+        if (attachments.value.isNotEmpty()) {
+            error.value = "Files can't be sent with an app request yet. Switch to Chat to ask about them, or remove them."
+            return
+        }
+        viewModelScope.launch {
+            busy.value = true
+            try {
+                val now = System.currentTimeMillis()
+                c.db.chats().insertMessage(MessageEntity(chatId = chatId, role = "user", content = text, createdAt = now))
+                val chat = c.db.chats().get(chatId)
+                val linked = chat?.projectId?.let { c.db.projects().get(it) }?.takeIf { it.type == "APP" }
+                val (project, taskId) = if (linked != null) linked to c.appBuilder.change(linked, text) else c.appBuilder.create(text)
+                if (chat != null && linked == null) {
+                    c.db.chats().upsert(
+                        chat.copy(projectId = project.id, title = if (chat.title == "New chat" || chat.title.isBlank()) project.name else chat.title, updatedAt = now)
+                    )
+                }
+                addAppCard(project.id, taskId, isChange = linked != null)
+            } catch (e: Exception) {
+                error.value = e.message ?: "Could not start the app"
+            } finally {
+                busy.value = false
+            }
+        }
+    }
+
+    fun retryApp(projectId: String, taskId: String) = viewModelScope.launch {
+        try {
+            val project = c.db.projects().get(projectId) ?: return@launch
+            val task = c.db.tasks().get(taskId) ?: return@launch
+            val newId = c.appBuilder.retry(project, task)
+            addAppCard(projectId, newId, isChange = com.gravity.ide.agent.AppBuilder.isChangeInstruction(task.instruction))
+        } catch (e: Exception) {
+            error.value = e.message ?: "Could not try again"
+        }
+    }
+
+    private suspend fun addAppCard(projectId: String, taskId: String, isChange: Boolean) {
+        val card = JSONArray().put(JSONObject().put("kind", "app").put("projectId", projectId).put("taskId", taskId).put("change", isChange))
+        c.db.chats().insertMessage(MessageEntity(chatId = chatId, role = "assistant", content = "", attachments = card.toString(), createdAt = System.currentTimeMillis()))
+        c.db.chats().get(chatId)?.let { c.db.chats().upsert(it.copy(updatedAt = System.currentTimeMillis())) }
+    }
+}
+
+/** A chat for a new conversation: the newest empty one is reused, so empty chats don't pile up. */
+suspend fun freshChatId(c: AppContainer): String {
+    val empty = c.db.chats().all().filter { it.title == "New chat" && !it.archived }.sortedByDescending { it.updatedAt }
+        .firstOrNull { c.db.chats().messages(it.id).isEmpty() }
+    if (empty != null) return empty.id
+    val s = c.settings.current()
+    val id = UUID.randomUUID().toString()
+    val now = System.currentTimeMillis()
+    c.db.chats().upsert(ChatEntity(id = id, title = "New chat", providerId = s.defaultProviderId, model = s.defaultModel, reasoning = s.reasoning.name, createdAt = now, updatedAt = now))
+    return id
+}
+
+/** Home: a fresh conversation, like opening Claude. */
+@Composable
+fun HomeChatScreen(go: (String) -> Unit) {
+    val c = LocalAppContainer.current
+    var chatId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { if (chatId == null) chatId = freshChatId(c) }
+    val id = chatId
+    if (id == null) Box(Modifier.fillMaxSize()) else ChatScreen(id, go)
 }
 
 @Composable
 fun NewChatRedirect(onCreated: (String) -> Unit) {
     val c = LocalAppContainer.current
-    LaunchedEffect(Unit) {
-        val s = c.settings.current()
-        val id = UUID.randomUUID().toString()
-        c.db.chats().upsert(
-            ChatEntity(id = id, title = "New chat", providerId = s.defaultProviderId, model = s.defaultModel, reasoning = s.reasoning.name, createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis())
-        )
-        onCreated(id)
-    }
-    EmptyState("Starting chat…", "")
+    LaunchedEffect(Unit) { onCreated(freshChatId(c)) }
+    Box(Modifier.fillMaxSize())
 }
 
 @Composable
@@ -434,36 +521,27 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
     }
 
     val ch = chat ?: run {
-        EmptyState("Chat not found", "")
+        Box(Modifier.fillMaxSize())
         return
     }
-    val label = modelLabelFor(ch, providers, (local as? com.gravity.ide.ai.local.LocalModelHost.State.Ready)?.loaded)
+    val appMode by vm.appMode.collectAsState()
+    val localModels by c.db.models().observe().collectAsState(initial = emptyList())
+    val loadedLocal = (local as? com.gravity.ide.ai.local.LocalModelHost.State.Ready)?.loaded
+    val label = modelLabelFor(ch, providers, loadedLocal)
+    val hasCloud = providers.any { it.enabled && it.kind != com.gravity.ide.ai.ProviderKind.LOCAL.name }
+    val hasPhoneModel = c.localHost.runtimeAvailable && localModels.any { it.status == com.gravity.ide.models.ModelStatus.READY.name }
     fun share(text: String) {
         context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Share"))
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            ModelPill(label, onClick = { modelSheet = true }, modifier = Modifier.weight(1f, fill = false))
-            Spacer(Modifier.width(6.dp))
-            AssistChip(onClick = { modelSheet = true }, label = { Text(ReasoningMode.fromName(ch.reasoning).label, maxLines = 1) })
-            Spacer(Modifier.weight(1f))
-            OverflowMenu(
-                listOf(
-                    MenuAction("New chat", Icons.Filled.Edit) { go(Routes.NEW_CHAT) },
-                    MenuAction("Regenerate", Icons.Filled.Refresh) { vm.regenerate() },
-                    MenuAction("Continue generation", Icons.Filled.Refresh) { vm.continueGeneration() },
-                    MenuAction("Share as text", Icons.Filled.Share) { share(messages.joinToString("\n\n") { "**${it.role}**: ${it.content}" }) },
-                )
-            )
-        }
-        ch.projectId?.let { pid -> projects.firstOrNull { it.id == pid } }?.let { p ->
-            Text("Project context: ${p.name}${if (p.localOnly) " (local-only)" else ""}", style = MaterialTheme.typography.labelSmall, color = GravityColors.Purple, modifier = Modifier.padding(horizontal = 16.dp))
-        }
-
-        LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (messages.isEmpty() && streaming == null) item {
-                ChatWelcome(label, onPickModel = { modelSheet = true }, onSuggestion = { input = it }, onBuildApp = { go(Routes.HOME) })
+                ChatWelcome(
+                    needsSetup = !hasCloud && !hasPhoneModel,
+                    onSetup = { aiSetup = true },
+                    onSuggestion = { text, app -> vm.chooseMode(app); input = text },
+                )
             }
             val lastId = messages.lastOrNull()?.id
             items(messages, key = { it.id }) { m ->
@@ -475,6 +553,8 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
                     onDelete = { vm.deleteMessage(m.id) },
                     onChangeModel = { modelSheet = true },
                     onOpenUrl = { go(Routes.browser(it)) },
+                    onOpenApp = { go(Routes.app(it)) },
+                    onRetryApp = { p, t -> vm.retryApp(p, t) },
                 )
             }
             streaming?.let { s -> item { StreamingBubble(s) } }
@@ -482,7 +562,9 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
         error?.let { MessageBanner(it, isError = true) { vm.error.value = null } }
         notice?.let { MessageBanner(it) { vm.notice.value = null } }
         ChatComposer(
-            value = input, onValueChange = { input = it }, busy = busy, attachments = attachments,
+            value = input,
+            onValueChange = { input = it; vm.suggestMode(it) },
+            busy = busy, attachments = attachments,
             onRemoveAttachment = { vm.removeAttachment(it) },
             onAttachFiles = { picker.launch(arrayOf("*/*")) },
             onAttachImages = { picker.launch(arrayOf("image/*")) },
@@ -497,10 +579,20 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
                 }
             },
             onSend = {
-                vm.send(input)
-                input = ""
+                val text = input
+                if (appMode) {
+                    if (!hasCloud && !hasPhoneModel) aiSetup = true
+                    else if (text.isNotBlank()) { vm.sendApp(text); input = "" }
+                } else {
+                    vm.send(text)
+                    input = ""
+                }
             },
             onStop = { vm.stop() },
+            appMode = appMode,
+            onModeChange = { vm.chooseMode(it) },
+            modelLabel = label,
+            onPickModel = { modelSheet = true },
         )
     }
 

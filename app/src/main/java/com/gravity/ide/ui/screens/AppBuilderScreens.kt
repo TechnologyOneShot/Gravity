@@ -72,6 +72,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -278,8 +282,8 @@ fun AiSetupDialog(onDismiss: () -> Unit, go: (String) -> Unit) {
                 if (saving) LinearProgressIndicator(Modifier.fillMaxWidth())
                 Spacer(Modifier.height(4.dp))
                 Text("Offline alternative", fontWeight = FontWeight.SemiBold)
-                Text("Download and load a model in Model Manager. It runs on the phone with no limits and no internet, but small phone models write much weaker apps.", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { onDismiss(); go(Routes.models(0)) }) { Text("Open Model Manager") }
+                Text("Download a model in Phone Models. It runs on the phone with no limits and no internet (Gravity loads it when needed), but small phone models give much weaker answers and apps.", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { onDismiss(); go(Routes.models(2)) }) { Text("Open Phone Models") }
             }
         },
         confirmButton = {
@@ -319,7 +323,7 @@ fun MyAppsScreen(go: (String) -> Unit) {
     val projects by c.db.projects().observeActive().collectAsState(initial = emptyList())
     val apps = projects.filter { it.type == "APP" }.sortedByDescending { maxOf(it.updatedAt, it.lastOpenedAt) }
     if (apps.isEmpty()) {
-        EmptyState("No apps yet", "Describe an app on the Home screen and Gravity builds it.", action = { TextButton(onClick = { go(Routes.HOME) }) { Text("Create an app") } })
+        EmptyState("No apps yet", "In a chat, switch to App and describe the app you want. Gravity builds it.", action = { TextButton(onClick = { go(Routes.HOME) }) { Text("Start a chat") } })
         return
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -468,12 +472,26 @@ fun AppScreen(projectId: String, go: (String) -> Unit) {
                 TextButton(onClick = { submitChange("Fix these JavaScript errors shown when the app runs:\n" + consoleErrors.take(8).joinToString("\n")) }) { Text("Ask AI to fix") }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                change, { change = it }, enabled = !running, maxLines = 4, modifier = Modifier.weight(1f).testTag("change-input"),
-                placeholder = { Text("Describe a change… e.g. add a shuffle button") },
-            )
-            IconButton(onClick = { submitChange(change) }, enabled = change.isNotBlank() && !running) { Icon(Icons.AutoMirrored.Filled.Send, "Send change") }
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp), color = GravityColors.SurfaceHigh,
+            border = androidx.compose.foundation.BorderStroke(1.dp, GravityColors.Outline),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            Row(Modifier.padding(start = 4.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.TextField(
+                    change, { change = it }, enabled = !running, maxLines = 4, modifier = Modifier.weight(1f).testTag("change-input"),
+                    placeholder = { Text(if (running) "Working on it…" else "Ask for a change… e.g. add a shuffle button", color = GravityColors.Muted) },
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
+                    ),
+                )
+                val canSend = change.isNotBlank() && !running
+                IconButton(
+                    onClick = { submitChange(change) }, enabled = canSend,
+                    modifier = Modifier.size(38.dp).background(if (canSend) GravityColors.Accent else GravityColors.Outline, CircleShape),
+                ) { Icon(Icons.Filled.ArrowUpward, "Send change", tint = Color.White, modifier = Modifier.size(20.dp)) }
+            }
         }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),

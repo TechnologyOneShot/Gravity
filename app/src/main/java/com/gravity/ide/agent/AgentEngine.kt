@@ -251,8 +251,8 @@ class AgentEngine(
 
     private suspend fun runSingle(task: AgentTaskEntity, project: ProjectEntity) {
         val resolved = resolveOrWait(task.id, task.providerId, task.model, project) ?: return
-        if (resolved.provider.isLocal && AppBuilder.isBuilderInstruction(task.instruction)) {
-            runDirectWebApp(task, project, resolved)
+        if (AppBuilder.isBuilderInstruction(task.instruction)) {
+            runSingleFileApp(task, project, resolved)
             return
         }
         val s = settings.current()
@@ -518,49 +518,63 @@ class AgentEngine(
     }
 
     /**
-     * App Builder on an on-device model: one request that returns the whole app as a single
-     * HTML file, written to index.html (with a checkpoint, so Undo works). Small local models
-     * cannot follow the multi-step tool protocol, but many can write one complete file.
+     * App Builder: one request that returns the whole app as a single HTML file, written to
+     * index.html (with a checkpoint, so Undo works). Then Gravity tests the page for real
+     * (off-screen WebView, every button tapped) and gives the model one chance to fix the
+     * JavaScript errors it finds. Used for every model: phone models cannot follow the multi-step
+     * tool protocol, and for cloud models one complete file is faster and more reliable.
      */
-    private suspend fun runDirectWebApp(task: AgentTaskEntity, project: ProjectEntity, resolved: ResolvedModel) {
+    private suspend fun runSingleFileApp(task: AgentTaskEntity, project: ProjectEntity, resolved: ResolvedModel) {
+        val local = resolved.provider.isLocal
+        val who = if (local) "phone model" else resolved.model
         val root = File(project.rootPath)
         val index = File(root, "index.html")
         val isChange = AppBuilder.isChangeInstruction(task.instruction)
         val current = if (isChange && index.isFile) index.readText().takeUnless { AppBuilder.isPlaceholder(it) } else null
-        val (system, user) = AppBuilder.directPrompt(AppBuilder.requestFrom(task.instruction), current)
-        val loaded = localHost.loadedOrNull()
-        // A whole app in one answer needs room: use a bigger context for this request if free memory allows.
+        val (system, user) = AppBuilder.directPrompt(AppBuilder.requestFrom(task.instruction), current, compact = local)
+        val loaded = if (local) localHost.loadedOrNull() else null
+        // A whole app in one answer needs room: on the phone, use a bigger context for this request if free memory allows.
         val ctx = if (loaded != null) localHost.contextForLongAnswer(loaded, 8192) else settings.current().localContextSize
-        // Rough token estimate (≈3 characters per token, on the safe side) to leave room for the answer.
-        val promptTokens = (system.length + user.length) / 3 + 64
-        val room = ctx - promptTokens
-        if (room < 1200) {
+
+        /** Output budget for a prompt on the phone model (≈3 characters per token, on the safe side); null for cloud models. */
+        fun budget(sys: String, usr: String): Int? = if (!local) null else ctx - ((sys.length + usr.length) / 3 + 64) - 64
+
+        suspend fun ask(sys: String, usr: String, maxTokens: Int?): com.gravity.ide.ai.LlmResult = call(
+            task.id, resolved,
+            listOf(LlmMessage(Role.SYSTEM, sys), LlmMessage(Role.USER, usr)),
+            emptyList(), ReasoningMode.BALANCED,
+            maxOutputTokens = maxTokens?.let { minOf(it, 7500) },
+            temperature = if (local) 0.2 else null,
+            contextSize = if (local) ctx else null,
+            assistantPrefix = if (local) AppBuilder.DIRECT_PREFIX else null,
+            stop = if (local) listOf("</html>") else emptyList(),
+        )
+
+        val room = budget(system, user)
+        if (room != null && room < 1100) {
             throw IllegalStateException(
-                "The app is too large for the on-device model's memory (${ctx} tokens). Use Gemini for this app (Home → connect a free key), " +
+                "The app is too large for the phone model's memory (${ctx} tokens). Use Gemini for this app (connect a free key), " +
                     "or raise Local context size in Settings → Local AI."
             )
         }
-        stage(task.id, (if (current != null) "Rewriting the app with your change" else "Writing the app as one file") + " · phone model, up to ${room - 64} tokens")
-        events.log(EventCategory.AGENT, "Single-file app on the phone model", "context $ctx tokens (loaded with ${loaded?.contextSize}), answer up to ${room - 64} tokens", taskId = task.id, model = resolved.model)
-        val result = call(
-            task.id, resolved,
-            listOf(LlmMessage(Role.SYSTEM, system), LlmMessage(Role.USER, user)),
-            emptyList(), ReasoningMode.BALANCED,
-            maxOutputTokens = minOf(room - 64, 7500), temperature = 0.2,
-            contextSize = ctx, assistantPrefix = AppBuilder.DIRECT_PREFIX, stop = listOf("</html>"),
-        )
+        stage(task.id, (if (current != null) "Rewriting the app with your change" else "Writing the app") + if (local) " · phone model, up to $room tokens" else " · $who")
+        events.log(EventCategory.AGENT, "Single-file app with $who", if (local) "context $ctx tokens (loaded with ${loaded?.contextSize}), answer up to $room tokens" else "", taskId = task.id, model = resolved.model)
+        val result = ask(system, user, room)
         val html = AppBuilder.extractHtml(result.text)
         if (html == null) {
             // Keep the whole reply in the task log (Details) so the user can see what the model wrote.
-            events.log(EventCategory.AGENT, "Phone model reply (${result.outputTokens} tokens, no complete page)", result.text.take(20_000), EventLevel.WARN, taskId = task.id, model = resolved.model)
+            events.log(EventCategory.AGENT, "AI reply (${result.outputTokens} tokens, no complete page)", result.text.take(20_000), EventLevel.WARN, taskId = task.id, model = resolved.model)
             val end = result.text.trim().replace(Regex("\\s+"), " ").takeLast(120)
             throw IllegalStateException(
-                if (result.finishReason == "MAX_TOKENS") {
-                    "The phone model wrote ${result.outputTokens} tokens (all the room it had with a $ctx-token context) without finishing the app; it ended with: \"…$end\". " +
-                        "Try again, ask for a simpler app, or use Gemini (free key) for complete apps. The full reply is under Details."
-                } else {
-                    "The phone model stopped without writing a complete page (${result.outputTokens} tokens; it ended with: \"…$end\"). Nothing was written. " +
-                        "Try again, or use Gemini (free key) for better results. The full reply is under Details."
+                when {
+                    local && result.finishReason == "MAX_TOKENS" ->
+                        "The phone model wrote ${result.outputTokens} tokens (all the room it had with a $ctx-token context) without finishing the app; it ended with: \"…$end\". " +
+                            "Try again, ask for a simpler app, or use Gemini (free key) for complete apps. The full reply is under Details."
+                    local ->
+                        "The phone model stopped without writing a complete page (${result.outputTokens} tokens; it ended with: \"…$end\"). Nothing was written. " +
+                            "Try again, or use Gemini (free key) for better results. The full reply is under Details."
+                    else ->
+                        "${resolved.model} did not return a complete page (it ended with: \"…$end\"), so nothing was written. Try again. The full reply is under Details."
                 }
             )
         }
@@ -576,17 +590,11 @@ class AgentEngine(
         var report = pageChecker.check(root)
         events.log(EventCategory.TEST, "App test: ${report.errors.size} error(s), ${report.controlsTapped} button(s) tapped", report.errors.joinToString("\n"), if (report.errors.isEmpty()) EventLevel.INFO else EventLevel.WARN, taskId = task.id)
         if (report.errors.isNotEmpty()) {
-            val (rs, ru) = AppBuilder.repairPrompt(html, report.errors)
-            val repairRoom = ctx - ((rs.length + ru.length) / 3 + 64)
-            if (repairRoom >= 1200) {
-                stage(task.id, "The test found ${report.errors.size} error(s); the phone model is fixing them")
-                val fix = call(
-                    task.id, resolved,
-                    listOf(LlmMessage(Role.SYSTEM, rs), LlmMessage(Role.USER, ru)),
-                    emptyList(), ReasoningMode.BALANCED,
-                    maxOutputTokens = minOf(repairRoom - 64, 7500), temperature = 0.2,
-                    contextSize = ctx, assistantPrefix = AppBuilder.DIRECT_PREFIX, stop = listOf("</html>"),
-                )
+            val (rs, ru) = AppBuilder.repairPrompt(html, report.errors, compact = local)
+            val repairRoom = budget(rs, ru)
+            if (repairRoom == null || repairRoom >= 1100) {
+                stage(task.id, "The test found ${report.errors.size} error(s); fixing them")
+                val fix = ask(rs, ru, repairRoom)
                 val fixed = AppBuilder.extractHtml(fix.text)
                 if (fixed != null && fixed != html) {
                     write(fixed, "write_file (fix after test)")
@@ -599,18 +607,18 @@ class AgentEngine(
                         write(html, "write_file (fix made it worse; first version restored)")
                     }
                 } else {
-                    events.log(EventCategory.AGENT, "The phone model's fix was not a complete page; keeping the first version", fix.text.take(20_000), EventLevel.WARN, taskId = task.id)
+                    events.log(EventCategory.AGENT, "The fix was not a complete page; keeping the first version", fix.text.take(20_000), EventLevel.WARN, taskId = task.id)
                 }
             }
         }
-        val verb = if (current != null) "Applied your change" else "Built the app as a single file"
+        val verb = if (current != null) "Applied your change" else "Built the app"
         complete(
             task.id,
             if (report.errors.isEmpty()) {
-                "$verb with ${resolved.model}. Gravity opened it and tapped ${report.controlsTapped} button(s): no errors. Ask for changes below."
+                "$verb with ${resolved.model}. Gravity opened it and tapped ${report.controlsTapped} button(s): no errors."
             } else {
                 "$verb with ${resolved.model}, but Gravity's test still finds ${report.errors.size} error(s), so parts may not work: " +
-                    report.errors.take(3).joinToString("; ") + ". Describe the problem below to try a fix, or use Gemini for a better app."
+                    report.errors.take(3).joinToString("; ") + ". Describe the problem to try a fix" + if (local) ", or use Gemini for a better app." else "."
             },
         )
     }

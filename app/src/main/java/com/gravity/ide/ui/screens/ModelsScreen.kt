@@ -42,6 +42,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -148,6 +150,7 @@ private fun InstalledModels() {
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { RuntimeBanner() }
+        item { RecommendedModels(models) }
         item {
             Panel {
                 Column {
@@ -391,4 +394,75 @@ private fun HubSearch() {
         )
     }
     LaunchedEffect(Unit) { if (results.isEmpty() && network.online) search() }
+}
+
+
+/** A coder model Gravity suggests, with what CI measured for it (App Builder test apps that worked). */
+private data class Suggested(val title: String, val repo: String, val file: String, val approxBytes: Long, val note: String)
+
+private val suggestedModels = listOf(
+    Suggested(
+        "Qwen2.5-Coder 7B", "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf", 4_680_000_000L,
+        "Best phone model for apps (6 of 6 test apps worked). Needs a phone with about 12 GB RAM; slower.",
+    ),
+    Suggested(
+        "Qwen2.5-Coder 3B", "bartowski/Qwen2.5-Coder-3B-Instruct-GGUF", "Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf", 1_930_000_000L,
+        "For 6–8 GB phones (4 of 6 test apps worked; calculators often wrong).",
+    ),
+    Suggested(
+        "Qwen2.5-Coder 1.5B", "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", 1_120_000_000L,
+        "Smallest and fastest; simple apps only (4 of 6 test apps worked).",
+    ),
+)
+
+/** One-tap downloads of the models above, marked by whether they fit this phone. */
+@Composable
+private fun RecommendedModels(installed: List<LocalModelEntity>) {
+    val c = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val maxBytes = remember { c.device.recommendedMaxModelBytes() }
+    var busy by remember { mutableStateOf<String?>(null) }
+    Panel {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Recommended for this phone", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Q4_K_M builds from Hugging Face, checked with their published SHA-256. Gravity loads a downloaded model by itself when the AI is needed.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            for (m in suggestedModels) {
+                val have = installed.firstOrNull { it.name.equals(m.file, ignoreCase = true) || (it.repoId == m.repo && it.filePath.endsWith(m.file)) }
+                val fits = m.approxBytes <= maxBytes
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${m.title} · ≈${formatBytes(m.approxBytes)}", style = MaterialTheme.typography.bodyMedium)
+                        Text(m.note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (fits) "Fits this phone" else "Too big for this phone",
+                            style = MaterialTheme.typography.labelSmall, color = if (fits) GravityColors.Green else GravityColors.Amber,
+                        )
+                    }
+                    when {
+                        have != null -> Text(if (have.status == ModelStatus.READY.name) "Downloaded" else have.status.lowercase(), style = MaterialTheme.typography.labelMedium, color = GravityColors.Green)
+                        busy == m.repo -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else -> TextButton(onClick = {
+                            busy = m.repo
+                            scope.launch {
+                                try {
+                                    val file = c.models.listHubFiles(m.repo).firstOrNull { it.path.equals(m.file, ignoreCase = true) }
+                                        ?: throw IllegalStateException("${m.file} is no longer in ${m.repo}")
+                                    c.models.enqueueHubDownload(m.repo, file, null)
+                                    toast(context, "Downloading ${m.title} (see Downloads)")
+                                } catch (e: Exception) {
+                                    toast(context, "Could not start the download: ${e.message}")
+                                } finally {
+                                    busy = null
+                                }
+                            }
+                        }) { Text("Download") }
+                    }
+                }
+            }
+        }
+    }
 }

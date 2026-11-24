@@ -114,6 +114,15 @@ class AppBuilder(
                 "gaan[ae]?|gana|gane|geet|tasve?er)\\b|player|फ़ोटो|फोटो|गाना|गाने|वीडियो|संगीत|तस्वीर",
         )
 
+        private val appNouns = "app|apps|application|game|calculator|player|tracker|timer|stopwatch|todo|to-do|counter|quiz"
+        private val appVerbs = "bana|banao|banado|banaiye|banaye|banana|build|make|create|chahiye"
+        private val appIntent = Regex(
+            "(?i)\\b($appNouns)\\b[\\s\\S]*\\b($appVerbs)\\b|\\b($appVerbs)\\b[\\s\\S]*\\b($appNouns)\\b|(ऐप|गेम|कैलकुलेटर)[\\s\\S]*बना|बना[\\s\\S]*(ऐप|गेम)",
+        )
+
+        /** True for messages that ask Gravity to build an app ("calculator bana do", "make a quiz game"). */
+        fun looksLikeAppRequest(text: String) = appIntent.containsMatchIn(text)
+
         /** True when the app works with the user's own media or documents (e.g. a music player). */
         fun usesUserFiles(request: String) = fileWords.containsMatchIn(request)
 
@@ -121,11 +130,21 @@ class AppBuilder(
          * Prompt for on-device models: one self-contained HTML file in a single reply. Small
          * models cannot follow the multi-step tool protocol, but many can write one file.
          */
-        fun directPrompt(request: String, currentHtml: String?): Pair<String, String> {
-            val system = "You are an expert web developer. You write small, complete, working mobile web apps as ONE self-contained HTML file " +
-                "with inline <style> and <script>. No external libraries, no CDNs, no comments, no explanations: output only the code."
-            val rules = "Rules: one HTML file with a viewport meta tag; large touch-friendly buttons; a clean modern look; keep it compact " +
-                "(about 100–200 lines, short CSS); every button and feature must really work: define every function you call, and show results in an element that is on screen. Use localStorage only if the app must remember data." +
+        fun directPrompt(request: String, currentHtml: String?, compact: Boolean = true): Pair<String, String> {
+            val system = if (compact) {
+                "You are an expert web developer. You write small, complete, working mobile web apps as ONE self-contained HTML file " +
+                    "with inline <style> and <script>. No external libraries, no CDNs, no comments, no explanations: output only the code."
+            } else {
+                "You are an expert web developer and designer. You write complete, polished, working mobile web apps as ONE self-contained " +
+                    "HTML file with inline <style> and <script>. No external libraries or CDNs. Reply with the code only, in one ```html code block."
+            }
+            val size = if (compact) {
+                "a clean modern look; keep it compact (about 100–200 lines, short CSS)"
+            } else {
+                "a beautiful modern design that follows the phone's light or dark mode (prefers-color-scheme), with smooth, app-like screens"
+            }
+            val rules = "Rules: one HTML file with a viewport meta tag; large touch-friendly buttons; $size; every button and feature must " +
+                "really work: define every function you call, and show results in an element that is on screen. Use localStorage only if the app must remember data." +
                 if (usesUserFiles(request) || currentHtml?.contains("type=\"file\"") == true) {
                     " The user picks their own files with <input type=\"file\"> (multiple where useful); use URL.createObjectURL to play or show " +
                         "them. Never use made-up file names or URLs."
@@ -142,8 +161,8 @@ class AppBuilder(
         }
 
         /** Asks the model to fix the errors Gravity's test of the app found (see PageChecker). */
-        fun repairPrompt(html: String, errors: List<String>): Pair<String, String> {
-            val (system, _) = directPrompt("", null)
+        fun repairPrompt(html: String, errors: List<String>, compact: Boolean = true): Pair<String, String> {
+            val (system, _) = directPrompt("", null, compact)
             val user = "Here is an app:\n```html\n$html\n```\n\nWhen it was opened and its buttons were tapped, the browser reported these errors:\n" +
                 errors.joinToString("\n") { "- $it" } +
                 "\n\nFix the cause of every error (for example a name declared twice, or a function that is called but never defined) " +

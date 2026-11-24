@@ -184,7 +184,7 @@ class AppBuilderDeviceTest {
                 const files = document.getElementById('files'), player = document.getElementById('player');
                 let list = [];
                 files.addEventListener('change', () => { list = [...files.files]; if (list.length) player.src = URL.createObjectURL(list[0]); });
-                document.getElementById('play').onclick = () => player.paused ? player.play() : player.pause();
+                document.getElementById('play').onclick = () => { if (player.paused) player.play().catch(() => {}); else player.pause(); };
                 console.log('music player ready');
               </script>
             </body>
@@ -211,24 +211,17 @@ class AppBuilderDeviceTest {
             )
         ).toString()
 
-        /** Plays the model: write the app, then finish; for a change, edit the file, then finish. */
+        /**
+         * Plays the model for App Builder's single-file requests: a build returns the music player,
+         * a change returns it with a shuffle button, always as one complete ```html block.
+         */
         private object ScriptedModel : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 if (request.path.orEmpty().endsWith("/models")) return MockResponse().setBody("""{"data":[{"id":"scripted-model"}]}""")
                 val body = request.body.readUtf8()
-                if (!body.contains("\"tools\"")) return sse(text("1. Write index.html with the player. 2. Finish."))
-                val toolResults = Regex("\"role\"\\s*:\\s*\"tool\"").findAll(body).count()
-                val isChange = body.contains("Change request for this app")
-                return when {
-                    toolResults == 0 && !isChange -> sse(toolCall("write_file", JSONObject().put("path", "index.html").put("content", APP_V1)))
-                    toolResults == 0 -> sse(
-                        toolCall(
-                            "replace_in_file",
-                            JSONObject().put("path", "index.html").put("old_text", "<!--controls-->").put("new_text", "<button id=\"shuffle\">Shuffle</button>"),
-                        )
-                    )
-                    else -> sse(toolCall("finish", JSONObject().put("summary", if (isChange) "Added a shuffle button." else "Built a music player: choose songs, then play or pause.")))
-                }
+                val withShuffle = body.contains("Change request:") || body.contains("shuffle")
+                val html = if (withShuffle) APP_V1.replace("<!--controls-->", "<button id=\"shuffle\">Shuffle</button>") else APP_V1
+                return sse(text("Here is the app:\n```html\n"), text(html), text("\n```\n"))
             }
         }
 

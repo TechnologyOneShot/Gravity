@@ -29,8 +29,8 @@ import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 
 /**
- * App Builder through the real UI: Home → type one sentence → Build my app → App screen with
- * the finished app. Named to run after the other suites (the scripted model is installed only
+ * App Builder through the real UI: Home chat → App mode → one sentence → app card → Open app →
+ * App screen with the finished app. Named to run after the other suites (the scripted model is installed only
  * for this class). Uses the same scripted OpenAI-compatible server as AppBuilderDeviceTest.
  */
 @RunWith(AndroidJUnit4::class)
@@ -81,29 +81,49 @@ class ZzAppBuilderUiTest {
         compose.onNodeWithTag("nav:My Apps").performScrollTo().performClick()
         waitFor("My Apps", 30_000) { title() == "My Apps" }
         waitFor("app row", 30_000) { compose.onAllNodesWithText(project.name).fetchSemanticsNodes().isNotEmpty() }
-        compose.onAllNodesWithText(project.name)[0].performClick()
+        // The closed sidebar also lists recent apps (off-screen): tap the row that is on screen.
+        val nodes = compose.onAllNodesWithText(project.name).fetchSemanticsNodes()
+        val onScreen = nodes.indexOfFirst { it.boundsInRoot.left >= 0f }.coerceAtLeast(0)
+        compose.onAllNodesWithText(project.name)[onScreen].performClick()
         waitFor("App screen via tap", 60_000) { title() == "App" }
         waitFor("preview", 30_000) { compose.onAllNodesWithTag("app-preview").fetchSemanticsNodes().isNotEmpty() }
         Ci.log("builder-ui", "Opened ${project.name} from My Apps: ${visibleText().take(600)}")
         Ci.screenshot("07a_app_screen_from_my_apps")
     }
 
+    /** Home chat → App mode → one sentence → app card in the chat → Open app → App screen with the finished app. */
     @Test
-    fun b_homeScreenBuildsAnAppFromOneSentence() {
+    fun b_homeChatBuildsAnAppFromOneSentence() {
         waitFor("home screen", 30_000) { title() == "Gravity" }
-        waitFor("AI provider shown", 30_000) { compose.onAllNodesWithText("Scripted CI model", substring = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("build-prompt").performTextInput("calculator bana do")
-        compose.onNodeWithTag("build-button").performClick()
+        waitFor("message box", 30_000) { compose.onAllNodesWithTag("chat-input").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("chat-input").performTextInput("calculator bana do")
+        compose.waitForIdle()
+        // "calculator bana do" asks for an app, so the box switches to App mode by itself; tap it anyway to be explicit.
+        compose.onNodeWithTag("mode-app").performClick()
+        compose.onNodeWithContentDescription("Send").performClick()
+        waitFor("app card", 60_000) { compose.onAllNodesWithTag("app-card").fetchSemanticsNodes().isNotEmpty() }
+        Ci.screenshot("07a_app_card_building")
+        waitFor("app ready", 180_000) {
+            compose.onAllNodesWithText("Ready").fetchSemanticsNodes().isNotEmpty() || compose.onAllNodesWithText("Didn't work").fetchSemanticsNodes().isNotEmpty()
+        }
+        Thread.sleep(1000)
+        compose.waitForIdle()
+        Ci.log("builder-ui", "Chat after the build: ${visibleText().take(1200)}")
+        Ci.screenshot("07b_app_card_ready")
+        assertTrue("The build did not finish as Ready", compose.onAllNodesWithText("Ready").fetchSemanticsNodes().isNotEmpty())
+        compose.onAllNodesWithTag("open-app")[0].performClick()
         waitFor("App screen", 60_000) { title() == "App" }
-        waitFor("finished app", 180_000) { compose.onAllNodesWithTag("app-summary").fetchSemanticsNodes().isNotEmpty() }
+        waitFor("finished app", 60_000) { compose.onAllNodesWithTag("app-summary").fetchSemanticsNodes().isNotEmpty() }
         Thread.sleep(2000)
         compose.waitForIdle()
         val summary = compose.onNodeWithTag("app-summary").fetchSemanticsNode().config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }
-        Ci.log("builder-ui", "Home → Build → App screen; summary shown: $summary; screen: ${visibleText().take(800)}")
-        Ci.screenshot("07_app_screen_after_build")
+        Ci.log("builder-ui", "Chat → App card → App screen; summary shown: $summary; screen: ${visibleText().take(800)}")
+        Ci.screenshot("07c_app_screen_after_build")
         assertTrue(compose.onAllNodesWithTag("install-app").fetchSemanticsNodes().isNotEmpty())
         val app = runBlocking { Ci.container.db.projects().all().firstOrNull { it.name == "Calculator" && it.type == "APP" } }
         assertNotNull(app)
+        val chat = runBlocking { Ci.container.db.chats().all().firstOrNull { it.projectId == app!!.id } }
+        assertNotNull("The chat was not linked to the app it built", chat)
     }
 
     companion object {

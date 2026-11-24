@@ -125,6 +125,22 @@ class AppBuilderLocalPathTest {
         assertFalse(AppBuilder.isPlaceholder(page))
     }
 
+    @Test fun recognisesRequestsForAnApp() {
+        for (t in listOf("calculator bana do", "music player bana do", "Build a to-do list app", "make a quiz game", "mujhe ek app chahiye", "कैलकुलेटर बना दो")) {
+            assertTrue(t, AppBuilder.looksLikeAppRequest(t))
+        }
+        for (t in listOf("what is an app?", "make a function that sorts a list", "explain this code", "write a message for my boss", "how do I make tea")) {
+            assertFalse(t, AppBuilder.looksLikeAppRequest(t))
+        }
+    }
+
+    @Test fun shortModelNamesForTheModelButton() {
+        assertEquals("qwen2.5-coder-1.5b", com.gravity.ide.ui.screens.shortModelName("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"))
+        assertEquals("Qwen2.5-Coder-7B", com.gravity.ide.ui.screens.shortModelName("Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf"))
+        assertEquals("gemini-3.5-flash", com.gravity.ide.ui.screens.shortModelName("gemini-3.5-flash"))
+        assertEquals("stories260K", com.gravity.ide.ui.screens.shortModelName("stories260K.gguf"))
+    }
+
     @Test fun fileGuidanceOnlyForAppsThatUseTheUsersFiles() {
         for (r in listOf("music player bana do", "a photo gallery", "video player", "mere gaane chalane wala app", "PDF reader", "गाना सुनने का ऐप")) {
             assertTrue(r, AppBuilder.usesUserFiles(r))

@@ -36,6 +36,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.ArrowUpward
+import com.gravity.ide.ui.theme.DisplayFamily
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
@@ -131,119 +133,103 @@ import com.gravity.ide.ui.theme.GravityColors
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
-private val BrandGradient = Brush.linearGradient(listOf(GravityColors.Cyan, GravityColors.Purple))
-private val UserGradient = Brush.linearGradient(listOf(Color(0xFF0E7490), Color(0xFF4338CA)))
-private val CodeBg = Color(0xFF070A10)
-private val CodeHeaderBg = Color(0xFF0F1520)
+private val CodeBg = Color(0xFF181716)
+private val CodeHeaderBg = Color(0xFF242322)
 
-/** Gravity's round gradient avatar. */
+/** Gravity's round spark avatar. */
 @Composable
 internal fun GravityAvatar(size: Dp = 30.dp) {
-    Box(Modifier.size(size).clip(CircleShape).background(BrandGradient), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).clip(CircleShape).background(GravityColors.Accent), contentAlignment = Alignment.Center) {
         Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(size * 0.55f))
     }
 }
 
-/** What the chat will use, as shown on the model pill. */
+/** What the chat will use, as shown on the model button. */
 internal data class ModelLabel(val text: String, val isLocal: Boolean, val needsAttention: Boolean)
 
 internal fun modelLabelFor(chat: ChatEntity, providers: List<ProviderEntity>, loadedLocal: LocalModelHost.Loaded?): ModelLabel {
     val chosen = providers.firstOrNull { it.id == chat.providerId }
+    val hasCloud = providers.any { it.enabled && it.kind != ProviderKind.LOCAL.name }
     return when {
-        chat.providerId == LocalLlamaProvider.ID ->
-            if (loadedLocal != null) ModelLabel("On phone · ${loadedLocal.name}", true, false) else ModelLabel("Phone model · not loaded", true, true)
-        chosen != null -> ModelLabel("${chosen.name} · ${chat.model ?: chosen.defaultModel.ifBlank { "auto" }}", false, false)
-        providers.any { it.enabled && it.kind != ProviderKind.LOCAL.name } -> ModelLabel("Auto · best available", false, false)
-        loadedLocal != null -> ModelLabel("Auto · ${loadedLocal.name} (phone)", true, false)
-        else -> ModelLabel("No AI model · tap to set up", false, true)
+        chat.providerId == LocalLlamaProvider.ID -> ModelLabel(loadedLocal?.name?.let(::shortModelName) ?: "Phone model", true, false)
+        chosen != null -> ModelLabel(shortModelName(chat.model ?: chosen.defaultModel.ifBlank { chosen.name }), false, false)
+        hasCloud -> ModelLabel("Auto", false, false)
+        loadedLocal != null -> ModelLabel(shortModelName(loadedLocal.name), true, false)
+        else -> ModelLabel("Choose AI", false, true)
     }
 }
 
-/** The tappable "which AI answers" pill at the top of a chat. */
+/** "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf" → "qwen2.5-coder-1.5b"; "gemini-3.5-flash" stays. */
+internal fun shortModelName(name: String): String =
+    name.removeSuffix(".gguf").replace(Regex("(?i)[-_.](instruct|chat|it)?[-_.]?(q\\d[_a-z0-9]*|f16|bf16)$"), "").replace(Regex("(?i)-instruct$"), "").take(28)
+
+/** The model button in the message box: which AI answers; tap to change. */
 @Composable
 internal fun ModelPill(label: ModelLabel, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(50),
-        color = GravityColors.SurfaceHigh,
-        border = BorderStroke(1.dp, if (label.needsAttention) GravityColors.Amber else GravityColors.Cyan.copy(alpha = 0.45f)),
-        modifier = modifier.testTag("model-pill"),
-    ) {
-        Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 7.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                if (label.isLocal) Icons.Filled.PhoneAndroid else Icons.Filled.Cloud, null,
-                tint = if (label.needsAttention) GravityColors.Amber else GravityColors.Cyan, modifier = Modifier.size(16.dp),
+    Surface(onClick = onClick, shape = RoundedCornerShape(50), color = Color.Transparent, modifier = modifier.testTag("model-pill")) {
+        Row(Modifier.padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (label.isLocal) Icon(Icons.Filled.PhoneAndroid, null, tint = GravityColors.Muted, modifier = Modifier.size(14.dp).padding(end = 2.dp))
+            Text(
+                label.text, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (label.needsAttention) GravityColors.Amber else GravityColors.Muted, modifier = Modifier.weight(1f, fill = false),
             )
-            Spacer(Modifier.width(6.dp))
-            Text(label.text, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Icon(Icons.Filled.ExpandMore, "Change AI model", modifier = Modifier.size(18.dp), tint = GravityColors.Muted)
         }
     }
 }
 
-/** Empty-chat welcome: what the chat can do, which model answers, and starter prompts. */
+/** Empty-chat welcome: a calm greeting, AI setup if needed, and starter ideas. */
 @Composable
-internal fun ChatWelcome(label: ModelLabel, onPickModel: () -> Unit, onSuggestion: (String) -> Unit, onBuildApp: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        GravityAvatar(64.dp)
-        Spacer(Modifier.height(14.dp))
-        Text("How can I help?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+internal fun ChatWelcome(needsSetup: Boolean, onSetup: () -> Unit, onSuggestion: (text: String, app: Boolean) -> Unit) {
+    val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
+    val greeting = when (hour) {
+        in 5..11 -> "Good morning"
+        in 12..16 -> "Good afternoon"
+        else -> "Good evening"
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 48.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        GravityAvatar(44.dp)
+        Spacer(Modifier.height(18.dp))
+        Text(greeting, fontFamily = DisplayFamily, fontSize = 32.sp, textAlign = TextAlign.Center)
         Text(
-            "Ask about code, attach files or photos, or just speak.",
-            style = MaterialTheme.typography.bodyMedium, color = GravityColors.Muted, textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            "How can I help you today?", fontFamily = DisplayFamily, fontSize = 20.sp, color = GravityColors.Muted,
+            textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp),
         )
-        Spacer(Modifier.height(14.dp))
-        Surface(
-            onClick = onPickModel, shape = RoundedCornerShape(16.dp), color = GravityColors.SurfaceHigh,
-            border = BorderStroke(1.dp, if (label.needsAttention) GravityColors.Amber else GravityColors.Outline),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconBadge(if (label.isLocal) Icons.Filled.PhoneAndroid else Icons.Filled.Cloud, if (label.needsAttention) GravityColors.Amber else GravityColors.Cyan)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(if (label.needsAttention) "Choose an AI to chat with" else "AI model", style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted)
-                    Text(label.text, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Text("Change", color = GravityColors.Cyan, style = MaterialTheme.typography.labelLarge)
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        val suggestions = listOf(
-            Triple(Icons.Filled.Code, "Explain code", "Explain what this code does, step by step:\n"),
-            Triple(Icons.Filled.BugReport, "Fix a bug", "Help me find and fix the bug in this code:\n"),
-            Triple(Icons.Filled.Lightbulb, "Plan an idea", "Help me plan an app that "),
-            Triple(Icons.Filled.Description, "Write a function", "Write a Kotlin function that "),
-        )
-        for (row in suggestions.chunked(2)) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for ((icon, title, prompt) in row) {
-                    Surface(
-                        onClick = { onSuggestion(prompt) }, shape = RoundedCornerShape(16.dp), color = GravityColors.Surface,
-                        border = BorderStroke(1.dp, GravityColors.Outline), modifier = Modifier.weight(1f),
-                    ) {
-                        Column(Modifier.padding(12.dp)) {
-                            Icon(icon, null, tint = GravityColors.Purple, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.height(6.dp))
-                            Text(title, style = MaterialTheme.typography.titleSmall)
-                        }
+        Spacer(Modifier.height(24.dp))
+        if (needsSetup) {
+            Surface(
+                onClick = onSetup, shape = RoundedCornerShape(18.dp), color = GravityColors.Accent.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, GravityColors.Accent.copy(alpha = 0.4f)), modifier = Modifier.fillMaxWidth().testTag("setup-ai"),
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Filled.AutoAwesome, GravityColors.Accent)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Set up AI (1 minute)", style = MaterialTheme.typography.titleSmall)
+                        Text("A free Gemini key gives the best answers and apps. Phone models work offline.", style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted)
                     }
                 }
             }
+            Spacer(Modifier.height(16.dp))
         }
-        Spacer(Modifier.height(4.dp))
-        Surface(onClick = onBuildApp, shape = RoundedCornerShape(16.dp), color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
-            Row(
-                Modifier.background(Brush.linearGradient(listOf(GravityColors.Cyan.copy(alpha = 0.18f), GravityColors.Purple.copy(alpha = 0.18f))), RoundedCornerShape(16.dp))
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.PhoneIphone, null, tint = GravityColors.Cyan)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Want a whole app instead?", style = MaterialTheme.typography.titleSmall)
-                    Text("Describe it on the Create screen and Gravity builds it.", style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted)
+        val ideas = listOf(
+            Triple("Calculator app", "Build a calculator app", true),
+            Triple("Music player", "Build a music player for the songs on my phone", true),
+            Triple("To-do list", "Build a to-do list app", true),
+            Triple("Explain code", "Explain what this code does, step by step:\n", false),
+            Triple("Write a message", "Help me write a message that ", false),
+        )
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((title, text, app) in ideas) {
+                Surface(
+                    onClick = { onSuggestion(text, app) }, shape = RoundedCornerShape(50), color = Color.Transparent,
+                    border = BorderStroke(1.dp, GravityColors.Outline),
+                ) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (app) Icons.Filled.PhoneIphone else Icons.Filled.Lightbulb, null, tint = GravityColors.Muted, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(title, style = MaterialTheme.typography.labelLarge)
+                    }
                 }
             }
         }
@@ -257,7 +243,7 @@ private fun IconBadge(icon: ImageVector, tint: Color, size: Dp = 36.dp) {
     }
 }
 
-/** One message. User messages are gradient bubbles; Gravity's replies have an avatar and actions. */
+/** One message: the user's in a soft bubble; Gravity's as plain text with actions; app runs as cards. */
 @Composable
 internal fun ChatBubble(
     m: MessageEntity,
@@ -269,13 +255,20 @@ internal fun ChatBubble(
     onDelete: () -> Unit,
     onChangeModel: () -> Unit,
     onOpenUrl: (String) -> Unit,
+    onOpenApp: (String) -> Unit = {},
+    onRetryApp: (projectId: String, taskId: String) -> Unit = { _, _ -> },
 ) {
     val atts = remember(m.attachments) {
         runCatching { JSONArray(m.attachments) }.getOrNull()?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: emptyList()
     }
+    val app = atts.firstOrNull { it.optString("kind") == "app" }
+    if (app != null) {
+        AppTaskCard(app.optString("projectId"), app.optString("taskId"), app.optBoolean("change"), onOpenApp, onRetryApp)
+        return
+    }
     if (m.role == "user") {
         var menu by remember { mutableStateOf(false) }
-        Column(Modifier.fillMaxWidth().padding(start = 48.dp), horizontalAlignment = Alignment.End) {
+        Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End) {
             for (a in atts) {
                 AttachmentTag(a.optString("name"), a.optString("kind"), a.optLong("size"))
                 Spacer(Modifier.height(4.dp))
@@ -283,10 +276,10 @@ internal fun ChatBubble(
             if (m.content.isNotBlank()) {
                 Box {
                     Box(
-                        Modifier.clip(RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp)).background(UserGradient)
-                            .clickable { menu = true }.padding(horizontal = 14.dp, vertical = 10.dp),
+                        Modifier.clip(RoundedCornerShape(20.dp)).background(GravityColors.SurfaceHigh)
+                            .clickable { menu = true }.padding(horizontal = 16.dp, vertical = 11.dp),
                     ) {
-                        Text(m.content, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                        Text(m.content, style = MaterialTheme.typography.bodyLarge)
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Copy") }, leadingIcon = { Icon(Icons.Filled.ContentCopy, null) }, onClick = { menu = false; onCopy() })
@@ -297,63 +290,115 @@ internal fun ChatBubble(
         }
         return
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        GravityAvatar()
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                "Gravity" + (m.model?.let { " · $it" } ?: ""),
-                style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(4.dp))
-            if (m.content.isNotBlank()) {
-                Surface(shape = RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp), color = GravityColors.SurfaceHigh, border = BorderStroke(1.dp, GravityColors.Outline)) {
-                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                        SelectionContainer { RichText(m.content) }
-                        val sources = remember(m.sources) { runCatching { JSONArray(m.sources) }.getOrNull() }
-                        if (sources != null && sources.length() > 0) {
-                            Text("Sources", style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted, modifier = Modifier.padding(top = 8.dp))
-                            for (i in 0 until sources.length()) {
-                                val s = sources.getJSONObject(i)
-                                Text(
-                                    "${i + 1}. ${s.optString("title")}", color = GravityColors.Blue, style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.clickable { onOpenUrl(s.optString("url")) }.padding(vertical = 2.dp),
-                                )
-                            }
-                        }
+    Column(Modifier.fillMaxWidth()) {
+        if (m.content.isNotBlank()) {
+            SelectionContainer { RichText(m.content) }
+            val sources = remember(m.sources) { runCatching { JSONArray(m.sources) }.getOrNull() }
+            if (sources != null && sources.length() > 0) {
+                Text("Sources", style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted, modifier = Modifier.padding(top = 8.dp))
+                for (i in 0 until sources.length()) {
+                    val s = sources.getJSONObject(i)
+                    Text(
+                        "${i + 1}. ${s.optString("title")}", color = GravityColors.Blue, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.clickable { onOpenUrl(s.optString("url")) }.padding(vertical = 2.dp),
+                    )
+                }
+            }
+        }
+        m.error?.let { err ->
+            if (m.content.isNotBlank()) Spacer(Modifier.height(6.dp))
+            Surface(shape = RoundedCornerShape(14.dp), color = GravityColors.Red.copy(alpha = 0.10f), border = BorderStroke(1.dp, GravityColors.Red.copy(alpha = 0.5f))) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.ErrorOutline, null, tint = GravityColors.Red, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("No reply", style = MaterialTheme.typography.titleSmall, color = GravityColors.Red)
+                    }
+                    Text(err, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+                    Row {
+                        if (isLast && !busy) TextButton(onClick = onRetry) { Text("Try again") }
+                        TextButton(onClick = onChangeModel) { Text("Choose model") }
                     }
                 }
             }
-            m.error?.let { err ->
-                if (m.content.isNotBlank()) Spacer(Modifier.height(6.dp))
-                Surface(shape = RoundedCornerShape(14.dp), color = GravityColors.Red.copy(alpha = 0.10f), border = BorderStroke(1.dp, GravityColors.Red.copy(alpha = 0.5f))) {
-                    Column(Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.ErrorOutline, null, tint = GravityColors.Red, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("No reply", style = MaterialTheme.typography.titleSmall, color = GravityColors.Red)
-                        }
-                        Text(err, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
-                        Row {
-                            if (isLast && !busy) TextButton(onClick = onRetry) { Text("Try again") }
-                            TextButton(onClick = onChangeModel) { Text("Choose model") }
-                        }
-                    }
+        }
+        if (m.content.isNotBlank()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SmallAction(Icons.Filled.ContentCopy, "Copy reply", onCopy)
+                if (isLast && !busy) SmallAction(Icons.Filled.Refresh, "Regenerate reply", onRetry)
+                SmallAction(Icons.Filled.Share, "Share reply", onShare)
+                SmallAction(Icons.Filled.Delete, "Delete reply", onDelete)
+                Spacer(Modifier.weight(1f))
+                m.model?.let {
+                    Text("${shortModelName(it)} · ${relativeTime(m.createdAt)}", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, maxLines = 1)
                 }
             }
-            if (m.content.isNotBlank()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SmallAction(Icons.Filled.ContentCopy, "Copy reply", onCopy)
-                    if (isLast && !busy) SmallAction(Icons.Filled.Refresh, "Regenerate reply", onRetry)
-                    SmallAction(Icons.Filled.Share, "Share reply", onShare)
-                    SmallAction(Icons.Filled.Delete, "Delete reply", onDelete)
-                    Spacer(Modifier.weight(1f))
-                    if (m.model != null) {
-                        Text(
-                            "${m.inputTokens + m.outputTokens} tok · ${relativeTime(m.createdAt)}",
-                            style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted,
-                        )
+        }
+    }
+}
+
+private val ACTIVE_TASK = setOf("PENDING", "RUNNING", "WAITING_APPROVAL", "WAITING_NETWORK")
+
+/** A build or change of an app, shown in the chat with live progress and the result. */
+@Composable
+private fun AppTaskCard(projectId: String, taskId: String, isChange: Boolean, onOpenApp: (String) -> Unit, onRetryApp: (String, String) -> Unit) {
+    val c = LocalAppContainer.current
+    val task by remember(taskId) { c.db.tasks().observeTask(taskId) }.collectAsState(initial = null)
+    val project by remember(projectId) { c.db.projects().observe(projectId) }.collectAsState(initial = null)
+    val live by c.agent.live.collectAsState()
+    val t = task
+    val status = t?.status
+    val running = status == null || status in ACTIVE_TASK
+    Surface(
+        shape = RoundedCornerShape(18.dp), color = GravityColors.Surface, border = BorderStroke(1.dp, GravityColors.Outline),
+        modifier = Modifier.fillMaxWidth().testTag("app-card"),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(GravityColors.Accent.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.PhoneAndroid, null, tint = GravityColors.Accent)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(project?.name ?: "App", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        when {
+                            running && status == "WAITING_NETWORK" -> "Waiting for internet…"
+                            running && status == "WAITING_APPROVAL" -> "Waiting for your approval"
+                            running -> if (isChange) "Making your change…" else "Building your app…"
+                            status == "COMPLETED" -> if (isChange) "Change applied" else "Ready"
+                            status == "FAILED" -> "Didn't work"
+                            else -> status?.lowercase()?.replaceFirstChar { it.uppercase() }.orEmpty()
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = when (status) {
+                            "COMPLETED" -> GravityColors.Green
+                            "FAILED" -> GravityColors.Red
+                            else -> GravityColors.Muted
+                        },
+                        modifier = Modifier.testTag("app-card-status"),
+                    )
+                }
+                if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+            if (running) {
+                t?.stage?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, maxLines = 2, modifier = Modifier.padding(top = 8.dp)) }
+                live[taskId]?.takeIf { it.isNotBlank() }?.let {
+                    Text("Written so far: ${"%,d".format(it.length)} characters", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted)
+                }
+            }
+            if (status == "COMPLETED") t?.summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
+            if (status == "FAILED") t?.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = GravityColors.Red, modifier = Modifier.padding(top = 8.dp)) }
+            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (status == "COMPLETED") {
+                    Surface(onClick = { onOpenApp(projectId) }, shape = RoundedCornerShape(50), color = GravityColors.Accent, modifier = Modifier.testTag("open-app")) {
+                        Text("Open app", color = Color.White, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp))
                     }
+                } else {
+                    TextButton(onClick = { onOpenApp(projectId) }, modifier = Modifier.testTag("open-app")) { Text("Open app") }
+                }
+                if (status == "FAILED" || status == "CANCELLED" || status == "INTERRUPTED") {
+                    TextButton(onClick = { onRetryApp(projectId, taskId) }) { Text("Try again") }
                 }
             }
         }
@@ -370,18 +415,8 @@ private fun SmallAction(icon: ImageVector, description: String, onClick: () -> U
 /** The reply while it is being generated: animated dots until the first words arrive. */
 @Composable
 internal fun StreamingBubble(text: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        GravityAvatar()
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text("Gravity", style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted)
-            Spacer(Modifier.height(4.dp))
-            Surface(shape = RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp), color = GravityColors.SurfaceHigh, border = BorderStroke(1.dp, GravityColors.Outline)) {
-                Box(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    if (text.isEmpty()) TypingDots() else RichText("$text ▍")
-                }
-            }
-        }
+    Column(Modifier.fillMaxWidth()) {
+        if (text.isEmpty()) TypingDots() else RichText("$text ▍")
     }
 }
 
@@ -421,7 +456,10 @@ private fun AttachmentTag(name: String, kind: String, size: Long) {
     }
 }
 
-/** Pill-shaped message box with an attach menu, voice input and a round send/stop button. */
+/**
+ * Claude-style message box: the text on top; below it the attach menu, the Chat / App switch,
+ * the model button, voice input and a round send/stop button.
+ */
 @Composable
 internal fun ChatComposer(
     value: String,
@@ -434,33 +472,51 @@ internal fun ChatComposer(
     onMic: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    appMode: Boolean = false,
+    onModeChange: (Boolean) -> Unit = {},
+    modelLabel: ModelLabel? = null,
+    onPickModel: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 8.dp)) {
-        if (attachments.isNotEmpty()) {
-            LazyRow(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(attachments) { a ->
-                    Surface(shape = RoundedCornerShape(14.dp), color = GravityColors.SurfaceHigh, border = BorderStroke(1.dp, GravityColors.Outline)) {
-                        Row(Modifier.padding(start = 10.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(attachmentIcon(a.kind), null, tint = GravityColors.Cyan, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Column(Modifier.widthIn(max = 150.dp)) {
-                                Text(a.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(formatBytes(a.size), style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted)
-                            }
-                            IconButton(onClick = { onRemoveAttachment(a) }, modifier = Modifier.size(34.dp)) {
-                                Icon(Icons.Filled.Close, "Remove ${a.name}", modifier = Modifier.size(16.dp))
+    Surface(
+        shape = RoundedCornerShape(24.dp), color = GravityColors.SurfaceHigh, border = BorderStroke(1.dp, GravityColors.Outline),
+        modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 10.dp),
+    ) {
+        Column(Modifier.padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 6.dp)) {
+            if (attachments.isNotEmpty()) {
+                LazyRow(Modifier.padding(start = 6.dp, top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(attachments) { a ->
+                        Surface(shape = RoundedCornerShape(14.dp), color = GravityColors.Surface, border = BorderStroke(1.dp, GravityColors.Outline)) {
+                            Row(Modifier.padding(start = 10.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(attachmentIcon(a.kind), null, tint = GravityColors.Accent, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Column(Modifier.widthIn(max = 150.dp)) {
+                                    Text(a.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(formatBytes(a.size), style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted)
+                                }
+                                IconButton(onClick = { onRemoveAttachment(a) }, modifier = Modifier.size(34.dp)) {
+                                    Icon(Icons.Filled.Close, "Remove ${a.name}", modifier = Modifier.size(16.dp))
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-        Surface(shape = RoundedCornerShape(28.dp), color = GravityColors.SurfaceHigh, border = BorderStroke(1.dp, GravityColors.Outline)) {
-            Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.Bottom) {
+            TextField(
+                value = value, onValueChange = onValueChange,
+                placeholder = { Text(if (appMode) "Describe the app you want…" else "Message Gravity…", color = GravityColors.Muted) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 200.dp).testTag("chat-input"),
+                maxLines = 8,
+                textStyle = MaterialTheme.typography.bodyLarge,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
+                ),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     var menu by remember { mutableStateOf(false) }
-                    IconButton(onClick = { menu = true }, modifier = Modifier.testTag("attach-button")) {
-                        Icon(Icons.Filled.Add, "Attach files or photos", tint = GravityColors.Cyan)
+                    IconButton(onClick = { menu = true }, modifier = Modifier.size(40.dp).testTag("attach-button")) {
+                        Icon(Icons.Filled.Add, "Attach files or photos", tint = GravityColors.Muted)
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(
@@ -473,31 +529,42 @@ internal fun ChatComposer(
                         )
                     }
                 }
-                TextField(
-                    value = value, onValueChange = onValueChange,
-                    placeholder = { Text("Message Gravity…") },
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp, max = 180.dp).testTag("chat-input"),
-                    maxLines = 8,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
-                    ),
-                )
-                IconButton(onClick = onMic, modifier = Modifier.testTag("mic-button")) {
+                ModeSwitch(appMode, onModeChange)
+                Spacer(Modifier.weight(1f))
+                if (modelLabel != null) ModelPill(modelLabel, onPickModel, Modifier.widthIn(max = 140.dp))
+                IconButton(onClick = onMic, modifier = Modifier.size(40.dp).testTag("mic-button")) {
                     Icon(Icons.Filled.Mic, "Voice input", tint = GravityColors.Muted)
                 }
                 val canSend = value.isNotBlank() || attachments.isNotEmpty()
                 val brush = when {
                     busy -> SolidColor(GravityColors.Red)
-                    canSend -> BrandGradient
+                    canSend -> SolidColor(GravityColors.Accent)
                     else -> SolidColor(GravityColors.Outline)
                 }
                 IconButton(
                     onClick = { if (busy) onStop() else onSend() },
-                    modifier = Modifier.padding(2.dp).size(44.dp).clip(CircleShape).background(brush, CircleShape),
+                    modifier = Modifier.padding(start = 2.dp).size(38.dp).clip(CircleShape).background(brush, CircleShape),
                 ) {
-                    if (busy) Icon(Icons.Filled.Stop, "Stop", tint = Color.White) else Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = Color.White)
+                    if (busy) Icon(Icons.Filled.Stop, "Stop", tint = Color.White, modifier = Modifier.size(20.dp))
+                    else Icon(Icons.Filled.ArrowUpward, "Send", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
+            }
+        }
+    }
+}
+
+/** Chat or App: what a message does (answer in the chat, or build / change an app). */
+@Composable
+private fun ModeSwitch(appMode: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.clip(RoundedCornerShape(50)).background(GravityColors.Surface).padding(3.dp)) {
+        for ((app, label) in listOf(false to "Chat", true to "App")) {
+            val on = appMode == app
+            Box(
+                Modifier.clip(RoundedCornerShape(50)).background(if (on) GravityColors.Accent.copy(alpha = 0.22f) else Color.Transparent)
+                    .clickable { onChange(app) }.padding(horizontal = 12.dp, vertical = 5.dp)
+                    .testTag(if (app) "mode-app" else "mode-chat"),
+            ) {
+                Text(label, style = MaterialTheme.typography.labelLarge, color = if (on) GravityColors.Accent else GravityColors.Muted)
             }
         }
     }

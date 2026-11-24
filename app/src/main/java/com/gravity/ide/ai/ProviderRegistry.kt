@@ -63,10 +63,12 @@ class ProviderRegistry(
         val requested = (providerId ?: s.defaultProviderId)?.let { id -> if (id == LocalLlamaProvider.ID) null else all.firstOrNull { it.id == id } }
         val wantsLocal = (providerId ?: s.defaultProviderId) == LocalLlamaProvider.ID
 
-        fun localOrThrow(reason: String?): ResolvedModel {
+        suspend fun localOrThrow(reason: String?): ResolvedModel {
             val loaded = localHost.loadedOrNull()
+                ?: localHost.autoLoad(db.models().all(), s)
                 ?: throw NoProviderException(
-                    (reason?.let { "$it " } ?: "") + if (!localHost.runtimeAvailable) (localHost.runtimeError ?: "Local runtime unavailable.") else "Load a local model in Model Manager first.",
+                    (reason?.let { "$it " } ?: "") + if (!localHost.runtimeAvailable) (localHost.runtimeError ?: "Local runtime unavailable.")
+                    else "No phone model could be loaded. Download one in Model Manager (or load it there), or connect a free Gemini key.",
                     waitForNetwork = reason != null && s.retryWhenOnline,
                 )
             return ResolvedModel(local, loaded.name, null, reason)
@@ -85,11 +87,11 @@ class ProviderRegistry(
                 val cloud = requested ?: all.firstOrNull { it.kind != ProviderKind.LOCAL.name }
                 if (cloud == null) return localOrThrow("No cloud provider configured.")
                 if (!online) {
-                    if (s.offlineFallbackToLocal && localHost.loadedOrNull() != null) {
+                    if (s.offlineFallbackToLocal && (localHost.loadedOrNull() ?: localHost.autoLoad(db.models().all(), s)) != null) {
                         events.log(EventCategory.PROVIDER, "Offline: routed to local model", "Requested ${cloud.name}")
                         return localOrThrow("Offline — using the local model instead of ${cloud.name}.")
                     }
-                    throw NoProviderException("Offline and no local model is loaded.", waitForNetwork = true)
+                    throw NoProviderException("Offline, and no phone model is downloaded to use instead.", waitForNetwork = true)
                 }
                 if (cloud.usageLimitTokens > 0 && cloud.totalInputTokens + cloud.totalOutputTokens >= cloud.usageLimitTokens) {
                     val backup = all.firstOrNull { it.id != cloud.id && it.kind != ProviderKind.LOCAL.name }

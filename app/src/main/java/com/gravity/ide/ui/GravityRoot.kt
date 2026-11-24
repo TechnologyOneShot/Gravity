@@ -3,6 +3,22 @@
 package com.gravity.ide.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import com.gravity.ide.ui.theme.DisplayFamily
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,7 +77,7 @@ import com.gravity.ide.ui.screens.AboutScreen
 import com.gravity.ide.ui.screens.ActivityScreen
 import com.gravity.ide.ui.screens.AgentNewTaskScreen
 import com.gravity.ide.ui.screens.AppScreen
-import com.gravity.ide.ui.screens.HomeScreen
+import com.gravity.ide.ui.screens.HomeChatScreen
 import com.gravity.ide.ui.screens.MyAppsScreen
 import com.gravity.ide.ui.screens.BackupScreen
 import com.gravity.ide.ui.screens.BrowserScreen
@@ -106,7 +122,7 @@ fun GravityRoot() {
     val settings by container.settings.settings.collectAsState(initial = AppSettings())
     val unread by container.db.events().observeUnreadCount().collectAsState(initial = 0)
     val approvals by container.approvals.pending.collectAsState()
-    val isTopLevel = route == null || route == Routes.HOME
+    val isTopLevel = route == null || route == Routes.HOME || route == Routes.CHAT || route == Routes.APPS
 
     fun go(target: String) = onMain {
         nav.navigate(target) {
@@ -118,48 +134,19 @@ fun GravityRoot() {
     ModalNavigationDrawer(
         drawerState = drawer,
         drawerContent = {
-            ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surface) {
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
-                    Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(28.dp).background(GravityColors.Cyan.copy(alpha = 0.18f), CircleShape), contentAlignment = Alignment.Center) {
-                            Text("G", color = GravityColors.Cyan, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text("GRAVITY", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                            Text("Describe an app. Gravity builds it.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    HorizontalDivider()
-                    var lastGroup = ""
-                    for (item in drawerItems) {
-                        if (item.group != lastGroup) {
-                            lastGroup = item.group
-                            Text(
-                                item.group.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 28.dp, top = 14.dp, bottom = 4.dp),
-                            )
-                        }
-                        val selected = route?.substringBefore('?') == item.route.substringBefore('?')
-                        NavigationDrawerItem(
-                            label = { Text(item.label) },
-                            icon = { Icon(item.icon, null) },
-                            selected = selected,
-                            onClick = {
-                                scope.launch { drawer.close() }
-                                go(item.route)
-                            },
-                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding).height(44.dp).testTag("nav:${item.label}"),
-                        )
-                    }
-                }
-            }
+            GravitySidebar(route, go = { target -> scope.launch { drawer.close() }; go(target) })
         },
     ) {
         Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                TopAppBar(
-                    title = { Text(titleFor(route), maxLines = 1, modifier = Modifier.testTag("screen-title")) },
+                CenterAlignedTopAppBar(
+                    title = {
+                        Text(
+                            titleFor(route), maxLines = 1, style = MaterialTheme.typography.titleMedium,
+                            fontFamily = if (isTopLevel) DisplayFamily else null, modifier = Modifier.testTag("screen-title"),
+                        )
+                    },
                     navigationIcon = {
                         if (isTopLevel) {
                             IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Filled.Menu, "Open navigation") }
@@ -168,17 +155,19 @@ fun GravityRoot() {
                         }
                     },
                     actions = {
-                        ModeIndicator(online = network.online, mode = settings.operatingMode.label, onClick = { go(Routes.SETTINGS) })
-                        IconButton(onClick = { go(Routes.SEARCH) }) { Icon(Icons.Filled.Search, "Search") }
-                        Box {
-                            IconButton(onClick = { go(Routes.NOTIFICATIONS) }) { Icon(Icons.Filled.Notifications, "Notifications") }
-                            if (unread > 0) {
-                                Box(Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 10.dp).size(8.dp).background(GravityColors.Red, CircleShape))
-                            }
+                        if (!network.online) {
+                            Text(
+                                "Offline", fontSize = 11.sp, color = GravityColors.Amber,
+                                modifier = Modifier.background(GravityColors.Amber.copy(alpha = 0.12f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
                         }
-                        if (!isTopLevel) IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Filled.Menu, "Open navigation") }
+                        if (isTopLevel) {
+                            IconButton(onClick = { go(Routes.NEW_CHAT) }) { Icon(Icons.Filled.EditNote, "New chat") }
+                        } else {
+                            IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Filled.Menu, "Open navigation") }
+                        }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 )
             },
         ) { padding ->
@@ -189,12 +178,103 @@ fun GravityRoot() {
                         Modifier.fillMaxWidth().background(GravityColors.Amber.copy(alpha = 0.16f)).clickable { go(Routes.task(first.taskId)) }.padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Agent needs approval: ${first.title}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
+                        Text("Needs your approval: ${first.title}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
                         Text("Review", color = GravityColors.Amber, style = MaterialTheme.typography.labelLarge)
                     }
                 }
                 Box(Modifier.weight(1f)) { GravityNavHost(nav, ::go) }
             }
+        }
+    }
+}
+
+/** Claude-style sidebar: New chat, apps and recent chats; settings and folded developer tools at the bottom. */
+@Composable
+private fun GravitySidebar(route: String?, go: (String) -> Unit) {
+    val c = LocalAppContainer.current
+    val chats by c.db.chats().observe(false).collectAsState(initial = emptyList())
+    val projects by c.db.projects().observeActive().collectAsState(initial = emptyList())
+    val apps = projects.filter { it.type == "APP" }.sortedByDescending { maxOf(it.updatedAt, it.lastOpenedAt) }.take(5)
+    val recents = chats.filter { it.title.isNotBlank() && it.title != "New chat" }.sortedByDescending { it.updatedAt }.take(30)
+    var devOpen by rememberSaveable { mutableStateOf(false) }
+
+    @Composable
+    fun Entry(item: NavItem) {
+        val selected = route?.substringBefore('?') == item.route.substringBefore('?')
+        NavigationDrawerItem(
+            label = { Text(item.label) },
+            icon = { Icon(item.icon, null, modifier = Modifier.size(20.dp)) },
+            selected = selected,
+            onClick = { go(item.route) },
+            colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+            modifier = Modifier.padding(horizontal = 12.dp).height(44.dp).testTag("nav:${item.label}"),
+        )
+    }
+
+    @Composable
+    fun Header(text: String) {
+        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp, top = 16.dp, bottom = 4.dp))
+    }
+
+    ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow, drawerShape = RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp)) {
+        Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
+            Row(Modifier.padding(start = 24.dp, top = 24.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(30.dp).background(GravityColors.Accent, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(17.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Text("Gravity", fontFamily = DisplayFamily, fontSize = 24.sp)
+            }
+            Surface(
+                onClick = { go(Routes.NEW_CHAT) }, shape = RoundedCornerShape(50), color = GravityColors.Accent,
+                modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(46.dp).testTag("nav:New Chat"),
+            ) {
+                Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Add, null, tint = Color.White)
+                    Spacer(Modifier.width(8.dp))
+                    Text("New chat", color = Color.White, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            mainItems.filter { it.route != Routes.NEW_CHAT && it.route != Routes.SETTINGS }.forEach { Entry(it) }
+            if (apps.isNotEmpty()) {
+                Header("Your apps")
+                apps.forEach { p ->
+                    NavigationDrawerItem(
+                        label = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        icon = { Icon(Icons.Filled.PhoneAndroid, null, modifier = Modifier.size(18.dp)) },
+                        selected = false,
+                        onClick = { go(Routes.app(p.id)) },
+                        colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                        modifier = Modifier.padding(horizontal = 12.dp).height(40.dp),
+                    )
+                }
+            }
+            if (recents.isNotEmpty()) {
+                Header("Recents")
+                recents.forEach { ch ->
+                    NavigationDrawerItem(
+                        label = { Text(ch.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        selected = false,
+                        onClick = { go(Routes.chat(ch.id)) },
+                        colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                        modifier = Modifier.padding(horizontal = 12.dp).height(40.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            mainItems.filter { it.route == Routes.SETTINGS }.forEach { Entry(it) }
+            NavigationDrawerItem(
+                label = { Text("Developer tools") },
+                icon = { Icon(Icons.Filled.Code, null, modifier = Modifier.size(20.dp)) },
+                badge = { Icon(if (devOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null) },
+                selected = false,
+                onClick = { devOpen = !devOpen },
+                colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                modifier = Modifier.padding(horizontal = 12.dp).height(44.dp).testTag("nav:Developer tools"),
+            )
+            if (devOpen) devItems.forEach { Entry(it) }
         }
     }
 }
@@ -222,7 +302,7 @@ private fun onMain(block: () -> Unit) {
 private fun GravityNavHost(nav: NavHostController, go: (String) -> Unit) {
     val optionalString = { name: String -> navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null } }
     NavHost(navController = nav, startDestination = Routes.HOME) {
-        composable(Routes.HOME) { HomeScreen(go) }
+        composable(Routes.HOME) { HomeChatScreen(go) }
         composable(Routes.APPS) { MyAppsScreen(go) }
         composable(Routes.APP, arguments = listOf(navArgument("projectId") { type = NavType.StringType })) { e ->
             AppScreen(e.arguments?.getString("projectId").orEmpty(), go)
