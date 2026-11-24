@@ -370,7 +370,16 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 if (text.isNotEmpty() || !com.gravity.ide.core.ModelPicker.isTemporarilyUnavailable(e)) throw e
                 val phone = runCatching { c.providers.resolve(LocalLlamaProvider.ID, null) }.getOrNull()?.takeIf { it.provider.isLocal } ?: throw e
                 notice.value = (e.message ?: "The cloud AI's free limit is used up") + " This answer is from the phone model (${phone.model})."
-                answerWith(phone)
+                try {
+                    answerWith(phone)
+                } catch (pe: CancellationException) {
+                    throw pe
+                } catch (pe: Exception) {
+                    if (text.isNotEmpty()) throw pe
+                    notice.value = null
+                    // Say both reasons: why the cloud AI did not answer, and why the phone model did not.
+                    throw IllegalStateException("${e.message}\n\nThe phone model could not answer either: ${pe.message}", pe)
+                }
             }
             saveAssistant(text.toString(), resolvedModel, providerId, inTok, outTok, sources, null)
         } catch (e: CancellationException) {

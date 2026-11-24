@@ -254,6 +254,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Build the arm64-only APK and test APK first (keeps the emulator step light)
+        run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest -Pgravity.llama=true -Pgravity.abis=arm64-v8a --stacktrace
+
       - name: arm64-only APK on the x86_64 emulator (ARM translation), real model
         uses: reactivecircus/android-emulator-runner@v2
         with:
