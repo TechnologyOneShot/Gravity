@@ -54,7 +54,7 @@ How results get recorded on a phone:
 | 39 | Survives process interruption | `t08`: a task left RUNNING is marked INTERRUPTED by startup recovery | **Partial**: a real force-stop was not performed |
 | 40 | No placeholder core features | Git Manager and Plugins state in the app that they are not implemented | **Not met**: see KNOWN_LIMITATIONS.md |
 
-Counts for the latest run (commit bddbb9b, 2026-11-24): standard APK 22 passed and 2 skipped (both need the llama.cpp engine); llama.cpp APK 24/24 passed; App Builder end to end (build, change, undo, APK, install, launch, and the Home → Build → App screen UI flow) passed in both; no FATAL EXCEPTION in logcat; 53/53 JVM unit tests pass.
+Counts for the latest run (commit ebf3883, 2026-11-24): standard APK 24 passed and 2 skipped (both need the llama.cpp engine); llama.cpp APK 26/26 passed; App Builder end to end (build, change, undo, APK, install, launch, and the Home → Build → App screen UI flow) passed in both; no FATAL EXCEPTION from Gravity or its generated apps in logcat; 57/57 JVM unit tests pass.
 
 ## App Builder (added after the original spec)
 
@@ -67,7 +67,10 @@ Counts for the latest run (commit bddbb9b, 2026-11-24): standard APK 22 passed a
 | Manifest rewriting | `AxmlRewriterTest` against the real shell APK | JVM unit test |
 | Builds on the phone model never fake success | `DeviceServicesTest.t12c`: real llama.cpp run of App Builder with the CI model (stories260K, 2048 context). It replied with story text (1,617 tokens), so the task was marked FAILED with the reason, index.html kept the starter page and packaging was refused | Verified by CI on each push (llama.cpp APK) |
 | A run that writes no files, or leaves the starter page, is not "completed" | `AgentEngine.complete()` checks; HTML extraction rules in `AppBuilderLocalPathTest` | JVM unit tests + `t12c` |
-| Chat controls: model pill and picker sheet, + menu (files, photos), mic | `UiNavigationTest.t03a` opens the menu and the sheet (Auto, Cloud AI, On this phone, options) | Verified by CI on each push |
+| Chat controls: model pill and picker sheet, + menu (files, photos), mic | `UiNavigationTest.t03a` (menu, mic, text box) and `t03b` (sheet: Auto, Cloud AI, On this phone, options) | Verified by CI on each push |
+| Gravity tests a generated app before calling it built | `AppBuilderDeviceTest.t00`: `PageChecker` opens a page off-screen and taps every button; it reports a duplicate declaration and an undefined function on a broken page, and nothing on a working one | Verified by CI on each push |
+| Phone-sized models with App Builder's single-file prompt | `phone-model-app-check` job: the exact prompts (from a unit test) run with llama.cpp b6000 and the app's sampler settings; each app is then used in jsdom (calculator: 7 + 8 = 15; to-do: a typed task is listed; music player: file picker, audio, play button). Results for commit ebf3883, 2 runs per app, after the test-and-fix step: Qwen2.5-Coder-1.5B Q4_K_M 4/6 working (calculator 1/2), 3B Q4_K_M 4/6 (calculator 0/2), 7B Q4_K_M 6/6 | Measured by CI on each push; results vary from run to run |
+| Native options for long answers | `DeviceServicesTest.t12b`: per-request context, reply prefix, stop string and model info on the real llama.cpp engine | Verified by CI on each push (llama.cpp APK) |
 | Real AI output quality | | **Not tested automatically** (needs an API key, or a model too large for CI) |
 
 Bugs the emulator suite found and that are fixed: Navigation 2.9.0 lifecycle crash when leaving a screen ("State must be at least CREATED to be moved to DESTROYED"); navigation started from a coroutine could leave the new screen uninitialised (navigation now always runs on the main thread); closing tabs crashed Material's tab indicator; Android 14 throws inside `ZipInputStream` for `../` entries, which made ZIP import fail instead of rejecting the entry; big-endian GGUF files were reported as "Unsupported GGUF version 50331648".
