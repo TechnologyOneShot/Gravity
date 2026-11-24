@@ -451,10 +451,13 @@ class DeviceServicesTest {
             } finally {
                 shell.close()
             }
-            val local = c.localHost.loadedOrNull()
+            // Gravity loads a downloaded phone model by itself when the AI is needed, also offline.
+            val canUsePhone = c.localHost.loadedOrNull() != null ||
+                (c.localHost.runtimeAvailable && runBlocking { c.db.models().all() }.any { it.status == ModelStatus.READY.name })
             val chat = runCatching { runBlocking { c.providers.resolve(null, null) } }
-            Ci.log("offline", "AI request while offline (local model loaded: ${local?.name}) → ${chat.exceptionOrNull()?.message ?: "routed to ${chat.getOrNull()?.model} (local=${chat.getOrNull()?.provider?.isLocal})"}")
-            if (local == null) {
+            val local = c.localHost.loadedOrNull()
+            Ci.log("offline", "AI request while offline (phone model usable: $canUsePhone, loaded: ${local?.name}) → ${chat.exceptionOrNull()?.message ?: "routed to ${chat.getOrNull()?.model} (local=${chat.getOrNull()?.provider?.isLocal})"}")
+            if (!canUsePhone) {
                 assertTrue("An AI request succeeded offline with no local model", chat.isFailure)
             } else {
                 val resolved = chat.getOrThrow()
