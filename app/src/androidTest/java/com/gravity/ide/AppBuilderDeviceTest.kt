@@ -104,11 +104,24 @@ class AppBuilderDeviceTest {
         Ci.log("builder", "pm install → $install")
         assertTrue("Install failed: $install", install.contains("Success"))
         try {
-            Ci.shell("am start -W -n ${out.packageName}/${WebAppPackager.SHELL_ACTIVITY}")
-            // First WebView start in a brand-new app process can be slow on a loaded CI emulator.
-            val loaded = poll(90_000) {
+            // Evidence that the page really loaded: the shell's own page-finished log, or the page's
+            // text in the accessibility tree of the app's window (WebView exposes it to UiAutomation).
+            fun pageShown(): String? {
                 Ci.shell("logcat -d -s GravityWebShell:I").lineSequence()
-                    .firstOrNull { "title=CI Music Player" in it || "music player ready" in it }
+                    .firstOrNull { "title=CI Music Player" in it || "music player ready" in it }?.let { return it }
+                val root = runCatching { InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow }.getOrNull() ?: return null
+                if (root.packageName?.toString() != out.packageName) return null
+                return if (root.findAccessibilityNodeInfosByText("CI Music Player").isNotEmpty()) "page text visible in the app window" else null
+            }
+            Ci.shell("am start -W -n ${out.packageName}/${WebAppPackager.SHELL_ACTIVITY}")
+            // First WebView start in a brand-new app process can be slow on a loaded CI emulator;
+            // if nothing shows, start the app once more (a real load is still required).
+            var loaded = poll(60_000) { pageShown() }
+            if (loaded == null) {
+                Ci.log("builder", "No page after 60 s; restarting the installed app once")
+                Ci.shell("am force-stop ${out.packageName}")
+                Ci.shell("am start -W -n ${out.packageName}/${WebAppPackager.SHELL_ACTIVITY}")
+                loaded = poll(60_000) { pageShown() }
             }
             val resumed = Ci.shell("dumpsys activity activities").lineSequence().filter { "ResumedActivity" in it }.joinToString(" / ") { it.trim() }
             Ci.log("builder", "Installed app launched: ${loaded ?: "no page-load log"} | resumed: $resumed")
