@@ -108,12 +108,6 @@ fun GravityRoot() {
     val approvals by container.approvals.pending.collectAsState()
     val isTopLevel = route == null || route == Routes.HOME
 
-    // Screens navigate from coroutines too; NavController must only be used on the main thread.
-    fun onMain(block: () -> Unit) {
-        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) block()
-        else android.os.Handler(android.os.Looper.getMainLooper()).post { block() }
-    }
-
     fun go(target: String) = onMain {
         nav.navigate(target) {
             launchSingleTop = true
@@ -216,6 +210,12 @@ private fun ModeIndicator(online: Boolean, mode: String, onClick: () -> Unit) {
         Box(Modifier.size(7.dp).background(color, CircleShape))
         Text(if (online) mode else "Offline · $mode", fontSize = 11.sp, color = color)
     }
+}
+
+/** Screens navigate from coroutines too; NavController must only be used on the main thread. */
+private fun onMain(block: () -> Unit) {
+    if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) block()
+    else android.os.Handler(android.os.Looper.getMainLooper()).post { block() }
 }
 
 @Composable
