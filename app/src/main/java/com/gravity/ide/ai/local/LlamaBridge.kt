@@ -67,4 +67,7 @@ object LlamaBridge {
     external fun lastFinish(): String
 
     external fun systemInfo(): String
+
+    /** True if native heap pointers are tagged (Android pointer tagging), for diagnostics. */
+    external fun heapTagged(): Boolean
 }

@@ -89,6 +89,8 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         val known = parseConfig(prefs.getString("cfg_${model.id}", null))
         val ladder = listOfNotNull(known, LoadConfig(true, 0), LoadConfig(false, 0), LoadConfig(false, 1)).distinct()
         var lastAnswer = ""
+        val attempts = ArrayList<String>()
+        lastAttempts = attempts
         for (cfg in ladder) {
             val t = if (cfg.threads > 0) cfg.threads else threads
             val handle = withContext(Dispatchers.Default) { LlamaBridge.load(file.absolutePath, contextSize, t, 0, cfg.mmap) }
@@ -104,8 +106,10 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
                 _state.value = State.Loading("${model.name} (checking it answers correctly)")
                 val answer = quickCheck(handle)
                 if (answer == null) {
+                    attempts += "${if (cfg.mmap) "file mapped" else "read into memory"}, $t thread(s): correct"
                     prefs.edit().putString("ok_${model.id}", cfg.toString()).apply()
                 } else {
+                    attempts += "${if (cfg.mmap) "file mapped" else "read into memory"}, $t thread(s): WRONG → \"${answer.take(70)}\""
                     lastAnswer = answer
                     events.log(
                         EventCategory.MODEL, "${model.name} answered wrongly (mmap=${cfg.mmap}, threads=$t)",
@@ -131,6 +135,11 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         events.log(EventCategory.MODEL, "Not using ${model.name}: wrong answers in every mode", msg, EventLevel.ERROR)
         throw ModelUnhealthyException(msg)
     }
+
+    /** What the last load tried (mode → result), for Phone Models → Check the phone AI. */
+    @Volatile
+    var lastAttempts: List<String> = emptyList()
+        private set
 
     /** Asks two easy questions; returns null if either answer is right, else what the model said. */
     private suspend fun quickCheck(handle: Long): String? = generationMutex.withLock {

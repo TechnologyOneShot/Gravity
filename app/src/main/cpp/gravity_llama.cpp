@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <cstdint>
+#include <cstdlib>
 #include "gravity_core.h"
 
 #define TAG "GravityLlama"
@@ -123,4 +125,13 @@ Java_com_gravity_ide_ai_local_LlamaBridge_lastError(JNIEnv *env, jobject) {
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_gravity_ide_ai_local_LlamaBridge_systemInfo(JNIEnv *env, jobject) {
     return env->NewStringUTF(llama_print_system_info());
+}
+
+// True if heap pointers carry an Android pointer tag in the top byte (for diagnostics).
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_gravity_ide_ai_local_LlamaBridge_heapTagged(JNIEnv *, jobject) {
+    void *p = std::malloc(64);
+    const bool tagged = (reinterpret_cast<uintptr_t>(p) >> 56) != 0;
+    std::free(p);
+    return tagged ? JNI_TRUE : JNI_FALSE;
 }

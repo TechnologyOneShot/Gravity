@@ -488,13 +488,26 @@ private fun PhoneAiCheck() {
 
     suspend fun runCheck(): String {
         val sb = StringBuilder()
-        val loaded = c.localHost.loadedOrNull() ?: c.localHost.autoLoad(c.db.models().all(), settings)
-            ?: return "No phone model to check. Download one above (Recommended), then run the check."
-        val model = c.db.models().get(loaded.modelId) ?: return "The loaded model is not in the list any more."
         val info = c.device.info()
         val threads = com.gravity.ide.device.PerformanceManager.threads(settings, info)
         val soc = if (android.os.Build.VERSION.SDK_INT >= 31) "${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}" else android.os.Build.HARDWARE
-        sb.appendLine("Phone: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · $soc · ${info.cpuCores} cores · ${android.os.Build.SUPPORTED_ABIS.firstOrNull()}")
+        sb.appendLine("Phone: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · $soc · ${info.cpuCores} cores · ${android.os.Build.SUPPORTED_ABIS.joinToString(",")}")
+        val cpuFeatures = runCatching { java.io.File("/proc/cpuinfo").readLines().firstOrNull { it.startsWith("Features") }?.substringAfter(':')?.trim() }.getOrNull()
+        val parts = runCatching { java.io.File("/proc/cpuinfo").readLines().filter { it.startsWith("CPU part") }.map { it.substringAfter(':').trim() }.distinct() }.getOrNull()
+        sb.appendLine("CPU features: ${cpuFeatures ?: "?"} · parts ${parts?.joinToString(",") ?: "?"}")
+        sb.appendLine("Native heap tagging: ${runCatching { com.gravity.ide.ai.local.LlamaBridge.heapTagged() }.getOrNull() ?: "?"} · app ${context.packageManager.getPackageInfo(context.packageName, 0).versionName}")
+        val loaded = try {
+            c.localHost.loadedOrNull() ?: c.localHost.autoLoad(c.db.models().all(), settings)
+        } catch (e: Exception) {
+            sb.appendLine("Loading failed: ${e.message}")
+            c.localHost.lastAttempts.forEach { sb.appendLine("  · $it") }
+            return sb.toString()
+        } ?: run {
+            sb.appendLine("No phone model to check. Download one above (Recommended), then run the check.")
+            return sb.toString()
+        }
+        val model = c.db.models().get(loaded.modelId) ?: return "The loaded model is not in the list any more."
+        c.localHost.lastAttempts.forEach { sb.appendLine("Load: $it") }
         sb.appendLine("Model: ${model.name} · ${model.quantization ?: "?"} · ${formatBytes(model.sizeBytes)} · ${java.io.File(model.filePath).name}")
         sb.appendLine("Context ${loaded.contextSize} · threads $threads · loaded: ${c.localHost.loadMode(model.id)} · ${com.gravity.ide.ai.local.LlamaBridge.systemInfo().trim()}")
         val questions = listOf("What is the capital of France? Answer with one word." to "paris", "What is 12 + 30? Reply with the number only." to "42")

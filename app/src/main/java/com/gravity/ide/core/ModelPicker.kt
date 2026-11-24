@@ -61,6 +61,7 @@ object ModelPicker {
 
     /** True when the request failed because the key's quota (free-tier limit) for this model is used up. */
     fun isQuotaExhausted(e: Throwable): Boolean {
+        if (e is com.gravity.ide.ai.QuotaExhaustedException) return true
         val msg = e.message.orEmpty().lowercase()
         return (e is LlmException && e.httpCode == 429) && ("quota" in msg || "rate limit" in msg || "resource_exhausted" in msg || "resource has been exhausted" in msg)
     }
