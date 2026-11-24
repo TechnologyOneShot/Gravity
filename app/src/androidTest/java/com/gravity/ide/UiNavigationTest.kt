@@ -190,9 +190,17 @@ class UiNavigationTest {
         compose.onNodeWithContentDescription("Send").performClick()
 
         val db = Ci.container.db
-        val reply: MessageEntity? = poll(30_000) {
+        // With a downloaded phone model, Gravity first loads it, then the model writes its answer.
+        val reply: MessageEntity? = poll(120_000) {
             val chat = db.chats().all().firstOrNull { it.title == prompt } ?: return@poll null
             db.chats().messages(chat.id).firstOrNull { it.role == "assistant" }
+        }
+        if (reply == null) {
+            val chat = runBlocking { db.chats().all().firstOrNull { it.title == prompt } }
+            Ci.log("chat", "No reply after 120 s. Chat found: ${chat != null}; phone model state: ${Ci.container.localHost.state.value}; " +
+                "messages: ${chat?.let { runBlocking { db.chats().messages(it.id) }.map { m -> "${m.role}:${m.content.take(80)}|${m.error}" } }}")
+            Ci.log("chat", "Chat screen: ${visibleText().take(1500)}")
+            Ci.screenshot("03_chat_no_reply")
         }
         assertNotNull("No assistant row was written for the message", reply)
         reply!!

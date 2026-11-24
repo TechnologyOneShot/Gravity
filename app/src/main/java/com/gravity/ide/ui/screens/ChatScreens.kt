@@ -365,7 +365,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             throw e
         } catch (e: Exception) {
             val msg = e.message ?: e.javaClass.simpleName
-            error.value = msg
+            // Shown in the reply itself (with Try again / Choose model), so no extra banner.
             saveAssistant(text.toString(), resolvedModel, providerId, inTok, outTok, sources, msg)
         } finally {
             busy.value = false
