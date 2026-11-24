@@ -39,6 +39,20 @@ object ModelPicker {
         return ids.firstOrNull { "flash" in it } ?: ids.firstOrNull()
     }
 
+    /**
+     * Models ordered for a picker: the recommended model first, then other general-purpose
+     * models (newest first), then specialised ones (preview, image, TTS, embedding…).
+     */
+    fun rankForChat(models: List<String>): List<String> {
+        val ids = models.map { it.removePrefix("models/") }.distinct()
+        val general = ids.filter { id -> specialised.none { it in id } }
+        val rest = ids.filterNot { it in general }
+        return (listOfNotNull(bestGemini(ids)) + general.sortedWith(compareVersions().reversed()) + rest).distinct()
+    }
+
+    /** True for general chat models (not image, speech, embedding, preview…). */
+    fun isGeneral(model: String): Boolean = specialised.none { it in model }
+
     private fun compareVersions() = Comparator<String> { a, b ->
         val va = anyGemini.find(a)?.groupValues?.get(1)?.let(::version) ?: emptyList()
         val vb = anyGemini.find(b)?.groupValues?.get(1)?.let(::version) ?: emptyList()

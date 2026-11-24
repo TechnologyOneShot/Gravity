@@ -78,3 +78,59 @@ class AxmlRewriterTest {
         assertFalse(r.exceptionOrNull()?.message.isNullOrBlank())
     }
 }
+
+/** The single-file path used when App Builder runs on an on-device model. */
+class AppBuilderLocalPathTest {
+    private val page = """
+        <!DOCTYPE html>
+        <html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Music Player</title>
+        <style>body{font-family:sans-serif;margin:0;padding:16px}button{font-size:20px;padding:12px}</style></head>
+        <body><input type="file" id="f" accept="audio/*" multiple><audio id="a" controls></audio>
+        <script>document.getElementById('f').onchange=e=>{const a=document.getElementById('a');a.src=URL.createObjectURL(e.target.files[0]);a.play()}</script>
+        </body></html>
+    """.trimIndent()
+
+    @Test fun recognisesBuildAndChangeInstructions() {
+        val build = AppBuilder.buildInstruction("music player bana do")
+        val change = AppBuilder.changeInstruction("add a shuffle button")
+        assertTrue(AppBuilder.isBuilderInstruction(build))
+        assertTrue(AppBuilder.isBuilderInstruction(change))
+        assertFalse(AppBuilder.isChangeInstruction(build))
+        assertTrue(AppBuilder.isChangeInstruction(change))
+        assertFalse(AppBuilder.isBuilderInstruction("Fix the failing test in app/"))
+        assertEquals("music player bana do", AppBuilder.requestFrom(build))
+        assertEquals("add a shuffle button", AppBuilder.requestFrom(change))
+    }
+
+    @Test fun extractsAFencedPage() {
+        val reply = "Here is your app:\n```html\n$page\n```\nEnjoy!"
+        assertEquals(page, AppBuilder.extractHtml(reply))
+        assertEquals(page, AppBuilder.extractHtml("```\n$page\n```"))
+    }
+
+    @Test fun extractsAnUnfencedPage() {
+        assertEquals(page, AppBuilder.extractHtml("Sure!\n$page\nThat's all."))
+    }
+
+    @Test fun rejectsGibberishTruncatedAndPlaceholderReplies() {
+        assertEquals(null, AppBuilder.extractHtml("I to the the of music player player and and the"))
+        assertEquals(null, AppBuilder.extractHtml("```html\n" + page.substringBefore("<script>")))
+        assertEquals(null, AppBuilder.extractHtml("```html\n<html><body>hi</body></html>\n```"))
+        val starter = java.nio.file.Files.createTempDirectory("gravity-app").toFile()
+        com.gravity.ide.workspace.ProjectTemplate.WEB_APP.write(starter, "Music Player")
+        val starterHtml = File(starter, "index.html").readText()
+        assertTrue("The starter page must be recognised as unbuilt", AppBuilder.isPlaceholder(starterHtml))
+        assertEquals(null, AppBuilder.extractHtml("```html\n$starterHtml\n```"))
+        assertTrue(AppBuilder.isPlaceholder("<p>Gravity is building this app…</p>"))
+        assertFalse(AppBuilder.isPlaceholder(page))
+    }
+
+    @Test fun directPromptCarriesTheRequestAndCurrentPage() {
+        val (system, user) = AppBuilder.directPrompt("music player", null)
+        assertTrue(system.contains("ONE self-contained HTML file"))
+        assertTrue(user.contains("music player"))
+        val (_, changeUser) = AppBuilder.directPrompt("add shuffle", page)
+        assertTrue(changeUser.contains(page))
+        assertTrue(changeUser.contains("add shuffle"))
+    }
+}

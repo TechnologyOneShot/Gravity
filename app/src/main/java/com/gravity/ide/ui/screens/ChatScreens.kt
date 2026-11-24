@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
@@ -412,12 +413,16 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
     val projects by vm.projects.collectAsState(initial = emptyList())
     val local by c.localHost.state.collectAsState()
     var input by remember { mutableStateOf("") }
-    var modelDialog by remember { mutableStateOf(false) }
+    var modelSheet by remember { mutableStateOf(false) }
+    var aiSetup by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size, streaming?.length) {
         val count = messages.size + if (streaming != null) 1 else 0
-        if (count > 0) listState.animateScrollToItem(count - 1)
+        if (count > 0) {
+            listState.scrollToItem(count - 1)
+            listState.scrollBy(100_000f) // to the bottom of a long last message
+        }
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> if (uris.isNotEmpty()) vm.attach(context, uris) }
@@ -432,25 +437,23 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
         EmptyState("Chat not found", "")
         return
     }
-    val providerLabel = when {
-        ch.providerId == LocalLlamaProvider.ID -> "Local · " + ((local as? com.gravity.ide.ai.local.LocalModelHost.State.Ready)?.loaded?.name ?: "none loaded")
-        else -> providers.firstOrNull { it.id == ch.providerId }?.let { "${it.name} · ${ch.model ?: it.defaultModel}" } ?: "Default provider"
+    val label = modelLabelFor(ch, providers, (local as? com.gravity.ide.ai.local.LocalModelHost.State.Ready)?.loaded)
+    fun share(text: String) {
+        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Share"))
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AssistChip(onClick = { modelDialog = true }, label = { Text(providerLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) }, modifier = Modifier.weight(1f, fill = false))
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            ModelPill(label, onClick = { modelSheet = true }, modifier = Modifier.weight(1f, fill = false))
             Spacer(Modifier.width(6.dp))
-            AssistChip(onClick = { modelDialog = true }, label = { Text(ReasoningMode.fromName(ch.reasoning).label) })
+            AssistChip(onClick = { modelSheet = true }, label = { Text(ReasoningMode.fromName(ch.reasoning).label, maxLines = 1) })
             Spacer(Modifier.weight(1f))
             OverflowMenu(
                 listOf(
+                    MenuAction("New chat", Icons.Filled.Edit) { go(Routes.NEW_CHAT) },
                     MenuAction("Regenerate", Icons.Filled.Refresh) { vm.regenerate() },
                     MenuAction("Continue generation", Icons.Filled.Refresh) { vm.continueGeneration() },
-                    MenuAction("Share as text", Icons.Filled.Share) {
-                        val md = messages.joinToString("\n\n") { "**${it.role}**: ${it.content}" }
-                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, md), "Share chat"))
-                    },
+                    MenuAction("Share as text", Icons.Filled.Share) { share(messages.joinToString("\n\n") { "**${it.role}**: ${it.content}" }) },
                 )
             )
         }
@@ -458,149 +461,59 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
             Text("Project context: ${p.name}${if (p.localOnly) " (local-only)" else ""}", style = MaterialTheme.typography.labelSmall, color = GravityColors.Purple, modifier = Modifier.padding(horizontal = 16.dp))
         }
 
-        LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (messages.isEmpty() && streaming == null) item {
-                EmptyState("Ask anything", "Code, architecture, debugging, docs. Attach files, images, PDFs or ZIPs. Pick a project for context.")
+                ChatWelcome(label, onPickModel = { modelSheet = true }, onSuggestion = { input = it }, onBuildApp = { go(Routes.HOME) })
             }
+            val lastId = messages.lastOrNull()?.id
             items(messages, key = { it.id }) { m ->
-                MessageBubble(m, onCopy = { clipboard.setText(AnnotatedString(m.content)); toast(context, "Copied") }, onDelete = { vm.deleteMessage(m.id) }, onOpenUrl = { go(Routes.browser(it)) })
+                ChatBubble(
+                    m, isLast = m.id == lastId, busy = busy,
+                    onCopy = { clipboard.setText(AnnotatedString(m.content)); toast(context, "Copied") },
+                    onRetry = { vm.regenerate() },
+                    onShare = { share(m.content) },
+                    onDelete = { vm.deleteMessage(m.id) },
+                    onChangeModel = { modelSheet = true },
+                    onOpenUrl = { go(Routes.browser(it)) },
+                )
             }
-            streaming?.let { s ->
-                item {
-                    Panel { Text(if (s.isEmpty()) "Thinking…" else s, style = MaterialTheme.typography.bodyMedium) }
-                }
-            }
+            streaming?.let { s -> item { StreamingBubble(s) } }
         }
         error?.let { MessageBanner(it, isError = true) { vm.error.value = null } }
         notice?.let { MessageBanner(it) { vm.notice.value = null } }
-        if (attachments.isNotEmpty()) {
-            LazyRow(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(attachments) { a ->
-                    InputChip(selected = false, onClick = { vm.removeAttachment(a) }, label = { Text("${a.name} · ${formatBytes(a.size)} ✕", maxLines = 1) })
-                }
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-            IconButton(onClick = { picker.launch(arrayOf("*/*")) }) { Icon(Icons.Filled.AttachFile, "Attach files") }
-            IconButton(onClick = {
+        ChatComposer(
+            value = input, onValueChange = { input = it }, busy = busy, attachments = attachments,
+            onRemoveAttachment = { vm.removeAttachment(it) },
+            onAttachFiles = { picker.launch(arrayOf("*/*")) },
+            onAttachImages = { picker.launch(arrayOf("image/*")) },
+            onMic = {
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                     .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    .putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your request")
+                    .putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your message")
                 try {
                     speech.launch(intent)
                 } catch (e: Exception) {
                     toast(context, "No speech recognizer is available on this device")
                 }
-            }) { Icon(Icons.Filled.Mic, "Voice input (uses the system speech service, which may use the network)") }
-            OutlinedTextField(
-                value = input, onValueChange = { input = it }, placeholder = { Text("Message Gravity") },
-                modifier = Modifier.weight(1f).heightIn(max = 180.dp), maxLines = 8,
-            )
-            if (busy) {
-                IconButton(onClick = { vm.stop() }) { Icon(Icons.Filled.Stop, "Stop", tint = GravityColors.Red) }
-            } else {
-                IconButton(onClick = {
-                    vm.send(input)
-                    input = ""
-                }) { Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = GravityColors.Cyan) }
-            }
-        }
+            },
+            onSend = {
+                vm.send(input)
+                input = ""
+            },
+            onStop = { vm.stop() },
+        )
     }
 
-    if (modelDialog) ChatConfigDialog(ch, providers, projects.map { it.id to it.name }, onDismiss = { modelDialog = false }) { updated -> vm.updateChat { updated } }
-}
-
-@Composable
-private fun MessageBubble(m: MessageEntity, onCopy: () -> Unit, onDelete: () -> Unit, onOpenUrl: (String) -> Unit) {
-    val isUser = m.role == "user"
-    var menu by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
-        Box(
-            Modifier.widthIn(max = 640.dp)
-                .background(if (isUser) GravityColors.Cyan.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
-                .combinedClickable(onClick = {}, onLongClick = { menu = true })
-                .padding(10.dp),
-        ) {
-            Column {
-                val atts = remember(m.attachments) { runCatching { JSONArray(m.attachments) }.getOrNull() }
-                if (atts != null && atts.length() > 0) {
-                    Text((0 until atts.length()).joinToString { atts.getJSONObject(it).optString("name") }, style = MaterialTheme.typography.labelSmall, color = GravityColors.Purple)
-                }
-                val hasAttachments = atts != null && atts.length() > 0
-                if (m.content.isNotEmpty() || (m.error == null && !hasAttachments)) {
-                    SelectionContainer { RichText(m.content.ifEmpty { "(empty)" }) }
-                }
-                m.error?.let { Text("Error: $it", color = GravityColors.Red, style = MaterialTheme.typography.bodySmall) }
-                val sources = remember(m.sources) { runCatching { JSONArray(m.sources) }.getOrNull() }
-                if (sources != null && sources.length() > 0) {
-                    Text("Sources", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
-                    for (i in 0 until sources.length()) {
-                        val s = sources.getJSONObject(i)
-                        Text("${i + 1}. ${s.optString("title")}", color = GravityColors.Blue, style = MaterialTheme.typography.bodySmall, modifier = Modifier.clickable { onOpenUrl(s.optString("url")) })
-                    }
-                }
-                if (!isUser && m.model != null) {
-                    Text("${m.model} · ${m.inputTokens}/${m.outputTokens} tok · ${relativeTime(m.createdAt)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-                }
-            }
-        }
-        androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            androidx.compose.material3.DropdownMenuItem(text = { Text("Copy") }, leadingIcon = { Icon(Icons.Filled.ContentCopy, null) }, onClick = { menu = false; onCopy() })
-            androidx.compose.material3.DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Filled.Delete, null) }, onClick = { menu = false; onDelete() })
-        }
+    if (modelSheet) {
+        ModelPickerSheet(
+            ch, providers, projects.map { it.id to it.name },
+            onDismiss = { modelSheet = false },
+            onUpdate = { updated -> vm.updateChat { updated } },
+            onAddAi = { modelSheet = false; aiSetup = true },
+            go = go,
+        )
     }
-}
-
-/** Minimal Markdown: fenced code blocks are rendered as monospace blocks. */
-@Composable
-fun RichText(text: String) {
-    val parts = remember(text) { text.split("```") }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        parts.forEachIndexed { i, part ->
-            if (i % 2 == 1) {
-                val body = part.substringAfter('\n', part)
-                MonoBlock(body.trimEnd())
-            } else if (part.isNotBlank()) {
-                Text(part.trim(), style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChatConfigDialog(chat: ChatEntity, providers: List<ProviderEntity>, projects: List<Pair<String, String>>, onDismiss: () -> Unit, onSave: (ChatEntity) -> Unit) {
-    var providerId by remember { mutableStateOf(chat.providerId) }
-    var model by remember { mutableStateOf(chat.model.orEmpty()) }
-    var reasoning by remember { mutableStateOf(ReasoningMode.fromName(chat.reasoning)) }
-    var web by remember { mutableStateOf(chat.webGrounding) }
-    var projectId by remember { mutableStateOf(chat.projectId) }
-    val providerOptions = listOf<Pair<String?, String>>(null to "Default (Settings)", LocalLlamaProvider.ID to "Local model (llama.cpp)") + providers.filter { it.enabled }.map { it.id to it.name }
-    val projectOptions = listOf<Pair<String?, String>>(null to "No project") + projects.map { it.first to it.second }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Chat settings") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Selector("Provider", providerOptions, providerOptions.firstOrNull { it.first == providerId }, { it.second }, { providerId = it.first; model = "" })
-                if (providerId != LocalLlamaProvider.ID) {
-                    OutlinedTextField(model, { model = it }, label = { Text("Model ID (blank = provider default)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                }
-                Selector("Reasoning", ReasoningMode.entries.toList(), reasoning, { it.label }, { reasoning = it })
-                Text(reasoning.description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Selector("Project context", projectOptions, projectOptions.firstOrNull { it.first == projectId }, { it.second }, { projectId = it.first })
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FilterChip(selected = web, onClick = { web = !web }, label = { Text("Google Search grounding (Gemini)") })
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onSave(chat.copy(providerId = providerId, model = model.ifBlank { null }, reasoning = reasoning.name, webGrounding = web, projectId = projectId))
-                onDismiss()
-            }) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    if (aiSetup) AiSetupDialog(onDismiss = { aiSetup = false }, go = go)
 }
 
 @Composable

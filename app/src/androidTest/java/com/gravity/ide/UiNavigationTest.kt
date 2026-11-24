@@ -134,6 +134,36 @@ class UiNavigationTest {
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 
+    /** The chat screen's controls: model pill and picker sheet, the attach menu and the mic. */
+    @Test
+    fun t03a_chatHasModelPickerAttachMenuAndMic() {
+        waitForTitle("Gravity")
+        openDrawerEntry("New Chat")
+        waitForTitle("Chat")
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("How can I help?").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("model-pill").assertExists()
+        compose.onNodeWithTag("mic-button").assertExists()
+        compose.onNodeWithTag("chat-input").assertExists()
+        compose.onNodeWithTag("attach-button").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Photos and images").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Files (code, text, PDF, ZIP)").assertExists()
+        Ci.screenshot("03a_chat_attach_menu")
+        Ci.shell("input keyevent 4") // close the menu
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Photos and images").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("model-pill").performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Choose AI model").fetchSemanticsNodes().isNotEmpty() }
+        Thread.sleep(800)
+        compose.waitForIdle()
+        val sheet = visibleText()
+        Ci.log("chat-ui", "Model sheet: ${sheet.take(1500)}")
+        Ci.screenshot("03b_chat_model_sheet")
+        assertTrue("Auto option missing", sheet.contains("Auto (best available)"))
+        assertTrue("Phone models section missing", sheet.contains("ON THIS PHONE (OFFLINE)"))
+        assertTrue("Cloud section missing", sheet.contains("CLOUD AI"))
+        Ci.shell("input keyevent 4") // close the sheet
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Choose AI model").fetchSemanticsNodes().isEmpty() }
+    }
+
     @Test
     fun t03_chatWithoutProviderFailsHonestlyAndPersists() {
         waitForTitle("Gravity")

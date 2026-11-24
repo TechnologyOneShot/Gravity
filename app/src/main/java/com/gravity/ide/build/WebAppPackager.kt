@@ -28,7 +28,11 @@ class WebAppPackager(private val context: Context, private val events: EventLog)
 
     suspend fun build(project: ProjectEntity): Output = withContext(Dispatchers.IO) {
         val root = File(project.rootPath)
-        require(File(root, "index.html").isFile) { "This app has no index.html yet, so there is nothing to package." }
+        val indexFile = File(root, "index.html")
+        require(indexFile.isFile) { "This app has no index.html yet, so there is nothing to package." }
+        require(!com.gravity.ide.agent.AppBuilder.isPlaceholder(indexFile.readText())) {
+            "The AI has not written this app yet (it still shows the starter page). Build it first, then install."
+        }
         val files = webFiles(root)
         val label = project.name.trim().take(50).ifEmpty { "My app" }
         val pkg = packageNameFor(project)

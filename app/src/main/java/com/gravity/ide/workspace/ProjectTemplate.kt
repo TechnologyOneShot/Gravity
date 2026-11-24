@@ -254,9 +254,10 @@ enum class ProjectTemplate(
                       <link rel="stylesheet" href="style.css" />
                     </head>
                     <body>
+                      <!-- gravity:placeholder (replaced when the AI writes the app) -->
                       <main class="center">
                         <h1>$name</h1>
-                        <p>Gravity is building this app…</p>
+                        <p>This app has not been written yet. Open it in Gravity and ask the AI to build it.</p>
                       </main>
                       <script src="app.js"></script>
                     </body>

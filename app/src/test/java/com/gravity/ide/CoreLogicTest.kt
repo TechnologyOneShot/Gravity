@@ -5,6 +5,7 @@ import com.gravity.ide.core.CommandSafety
 import com.gravity.ide.core.GgufReader
 import com.gravity.ide.core.Glob
 import com.gravity.ide.core.Language
+import com.gravity.ide.core.ModelPicker
 import com.gravity.ide.core.LineDiff
 import com.gravity.ide.core.PathGuard
 import com.gravity.ide.core.SecretScanner
@@ -317,6 +318,18 @@ class SyntaxHighlighterTest {
 }
 
 class ModelPickerTest {
+    @Test fun ranksModelsForThePicker() {
+        val listed = listOf("gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-pro-preview", "text-embedding-004", "gemini-3.5-pro")
+        val ranked = ModelPicker.rankForChat(listed.map { "models/$it" })
+        assertEquals("gemini-3.8-flash", ranked.first())
+        assertEquals(listed.size, ranked.size)
+        assertTrue(ranked.indexOf("gemini-3.5-pro") < ranked.indexOf("gemini-2.5-flash"))
+        assertTrue(ranked.indexOf("gemini-2.5-flash") < ranked.indexOf("gemini-3.1-pro-preview"))
+        assertTrue(ranked.indexOf("gemini-3.5-pro") < ranked.indexOf("text-embedding-004"))
+        assertFalse(ModelPicker.isGeneral("gemini-3.5-flash-lite"))
+        assertTrue(ModelPicker.isGeneral("gemini-3.5-pro"))
+    }
+
     @Test fun picksNewestStableFlash() {
         val listed = listOf(
             "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.7-flash",

@@ -251,6 +251,10 @@ class AgentEngine(
 
     private suspend fun runSingle(task: AgentTaskEntity, project: ProjectEntity) {
         val resolved = resolveOrWait(task.id, task.providerId, task.model, project) ?: return
+        if (resolved.provider.isLocal && AppBuilder.isBuilderInstruction(task.instruction)) {
+            runDirectWebApp(task, project, resolved)
+            return
+        }
         val s = settings.current()
         val mode = effectiveMode(task)
         val conversation = LlmMessageCodec.decode(task.conversation).toMutableList()
@@ -487,9 +491,14 @@ class AgentEngine(
         tools: List<com.gravity.ide.ai.ToolSpec>,
         mode: ReasoningMode,
         role: AgentRole = AgentRole.DEVELOPER,
+        maxOutputTokens: Int? = null,
+        temperature: Double? = null,
     ): com.gravity.ide.ai.LlmResult {
         val budget = if (resolved.provider.isLocal) settings.current().localContextSize * 3 else 400_000
-        val request = LlmRequest(resolved.model, ContextWindow.fit(conversation, budget), tools, mode)
+        val request = LlmRequest(
+            resolved.model, ContextWindow.fit(conversation, budget), tools, mode,
+            temperature = temperature, maxOutputTokens = maxOutputTokens,
+        )
         events.log(EventCategory.AGENT, "Calling ${resolved.model}", "${role.label} · ${request.messages.size} messages · ${tools.size} tools", taskId = taskId, agentRole = role.label, model = resolved.model)
         val result = try {
             withRetry { resolved.provider.complete(request) { text -> _live.update { it + (taskId to text) } } }
@@ -504,6 +513,45 @@ class AgentEngine(
         return result
     }
 
+    /**
+     * App Builder on an on-device model: one request that returns the whole app as a single
+     * HTML file, written to index.html (with a checkpoint, so Undo works). Small local models
+     * cannot follow the multi-step tool protocol, but many can write one complete file.
+     */
+    private suspend fun runDirectWebApp(task: AgentTaskEntity, project: ProjectEntity, resolved: ResolvedModel) {
+        val root = File(project.rootPath)
+        val index = File(root, "index.html")
+        val isChange = AppBuilder.isChangeInstruction(task.instruction)
+        val current = if (isChange && index.isFile) index.readText().takeUnless { AppBuilder.isPlaceholder(it) } else null
+        val (system, user) = AppBuilder.directPrompt(AppBuilder.requestFrom(task.instruction), current)
+        val ctx = localHost.loadedOrNull()?.contextSize ?: settings.current().localContextSize
+        // Rough token estimate (≈3.5 characters per token) to leave room for the answer.
+        val promptTokens = (system.length + user.length) / 3 + 64
+        val room = ctx - promptTokens
+        if (room < 1200) {
+            throw IllegalStateException(
+                "The app is too large for the on-device model's context (${ctx} tokens). Raise Local context size in Settings → Local AI " +
+                    "(e.g. 8192), or connect a free Gemini key on the Home screen."
+            )
+        }
+        stage(task.id, if (current != null) "Rewriting the app with your change (on-device model)" else "Writing the app as one file (on-device model)")
+        val result = call(
+            task.id, resolved,
+            listOf(LlmMessage(Role.SYSTEM, system), LlmMessage(Role.USER, user)),
+            emptyList(), ReasoningMode.BALANCED,
+            maxOutputTokens = minOf(room - 64, 6000), temperature = 0.2,
+        )
+        val html = AppBuilder.extractHtml(result.text)
+            ?: throw IllegalStateException(
+                if (result.finishReason == "MAX_TOKENS") "The on-device model ran out of room before finishing the file. Raise Local context size in Settings → Local AI, or use Gemini."
+                else "The on-device model did not return a complete HTML file, so nothing was written (its reply began: \"${result.text.trim().take(120)}\"). Try again, or connect Gemini for better results."
+            )
+        checkpoints.snapshot(project.id, root, index, "agent", task.id, AgentRole.DEVELOPER.label, resolved.model, "write_file (single-file app)")
+        index.writeText(html)
+        events.log(EventCategory.TOOL, "Wrote index.html (${html.length} characters)", taskId = task.id, projectId = project.id, model = resolved.model, tool = "write_file")
+        complete(task.id, if (current != null) "Applied your change with ${resolved.model}." else "Built the app as a single file with ${resolved.model}. Ask for changes below.")
+    }
+
     private fun shellFor(taskId: String, root: File): ShellSession =
         shells.getOrPut(taskId) { terminals.ephemeral(root, "Agent ${taskId.take(6)}") }
 
@@ -513,8 +561,29 @@ class AgentEngine(
     }
 
     private suspend fun complete(taskId: String, summary: String) {
-        update(taskId) { it.copy(status = TaskStatus.COMPLETED.name, summary = summary, stage = null) }
         val changed = db.fileVersions().forTask(taskId).map { it.relPath }.distinct()
+        val task = db.tasks().get(taskId)
+        if (task != null && AppBuilder.isBuilderInstruction(task.instruction) && changed.isEmpty()) {
+            // Never report an app as built when no file was written (e.g. the model only replied with text).
+            val reply = summary.trim().replace(Regex("\\s+"), " ").take(160)
+            val error = "The AI replied without writing any files, so nothing was built" +
+                (if (reply.isNotEmpty()) " (its reply began: \"$reply\")" else "") +
+                ". Small on-device models often cannot do this; connect a free Gemini key on the Home screen and tap Try again."
+            update(taskId) { it.copy(status = TaskStatus.FAILED.name, error = error, summary = null, stage = null) }
+            events.log(EventCategory.AGENT, "App Builder: nothing was written", error, EventLevel.ERROR, taskId = taskId)
+            return
+        }
+        if (task != null && AppBuilder.isBuilderInstruction(task.instruction)) {
+            val root = task.projectId?.let { db.projects().get(it) }?.rootPath?.let(::File)
+            val index = root?.let { File(it, "index.html") }
+            if (index != null && (!index.isFile || AppBuilder.isPlaceholder(index.readText()))) {
+                val error = "The AI changed ${changed.joinToString()} but never wrote the app's main page (index.html), so the app is still empty. Tap Try again."
+                update(taskId) { it.copy(status = TaskStatus.FAILED.name, error = error, summary = null, stage = null) }
+                events.log(EventCategory.AGENT, "App Builder: index.html was not written", error, EventLevel.ERROR, taskId = taskId)
+                return
+            }
+        }
+        update(taskId) { it.copy(status = TaskStatus.COMPLETED.name, summary = summary, stage = null) }
         events.log(EventCategory.NOTIFY, "Task completed", summary.take(2000) + if (changed.isNotEmpty()) "\n\nFiles changed: ${changed.joinToString()}" else "", taskId = taskId)
     }
 

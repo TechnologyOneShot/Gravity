@@ -137,14 +137,23 @@ fun HomeScreen(go: (String) -> Unit) {
     val localReady = (local as? LocalModelHost.State.Ready)?.loaded
     val aiReady = cloud != null || localReady != null
 
-    fun build() {
-        if (!aiReady) { setupOpen = true; return }
+    var localWarning by remember { mutableStateOf(false) }
+
+    fun startBuild() {
         scope.launch {
             busy = true
             runCatching { c.appBuilder.create(prompt) }
                 .onSuccess { (project, _) -> prompt = ""; go(Routes.app(project.id)) }
                 .onFailure { toast(context, it.message ?: "Could not start the build") }
             busy = false
+        }
+    }
+
+    fun build() {
+        when {
+            !aiReady -> setupOpen = true
+            cloud == null -> localWarning = true // only the on-device model: say what to expect first
+            else -> startBuild()
         }
     }
 
@@ -209,6 +218,20 @@ fun HomeScreen(go: (String) -> Unit) {
         }
     }
     if (setupOpen) AiSetupDialog(onDismiss = { setupOpen = false }, go = go)
+    if (localWarning) {
+        AlertDialog(
+            onDismissRequest = { localWarning = false },
+            title = { Text("Only the on-device model is set up") },
+            text = {
+                Text(
+                    "${localReady?.name ?: "The phone model"} will write the app as one simple HTML file. Small phone models are much weaker than " +
+                        "Gemini: expect a basic app, or a failed build. A free Gemini key gives far better apps.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { localWarning = false; startBuild() }) { Text("Build with the phone model") } },
+            dismissButton = { TextButton(onClick = { localWarning = false; setupOpen = true }) { Text("Connect Gemini") } },
+        )
+    }
 }
 
 @Composable

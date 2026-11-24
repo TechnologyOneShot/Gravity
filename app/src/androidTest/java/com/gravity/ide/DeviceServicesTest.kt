@@ -326,6 +326,49 @@ class DeviceServicesTest {
         assertTrue("The local model produced no tokens", r.outputTokens > 0)
     }
 
+    /**
+     * App Builder on the real on-device model (llama.cpp, the tiny CI model): whatever the model
+     * writes, Gravity must never report an app as built unless a real page was written. A tiny
+     * story model cannot write HTML, so the expected result is an honest failure with the
+     * starter page untouched and packaging refused.
+     */
+    @Test
+    fun t12c_appBuilderOnPhoneModelNeverFakesSuccess() {
+        if (!c.localHost.runtimeAvailable) {
+            Ci.log("builder-local", "Skipped: ${c.localHost.runtimeError}")
+            Assume.assumeTrue("llama.cpp runtime is not bundled in this build", false)
+        }
+        val cloud = runBlocking { c.db.providers().all().filter { it.enabled } }
+        Assume.assumeTrue("A cloud provider is configured, so App Builder would not use the phone model", cloud.isEmpty())
+        val model = runBlocking { c.db.models().all().firstOrNull { it.status == ModelStatus.READY.name } }
+        assertNotNull("No verified model to load (the download test must pass first)", model)
+        val loaded = runBlocking { c.localHost.unload(); c.localHost.load(model!!, 2048, 2) }
+        Ci.log("builder-local", "Loaded ${loaded.name} with context ${loaded.contextSize}")
+        val (project, taskId) = runBlocking { c.appBuilder.create("a simple music player") }
+        val finished = setOf("COMPLETED", "FAILED", "PAUSED", "CANCELLED")
+        val task = poll(6 * 60_000L) { c.db.tasks().get(taskId)?.takeIf { it.status in finished } }
+        assertNotNull("The App Builder run on the phone model did not finish", task)
+        task!!
+        val index = File(project.rootPath, "index.html").readText()
+        val packaged = runCatching { runBlocking { c.packager.build(project) } }
+        Ci.log(
+            "builder-local",
+            "status=${task.status} tokens=${task.inputTokens}/${task.outputTokens} error=${task.error} summary=${task.summary} " +
+                "index=${index.length} chars, starter page=${com.gravity.ide.agent.AppBuilder.isPlaceholder(index)}, " +
+                "packaging=${packaged.exceptionOrNull()?.message ?: "ok ${packaged.getOrNull()?.bytes} bytes"}",
+        )
+        if (task.status == "COMPLETED") {
+            assertFalse("Completed but index.html is still the starter page", com.gravity.ide.agent.AppBuilder.isPlaceholder(index))
+            assertNotNull("Completed but index.html is not a complete page", com.gravity.ide.agent.AppBuilder.extractHtml(index))
+            assertTrue("A completed app could not be packaged: ${packaged.exceptionOrNull()?.message}", packaged.isSuccess)
+        } else {
+            assertEquals("FAILED", task.status)
+            assertFalse("The failure has no explanation", task.error.isNullOrBlank())
+            assertTrue("A failed build changed the starter page", com.gravity.ide.agent.AppBuilder.isPlaceholder(index))
+            assertTrue("An unbuilt app was packaged", packaged.isFailure)
+        }
+    }
+
     @Test
     fun t13_offlineMode() {
         val project = runBlocking { c.db.projects().all().first { it.name == "ci-android_compose" } }

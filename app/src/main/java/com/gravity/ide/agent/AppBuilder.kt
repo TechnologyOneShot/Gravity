@@ -92,6 +92,57 @@ class AppBuilder(
             return name.take(40).ifBlank { "My App" }
         }
 
+        const val BUILD_PREFIX = "Build this app for the user: "
+        const val CHANGE_PREFIX = "Change request for this app: "
+        /** In the starter page until the AI writes the app; packaging refuses pages that still have it. */
+        const val PLACEHOLDER_MARKER = "gravity:placeholder"
+
+        /** True for the starter page (also the wording of starter pages made by older versions). */
+        fun isPlaceholder(html: String) = html.contains(PLACEHOLDER_MARKER) || html.contains("<p>Gravity is building this app…</p>")
+
+        fun isBuilderInstruction(instruction: String) = instruction.startsWith(BUILD_PREFIX) || instruction.startsWith(CHANGE_PREFIX)
+        fun isChangeInstruction(instruction: String) = instruction.startsWith(CHANGE_PREFIX)
+
+        /** The user's own words inside a build/change instruction. */
+        fun requestFrom(instruction: String): String {
+            val body = instruction.removePrefix(BUILD_PREFIX).removePrefix(CHANGE_PREFIX)
+            return body.substringBefore("\n\nDeliver a complete").substringBefore("\n\nRead the relevant files first").trim()
+        }
+
+        /**
+         * Prompt for on-device models: one self-contained HTML file in a single reply. Small
+         * models cannot follow the multi-step tool protocol, but many can write one file.
+         */
+        fun directPrompt(request: String, currentHtml: String?): Pair<String, String> {
+            val system = "You are an expert web developer. You write complete, working mobile web apps as ONE self-contained HTML file " +
+                "with inline <style> and <script>. No external libraries, no CDNs, no explanations: reply with the code only, inside one ```html code block."
+            val user = if (currentHtml == null) {
+                "Build this app: $request\n\nRequirements: works on a phone screen, large touch-friendly buttons, clean modern look, " +
+                    "supports dark and light mode, keeps the user's data in localStorage where useful, and uses <input type=\"file\"> " +
+                    "for files on the device (music, photos). Make every feature fully functional."
+            } else {
+                "Here is the current app:\n```html\n$currentHtml\n```\n\nChange request: $request\n\n" +
+                    "Reply with the COMPLETE updated file (not a diff) in one ```html code block. Keep everything else working."
+            }
+            return system to user
+        }
+
+        /** Extracts a complete HTML document from a model reply, or null if there is none. */
+        fun extractHtml(reply: String): String? {
+            val fenced = Regex("```[a-zA-Z]*[ \\t]*\\r?\\n([\\s\\S]*?)```").findAll(reply).map { it.groupValues[1] }
+                .firstOrNull { it.contains("<html", true) || it.contains("<body", true) }
+            val raw = fenced ?: run {
+                val start = reply.indexOf("<!DOCTYPE", ignoreCase = true).takeIf { it >= 0 } ?: reply.indexOf("<html", ignoreCase = true)
+                val end = reply.lastIndexOf("</html>", ignoreCase = true)
+                if (start < 0 || end < start) return null
+                reply.substring(start, end + "</html>".length)
+            }
+            val html = raw.trim()
+            val looksLikeHtml = html.contains("<html", true) || html.contains("<body", true)
+            val complete = html.contains("</html>", true) || html.contains("</body>", true)
+            return if (looksLikeHtml && complete && html.length >= 200 && !html.contains(PLACEHOLDER_MARKER)) html else null
+        }
+
         fun buildInstruction(request: String): String = """
             Build this app for the user: $request
 

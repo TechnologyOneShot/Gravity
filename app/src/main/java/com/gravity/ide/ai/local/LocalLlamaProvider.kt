@@ -74,7 +74,8 @@ class LocalLlamaProvider(
         val system = StringBuilder(request.messages.filter { it.role == Role.SYSTEM }.joinToString("\n\n") { it.text })
         if (request.tools.isNotEmpty()) {
             if (system.isNotEmpty()) system.append("\n\n")
-            system.append(TextToolProtocol.instructions(request.tools.map { it.name to "${it.description} Parameters: ${it.parameters}" }))
+            // Compact tool list (names of arguments, not full JSON schemas): small models have small contexts.
+            system.append(TextToolProtocol.instructions(request.tools.map { it.name to "${it.description} Arguments: ${argumentList(it.parameters)}" }))
         }
         if (system.isNotEmpty()) out += "system" to system.toString()
         for (m: LlmMessage in request.messages) {
@@ -95,6 +96,13 @@ class LocalLlamaProvider(
             if (last != null && last.first == p.first) merged[merged.size - 1] = last.first to (last.second + "\n\n" + p.second) else merged += p
         }
         return merged
+    }
+
+    private fun argumentList(schema: org.json.JSONObject): String {
+        val props = schema.optJSONObject("properties") ?: return "none"
+        val required = schema.optJSONArray("required")?.let { r -> (0 until r.length()).map { r.optString(it) }.toSet() } ?: emptySet()
+        val names = props.keys().asSequence().map { if (it in required) it else "$it (optional)" }.toList()
+        return if (names.isEmpty()) "none" else names.joinToString(", ")
     }
 
     override suspend fun listModels(): List<String> = listOfNotNull(modelName())
