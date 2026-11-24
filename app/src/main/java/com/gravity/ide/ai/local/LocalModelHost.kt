@@ -110,6 +110,10 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
             } catch (e: Exception) {
                 attempts += "${cfg.describe(t)}: could not start (${e.message})"
                 continue
+            } catch (e: LinkageError) {
+                // A missing or broken engine library: note it and try the next way instead of crashing.
+                attempts += "${cfg.describe(t)}: engine library problem (${e.message})"
+                continue
             }
             if (handle == 0L && cfg.engine != EngineKind.BASE) {
                 attempts += "${cfg.describe(t)}: did not load (${LlamaBridge.lastError()})"
