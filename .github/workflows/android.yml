@@ -36,6 +36,12 @@ jobs:
       - name: Unit tests (JVM)
         run: ./gradlew --no-daemon testDebugUnitTest --stacktrace
 
+      - name: Upload App Builder prompts (for the phone-model check)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-builder-prompts
+          path: app/build/app-builder-prompts/
+
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleDebug --stacktrace
 
@@ -74,6 +80,49 @@ jobs:
         with:
           name: unit-test-reports
           path: app/build/reports/tests/
+
+  phone-model-app-check:
+    # Can a real small phone model write an app with App Builder's single-file prompt? Runs the
+    # exact prompts (exported by a unit test) through Qwen2.5-Coder-1.5B-Instruct Q4_K_M with
+    # llama.cpp b6000 on the runner, with the app's sampler settings, and checks each page.
+    needs: debug-apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-builder-prompts
+          path: prompts
+
+      - name: Build llama-server (llama.cpp b6000)
+        run: |
+          git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
+          cmake -S /tmp/llama.cpp -B /tmp/llama-build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF
+          cmake --build /tmp/llama-build --target llama-server -j"$(nproc)"
+
+      - name: Download Qwen2.5-Coder-1.5B-Instruct Q4_K_M
+        run: |
+          curl -fL --retry 3 -o /tmp/model.gguf https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+          ls -l /tmp/model.gguf
+          sha256sum /tmp/model.gguf
+
+      - name: Generate apps with the App Builder prompt
+        run: |
+          /tmp/llama-build/bin/llama-server -m /tmp/model.gguf -c 8192 -np 1 -t "$(nproc)" --port 8089 > /tmp/server.log 2>&1 &
+          for i in $(seq 1 180); do curl -sf http://127.0.0.1:8089/health > /dev/null && break; sleep 1; done
+          python3 .github/scripts/phone-model-check.py prompts http://127.0.0.1:8089 phone-model-apps
+
+      - name: Server log
+        if: always()
+        run: tail -n 40 /tmp/server.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phone-model-apps
+          path: phone-model-apps/
 
   emulator-tests:
     # Installs the debug APK on an Android 14 emulator and drives the real app:

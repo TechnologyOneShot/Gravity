@@ -134,3 +134,22 @@ class AppBuilderLocalPathTest {
         assertTrue(changeUser.contains("add shuffle"))
     }
 }
+
+/**
+ * Writes the exact on-device App Builder prompts to build/app-builder-prompts, so CI can run them
+ * through a real small coder model with llama.cpp (.github/scripts/phone-model-check.py).
+ */
+class AppBuilderPromptExportTest {
+    @Test fun exportsPromptsForTheModelCheck() {
+        val dir = File("build/app-builder-prompts").apply { mkdirs() }
+        val requests = mapOf("calculator" to "calculator bana do", "music-player" to "music player bana do", "todo" to "a to-do list app")
+        for ((name, request) in requests) {
+            val (system, user) = AppBuilder.directPrompt(AppBuilder.requestFrom(AppBuilder.buildInstruction(request)), null)
+            val json = org.json.JSONObject()
+                .put("name", name).put("system", system).put("user", user)
+                .put("prefix", AppBuilder.DIRECT_PREFIX).put("stop", org.json.JSONArray().put("</html>"))
+            File(dir, "$name.json").writeText(json.toString(2))
+        }
+        assertEquals(3, dir.listFiles { f -> f.name.endsWith(".json") }!!.size)
+    }
+}
