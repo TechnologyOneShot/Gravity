@@ -430,12 +430,29 @@ fun AppScreen(projectId: String, go: (String) -> Unit) {
                         if (current.status == "WAITING_APPROVAL") TextButton(onClick = { go(Routes.task(current.id)) }) { Text("Review") }
                         TextButton(onClick = { c.agent.cancel(current.id) }) { Text("Stop") }
                     }
-                    Text(current.stage ?: "Starting…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                    events.takeLast(3).forEach { e -> Text("• ${e.title}", style = MaterialTheme.typography.labelSmall, maxLines = 1) }
-                    live[current.id]?.takeIf { it.isNotBlank() }?.let {
-                        Text("Written so far: ${"%,d".format(it.length)} characters", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        MonoBlock(it.takeLast(240), maxLines = 3)
+                    // What it is doing, in plain words, from the real task log (as in the chat's app card).
+                    val steps = remember(events) {
+                        com.gravity.ide.core.BuildNarration.lines(events.map { com.gravity.ide.core.BuildNarration.Entry(it.category, it.title, it.detail, it.level) })
                     }
+                    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+                    LaunchedEffect(current.id) { while (true) { kotlinx.coroutines.delay(1000); now = System.currentTimeMillis() } }
+                    val secs = ((now - current.createdAt) / 1000).coerceAtLeast(0)
+                    val written = live[current.id]?.length ?: 0
+                    Text(
+                        "${secs / 60}:${"%02d".format(secs % 60)} so far" + if (written > 0) " · written ${"%,d".format(written)} characters" else "",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("app-progress"),
+                    )
+                    if (steps.isEmpty()) Text(current.stage ?: "Starting…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    steps.takeLast(4).forEach { line -> Text("• $line", style = MaterialTheme.typography.labelSmall, maxLines = 2) }
+                    val phoneModel = events.any { it.title.startsWith("Writing the app · phone model") || it.title.startsWith("Rewriting the app with your change · phone model") || it.title.startsWith("Changing the app in small edits") }
+                    if (phoneModel && secs > 45) {
+                        Text(
+                            "A phone model writes about 2–5 words a second, so a whole app can take 10–20 minutes (the screen can stay on). " +
+                                "Gemini with a free key usually takes under a minute.",
+                            style = MaterialTheme.typography.labelSmall, color = GravityColors.Amber,
+                        )
+                    }
+                    live[current.id]?.takeIf { it.isNotBlank() }?.let { MonoBlock(it.takeLast(240), maxLines = 3) }
                 }
                 current.status == "FAILED" -> Column(Modifier.padding(horizontal = 12.dp)) {
                     MessageBanner("The AI run failed: ${current.error ?: "unknown error"}", isError = true)

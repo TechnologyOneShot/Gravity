@@ -29,4 +29,16 @@ class AppDesignTest {
         assertTrue(r.startsWith("quiz app") && r.contains("Attached file questions.txt") && r.contains("Q1?"))
         assertTrue(r.length < 1400)
     }
+
+    @Test fun aPastedPlanOfSeveralLinesIsStillAnAppBuild() {
+        val plan = "Project: Smart Gallery\nFeatures:\n- show my photos in a grid\n- open a photo full screen"
+        val instruction = AppBuilder.buildInstruction(plan)
+        assertTrue("A multi-line request must use the fast single-file app route", AppBuilder.isBuilderInstruction(instruction))
+        assertEquals(plan, AppBuilder.requestFrom(instruction))
+        assertTrue(AppBuilder.isChangeInstruction(AppBuilder.changeInstruction("add a slideshow\nwith music")))
+        // A task saved by an earlier version, indented: still recognised, with its request.
+        val old = "            Build this app for the user: $plan\n\n            Deliver a complete, working app"
+        assertTrue(AppBuilder.isBuilderInstruction(old))
+        assertEquals(plan, AppBuilder.requestFrom(old))
+    }
 }

@@ -128,7 +128,8 @@ class AppBuilder(
         /** True for the starter page (also the wording of starter pages made by older versions). */
         fun isPlaceholder(html: String) = html.contains(PLACEHOLDER_MARKER) || html.contains("<p>Gravity is building this app…</p>")
 
-        fun isBuilderInstruction(instruction: String) = instruction.startsWith(BUILD_PREFIX) || instruction.startsWith(CHANGE_PREFIX)
+        // trimStart: tasks saved by the earlier versions may begin with spaces (see buildInstruction).
+        fun isBuilderInstruction(instruction: String) = instruction.trimStart().let { it.startsWith(BUILD_PREFIX) || it.startsWith(CHANGE_PREFIX) }
 
         /** Marks the design pictures of a build or change (paths in the app folder), at the end of the instruction. */
         const val DESIGN_PREFIX = "Design pictures to match (in the app folder): "
@@ -152,13 +153,15 @@ class AppBuilder(
             }
             return request + "\n\n" + parts.joinToString("\n\n")
         }
-        fun isChangeInstruction(instruction: String) = instruction.startsWith(CHANGE_PREFIX)
+        fun isChangeInstruction(instruction: String) = instruction.trimStart().startsWith(CHANGE_PREFIX)
+
+        /** Where the rules start after the request (tasks from earlier versions have them indented). */
+        private val rulesStart = Regex("\\n\\s*\\n\\s*(Deliver a complete|Read the relevant files first)")
 
         /** The user's own words inside a build/change instruction. */
         fun requestFrom(instruction: String): String {
-            val body = instruction.removePrefix(BUILD_PREFIX).removePrefix(CHANGE_PREFIX)
-            return body.substringBefore("\n\nDeliver a complete").substringBefore("\n\nRead the relevant files first")
-                .substringBefore("\n\n$DESIGN_PREFIX").trim()
+            val body = instruction.trimStart().removePrefix(BUILD_PREFIX).removePrefix(CHANGE_PREFIX)
+            return body.split(rulesStart).first().substringBefore("\n\n$DESIGN_PREFIX").trim()
         }
 
         private val fileWords = Regex(
@@ -259,9 +262,12 @@ class AppBuilder(
             return if (looksLikeHtml && complete && html.length >= 200 && !html.contains(PLACEHOLDER_MARKER)) html else null
         }
 
-        fun buildInstruction(request: String): String = """
-            Build this app for the user: $request
+        // The user's request is added after trimIndent: a request of several lines (a pasted plan) has
+        // no indentation, and inside the template it stopped trimIndent from removing any, so the
+        // instruction began with spaces, was not seen as an app build, and went the slow tool route.
+        fun buildInstruction(request: String): String = BUILD_PREFIX + request.trim() + "\n\n" + BUILD_RULES
 
+        private val BUILD_RULES = """
             Deliver a complete, working app that runs inside an Android WebView on a phone:
             - Entry point index.html; styles in style.css; logic in app.js (add more files only if they help). Plain HTML/CSS/JavaScript: no build step, no frameworks from a CDN, no network requests unless the app's purpose needs online data.
             - Mobile first: portrait phone screen, large touch targets, readable text, a clean modern look, and it must respect light/dark mode (prefers-color-scheme).
@@ -271,9 +277,9 @@ class AppBuilder(
             When everything is written, call finish with a short summary in plain words: what the app does and how to use it.
         """.trimIndent()
 
-        fun changeInstruction(request: String): String = """
-            Change request for this app: $request
+        fun changeInstruction(request: String): String = CHANGE_PREFIX + request.trim() + "\n\n" + CHANGE_RULES
 
+        private val CHANGE_RULES = """
             Read the relevant files first, make the change, and keep everything else working (same rules as the original build: plain HTML/CSS/JS in an Android WebView, mobile first, no placeholders).
             When done, call finish with a short summary of what changed.
         """.trimIndent()
