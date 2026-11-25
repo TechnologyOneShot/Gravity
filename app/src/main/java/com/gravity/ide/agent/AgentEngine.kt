@@ -543,49 +543,99 @@ class AgentEngine(
         val (system, user) = AppBuilder.directPrompt(AppBuilder.requestFrom(task.instruction), current, compact = local)
         val loaded = if (local) localHost.loadedOrNull() else null
         // A whole app in one answer needs room: on the phone, use a bigger context for this request if free memory allows.
-        val ctx = if (loaded != null) localHost.contextForLongAnswer(loaded, 8192) else settings.current().localContextSize
+        // A change must hold the current app and the new one (≈3 characters per token), so it may ask for more.
+        val wanted = if (current == null) 8192 else {
+            val need = (system.length + user.length) / 3 + current.length / 3 + 1500
+            ((need + 1023) / 1024 * 1024).coerceIn(8192, 32768)
+        }
+        val ctx = if (loaded != null) localHost.contextForLongAnswer(loaded, wanted) else settings.current().localContextSize
 
         /** Output budget for a prompt on the phone model (≈3 characters per token, on the safe side); null for cloud models. */
         fun budget(sys: String, usr: String): Int? = if (!local) null else ctx - ((sys.length + usr.length) / 3 + 64) - 64
 
-        suspend fun ask(sys: String, usr: String, maxTokens: Int?): com.gravity.ide.ai.LlmResult = call(
+        suspend fun ask(
+            sys: String, usr: String, maxTokens: Int?,
+            prefix: String = AppBuilder.DIRECT_PREFIX, stopAt: List<String> = listOf("</html>"),
+        ): com.gravity.ide.ai.LlmResult = call(
             task.id, resolved,
             listOf(LlmMessage(Role.SYSTEM, sys), LlmMessage(Role.USER, usr)),
             emptyList(), ReasoningMode.BALANCED,
             maxOutputTokens = maxTokens?.let { minOf(it, 7500) },
             temperature = if (local) 0.2 else null,
             contextSize = if (local) ctx else null,
-            assistantPrefix = if (local) AppBuilder.DIRECT_PREFIX else null,
-            stop = if (local) listOf("</html>") else emptyList(),
+            assistantPrefix = if (local) prefix else null,
+            stop = if (local) stopAt else emptyList(),
         )
 
         val room = budget(system, user)
-        if (room != null && room < 1100) {
-            throw IllegalStateException(
-                "The app is too large for the phone model's memory (${ctx} tokens). Use Gemini for this app (connect a free key), " +
-                    "or raise Local context size in Settings → Local AI."
-            )
-        }
-        stage(task.id, (if (current != null) "Rewriting the app with your change" else "Writing the app") + if (local) " · phone model, up to $room tokens" else " · $who")
-        events.log(EventCategory.AGENT, "Single-file app with $who", if (local) "context $ctx tokens (loaded with ${loaded?.contextSize}), answer up to $room tokens" else "", taskId = task.id, model = resolved.model)
-        val result = ask(system, user, room)
-        val html = AppBuilder.extractHtml(result.text)
-        if (html == null) {
-            // Keep the whole reply in the task log (Details) so the user can see what the model wrote.
-            events.log(EventCategory.AGENT, "AI reply (${result.outputTokens} tokens, no complete page)", result.text.take(20_000), EventLevel.WARN, taskId = task.id, model = resolved.model)
-            val end = result.text.trim().replace(Regex("\\s+"), " ").takeLast(120)
-            throw IllegalStateException(
-                when {
-                    local && result.finishReason == "MAX_TOKENS" ->
-                        "The phone model wrote ${result.outputTokens} tokens (all the room it had with a $ctx-token context) without finishing the app; it ended with: \"…$end\". " +
-                            "Try again, ask for a simpler app, or use Gemini (free key) for complete apps. The full reply is under Details."
-                    local ->
-                        "The phone model stopped without writing a complete page (${result.outputTokens} tokens; it ended with: \"…$end\"). Nothing was written. " +
-                            "Try again, or use Gemini (free key) for better results. The full reply is under Details."
-                    else ->
-                        "${resolved.model} did not return a complete page (it ended with: \"…$end\"), so nothing was written. Try again. The full reply is under Details."
+        // On the phone, a change to an app too big to rewrite in the room left is made as small SEARCH/REPLACE edits.
+        val useEdits = local && current != null && room != null && room < current.length / 3 + 600
+        val html: String
+        if (useEdits) {
+            val (es, eu) = AppEdits.prompt(AppBuilder.requestFrom(task.instruction), current!!)
+            val editRoom = budget(es, eu) ?: 0
+            if (editRoom < 600) {
+                throw IllegalStateException(
+                    "This app (${current.length / 1000} KB) is too large for the phone model's memory even for small edits " +
+                        "(context $ctx tokens with the memory free now). Use Gemini for this app, close other apps and try again, " +
+                        "or raise Local context size in Settings → Local AI."
+                )
+            }
+            stage(task.id, "Changing the app in small edits · phone model, up to ${minOf(editRoom, 3000)} tokens")
+            events.log(EventCategory.AGENT, "App change as edits with $who", "context $ctx tokens; the app is ${current.length} characters, too big to rewrite in the room left ($room tokens)", taskId = task.id, model = resolved.model)
+            val reply = ask(es, eu, minOf(editRoom, 3000), prefix = AppEdits.PREFIX, stopAt = emptyList())
+            val edits = AppEdits.parse(reply.text)
+            html = if (edits.isNotEmpty()) {
+                val r = AppEdits.apply(current, edits)
+                events.log(
+                    EventCategory.AGENT, "Edits: ${r.applied} applied, ${r.failed.size} not found", reply.text.take(20_000),
+                    if (r.failed.isEmpty()) EventLevel.INFO else EventLevel.WARN, taskId = task.id, model = resolved.model,
+                )
+                if (r.applied == 0) {
+                    throw IllegalStateException(
+                        "The phone model's ${edits.size} edit(s) did not match the app's code, so nothing was changed. " +
+                            "Try again, ask for one smaller change at a time, or use Gemini for this app. The reply is under Details."
+                    )
                 }
-            )
+                r.html
+            } else {
+                AppBuilder.extractHtml(reply.text) ?: run {
+                    events.log(EventCategory.AGENT, "AI reply (${reply.outputTokens} tokens, no edits)", reply.text.take(20_000), EventLevel.WARN, taskId = task.id, model = resolved.model)
+                    throw IllegalStateException(
+                        "The phone model did not write any usable edits, so nothing was changed. Try again, ask for one smaller change at a time, " +
+                            "or use Gemini for this app. The reply is under Details."
+                    )
+                }
+            }
+        } else {
+            if (room != null && room < 1100) {
+                throw IllegalStateException(
+                    "The app is too large for the phone model's memory (${ctx} tokens). Use Gemini for this app (connect a free key), " +
+                        "or raise Local context size in Settings → Local AI."
+                )
+            }
+            stage(task.id, (if (current != null) "Rewriting the app with your change" else "Writing the app") + if (local) " · phone model, up to $room tokens" else " · $who")
+            events.log(EventCategory.AGENT, "Single-file app with $who", if (local) "context $ctx tokens (loaded with ${loaded?.contextSize}), answer up to $room tokens" else "", taskId = task.id, model = resolved.model)
+            val result = ask(system, user, room)
+            val extracted = AppBuilder.extractHtml(result.text)
+            if (extracted == null) {
+                // Keep the whole reply in the task log (Details) so the user can see what the model wrote.
+                events.log(EventCategory.AGENT, "AI reply (${result.outputTokens} tokens, no complete page)", result.text.take(20_000), EventLevel.WARN, taskId = task.id, model = resolved.model)
+                val end = result.text.trim().replace(Regex("\\s+"), " ").takeLast(120)
+                throw IllegalStateException(
+                    when {
+                        local && result.finishReason == "MAX_TOKENS" ->
+                            "The phone model wrote ${result.outputTokens} tokens (all the room it had with a $ctx-token context) without finishing the app; it ended with: \"…$end\". " +
+                                "Try again, ask for a simpler app, or use Gemini (free key) for complete apps. The full reply is under Details."
+                        local ->
+                            "The phone model stopped without writing a complete page (${result.outputTokens} tokens; it ended with: \"…$end\"). Nothing was written. " +
+                                "Try again, or use Gemini (free key) for better results. The full reply is under Details."
+                        else ->
+                            "${resolved.model} did not return a complete page (it ended with: \"…$end\"), so nothing was written. Try again. The full reply is under Details."
+                    }
+                )
+            }
+            html = extracted
         }
         suspend fun write(page: String, note: String) {
             checkpoints.snapshot(project.id, root, index, "agent", task.id, AgentRole.DEVELOPER.label, resolved.model, note)
@@ -601,7 +651,7 @@ class AgentEngine(
         if (report.errors.isNotEmpty()) {
             val (rs, ru) = AppBuilder.repairPrompt(html, report.errors, compact = local)
             val repairRoom = budget(rs, ru)
-            if (repairRoom == null || repairRoom >= 1100) {
+            if (repairRoom == null || repairRoom >= maxOf(1100, html.length / 3 + 300)) {
                 stage(task.id, "The test found ${report.errors.size} error(s); fixing them")
                 val fix = try {
                     ask(rs, ru, repairRoom)
@@ -627,7 +677,7 @@ class AgentEngine(
                 }
             }
         }
-        val verb = if (current != null) "Applied your change" else "Built the app"
+        val verb = if (current != null) "Applied your change" + (if (useEdits) " (as small edits, to fit the phone model's memory)" else "") else "Built the app"
         complete(
             task.id,
             if (report.errors.isEmpty()) {
