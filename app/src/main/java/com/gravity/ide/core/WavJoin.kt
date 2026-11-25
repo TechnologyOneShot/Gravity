@@ -45,6 +45,39 @@ object WavJoin {
         return out.toByteArray()
     }
 
+    /** 16-bit PCM samples of a WAV (channels mixed to mono) and its sample rate. */
+    fun pcmMono16(bytes: ByteArray): Pair<ShortArray, Int> {
+        val w = parse(bytes)
+        val f = ByteBuffer.wrap(w.fmt).order(ByteOrder.LITTLE_ENDIAN)
+        val format = f.getShort(0).toInt()
+        val channels = f.getShort(2).toInt().coerceAtLeast(1)
+        val rate = f.getInt(4)
+        val bits = f.getShort(14).toInt()
+        require(format == 1 && bits == 16) { "Only 16-bit PCM WAV is supported (format $format, $bits bits)" }
+        val d = ByteBuffer.wrap(w.data).order(ByteOrder.LITTLE_ENDIAN)
+        val frames = w.data.size / (2 * channels)
+        val out = ShortArray(frames)
+        for (i in 0 until frames) {
+            var sum = 0
+            for (c in 0 until channels) sum += d.getShort((i * channels + c) * 2)
+            out[i] = (sum / channels).toShort()
+        }
+        return out to rate
+    }
+
+    /** [samples] at [from] Hz resampled to [to] Hz (linear). */
+    fun resample(samples: ShortArray, from: Int, to: Int): ShortArray {
+        if (from == to || samples.isEmpty()) return samples
+        val n = (samples.size.toLong() * to / from).toInt()
+        return ShortArray(n) { i ->
+            val pos = i.toDouble() * from / to
+            val a = pos.toInt().coerceAtMost(samples.lastIndex)
+            val b = (a + 1).coerceAtMost(samples.lastIndex)
+            val t = pos - a
+            (samples[a] * (1 - t) + samples[b] * t).toInt().toShort()
+        }
+    }
+
     /** A PCM WAV file (for tests): [samples] 16-bit mono at [rate] Hz. */
     fun pcm16(samples: ShortArray, rate: Int = 16000): ByteArray {
         val fmt = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)

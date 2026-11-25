@@ -36,7 +36,7 @@ object FileMaker {
 
     fun dir(context: Context): File = File(context.filesDir, "created").apply { mkdirs() }
 
-    private fun unique(dir: File, name: String): File {
+    internal fun unique(dir: File, name: String): File {
         val dot = name.lastIndexOf('.')
         val base = if (dot > 0) name.substring(0, dot) else name
         val ext = if (dot > 0) name.substring(dot) else ""
@@ -46,7 +46,7 @@ object FileMaker {
         return f
     }
 
-    private fun clean(name: String) = name.replace(Regex("[^\\p{L}\\p{N}._-]"), "-").trim('-').take(60).ifBlank { "file" }
+    internal fun clean(name: String) = name.replace(Regex("[^\\p{L}\\p{N}._-]"), "-").trim('-').take(60).ifBlank { "file" }
 
     /** A4 PDF from Markdown-ish text: headings, bullet points, paragraphs and code; Hindi and English both render. */
     fun pdf(context: Context, name: String, markdown: String): File {
@@ -138,6 +138,55 @@ object FileMaker {
         val files = base.walkTopDown().filter { it.isFile && !it.name.startsWith(".") }
             .map { it.relativeTo(base).invariantSeparatorsPath to it.readBytes() }.toList()
         return zip(context, name, files)
+    }
+
+    /** The AI's SVG drawing as a [w]x[h] picture (fitted inside, centred, on [background]). */
+    fun renderSvg(svgText: String, w: Int, h: Int, background: Int = Color.WHITE): Bitmap {
+        val svg = runCatching { SVG.getFromString(svgText) }.getOrElse { throw IllegalArgumentException("The AI's drawing (SVG) could not be read: ${it.message}") }
+        if (svg.documentViewBox == null && svg.documentWidth > 0 && svg.documentHeight > 0) svg.setDocumentViewBox(0f, 0f, svg.documentWidth, svg.documentHeight)
+        svg.setDocumentWidth("100%")
+        svg.setDocumentHeight("100%")
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        canvas.drawColor(background)
+        svg.renderToCanvas(canvas, RectF(0f, 0f, w.toFloat(), h.toFloat()))
+        return bmp
+    }
+
+    /**
+     * Each text read aloud with one voice (the user's voice settings), as WAV bytes; null for a text
+     * that could not be read. Throws if the phone has no working text-to-speech.
+     */
+    suspend fun speechClips(context: Context, texts: List<String>, locale: Locale): List<ByteArray?> {
+        val ready = CompletableDeferred<Int>()
+        val tts = withContext(Dispatchers.Main) { TextToSpeech(context.applicationContext) { status -> ready.complete(status) } }
+        try {
+            val status = withTimeout(15_000) { ready.await() }
+            if (status != TextToSpeech.SUCCESS) throw IllegalStateException("This phone has no working text-to-speech engine (Android Settings → Text-to-speech).")
+            VoicePrefs.apply(context, tts, locale.language == "hi")
+            return texts.mapIndexed { i, text ->
+                val clean = SpeechText.clean(text).take(TextToSpeech.getMaxSpeechInputLength() - 100)
+                if (clean.isBlank()) return@mapIndexed null
+                val tmp = File.createTempFile("clip-$i-", ".wav", context.cacheDir)
+                try {
+                    val done = CompletableDeferred<Unit>()
+                    tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {}
+                        override fun onDone(utteranceId: String?) { done.complete(Unit) }
+                        @Deprecated("Deprecated in Java")
+                        override fun onError(utteranceId: String?) { done.completeExceptionally(IllegalStateException("Text-to-speech could not read scene ${i + 1}")) }
+                        override fun onError(utteranceId: String?, errorCode: Int) { done.completeExceptionally(IllegalStateException("Text-to-speech error $errorCode")) }
+                    })
+                    if (tts.synthesizeToFile(clean, Bundle(), tmp, "clip-$i") != TextToSpeech.SUCCESS) return@mapIndexed null
+                    runCatching { withTimeout(120_000) { done.await() } }.getOrNull() ?: return@mapIndexed null
+                    tmp.readBytes()
+                } finally {
+                    tmp.delete()
+                }
+            }
+        } finally {
+            withContext(Dispatchers.Main) { tts.shutdown() }
+        }
     }
 
     /** PNG from an SVG the AI drew (AndroidSVG renders it; 1024 px on the long side, white background). */

@@ -15,6 +15,15 @@ class MakeFilesTest {
         assertEquals(Kind.IMAGE, MakeFiles.detect("ek sunset ki image banao"))
         assertEquals(Kind.IMAGE, MakeFiles.detect("दिवाली का पोस्टर बनाओ"))
         assertEquals(Kind.AUDIO, MakeFiles.detect("is kahani ka audio bana do"))
+        // Voice typing writes Hindi in Devanagari: these were missed before.
+        assertEquals(Kind.PDF, MakeFiles.detect("मेरे लिए एक पीडीएफ बनाओ"))
+        assertEquals(Kind.PDF, MakeFiles.detect("पीडीएफ फाइल बना दो स्कूल के नियम की"))
+        assertEquals(Kind.IMAGE, MakeFiles.detect("एक इमेज बनाओ शेर की"))
+        assertEquals(Kind.IMAGE, MakeFiles.detect("इमेज जनरेट करो"))
+        assertEquals(Kind.ZIP, MakeFiles.detect("जिप फाइल बना दो"))
+        assertEquals(Kind.VIDEO, MakeFiles.detect("ek video banao diwali par"))
+        assertEquals(Kind.AUDIO, MakeFiles.detect("ऑडियो बना दो"))
+        assertEquals(null, MakeFiles.detect("image kya hota hai"))
         assertEquals(Kind.AUDIO, MakeFiles.detect("make an mp3 of this poem"))
     }
 

@@ -404,10 +404,20 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 val mode = ReasoningMode.fromName(chat.reasoning).let { if (it == ReasoningMode.AUTO) ReasoningMapper.resolveAuto(recent.lastOrNull()?.text ?: "") else it }
                 // Live voice: short spoken answers come back much sooner (and are spoken while written).
                 val live = liveLanguage.value != null
+                // A picture or video is drawn as SVG code: a phone model needs more room than a normal reply.
+                val drawing = !live && resolved.provider.isLocal &&
+                    (pendingMake == com.gravity.ide.core.MakeFiles.Kind.IMAGE || pendingMake == com.gravity.ide.core.MakeFiles.Kind.VIDEO)
+                val drawTokens = if (pendingMake == com.gravity.ide.core.MakeFiles.Kind.VIDEO) 4000 else 2500
+                val drawContext = if (drawing) c.localHost.loadedOrNull()?.let { c.localHost.contextForLongAnswer(it, 4096 + drawTokens) } else null
                 resolved.provider.stream(
                     LlmRequest(
                         resolved.model, llm, reasoning = if (live) ReasoningMode.FAST else mode, webGrounding = chat.webGrounding,
-                        contextSize = contextSize, maxOutputTokens = if (live) (if (resolved.provider.isLocal) 160 else 260) else null,
+                        contextSize = contextSize ?: drawContext,
+                        maxOutputTokens = when {
+                            live -> if (resolved.provider.isLocal) 160 else 260
+                            drawing -> drawTokens
+                            else -> null
+                        },
                     )
                 ) { ev ->
                     when (ev) {
@@ -489,6 +499,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         val msg = c.db.chats().messages(chatId).firstOrNull { it.id == messageId } ?: return@launch
         val ctx = c.appContext
         notice.value = "Making the ${kind.label}…"
+        var videoNote: String? = null
         try {
             val name = com.gravity.ide.core.MakeFiles.baseName(request.ifBlank { msg.content.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty() }, kind.name.lowercase())
             val file = withContext(Dispatchers.IO) {
@@ -508,6 +519,18 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                         com.gravity.ide.core.MakeFiles.svg(msg.content)
                             ?: throw IllegalStateException("the AI did not draw a picture (no SVG in its reply). Try again; Gemini draws better pictures than small phone models"),
                     )
+                    com.gravity.ide.core.MakeFiles.Kind.VIDEO -> {
+                        val scenes = com.gravity.ide.core.MakeFiles.scenes(msg.content)
+                        if (scenes.isEmpty()) throw IllegalStateException("the AI did not draw any scenes (no SVG pictures in its reply). Try again; Gemini draws better than small phone models")
+                        val text = scenes.joinToString(" ") { it.first }
+                        val hindi = text.count { it in '\u0900'..'\u097F' } * 10 > text.count { it.isLetter() }.coerceAtLeast(1) * 3
+                        val made = com.gravity.ide.files.VideoMaker.make(ctx, name, scenes, java.util.Locale.forLanguageTag(if (hindi) "hi-IN" else "en-IN")) { step ->
+                            notice.value = step
+                        }
+                        videoNote = "Made a ${"%.0f".format(made.seconds)}-second video on this phone: ${made.scenes} scene(s), one picture each" +
+                            (if (made.withVoice) ", with the narration read by the phone's voice." else ", without voice (this phone's text-to-speech did not work).")
+                        made.file
+                    }
                     com.gravity.ide.core.MakeFiles.Kind.AUDIO -> {
                         val devanagari = msg.content.count { it in '\u0900'..'\u097F' }
                         val letters = msg.content.count { it.isLetter() }.coerceAtLeast(1)
@@ -521,6 +544,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 "zip" -> "application/zip"
                 "png" -> "image/png"
                 "wav" -> "audio/wav"
+                "mp4" -> "video/mp4"
                 else -> "application/octet-stream"
             }
             val atts = runCatching { JSONArray(msg.attachments) }.getOrElse { JSONArray() }
@@ -528,7 +552,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             val latest = c.db.chats().messages(chatId).firstOrNull { it.id == messageId } ?: msg
             c.db.chats().updateMessage(latest.copy(attachments = atts.toString()))
             c.events.log(EventCategory.TOOL, "Made ${file.name}", "${file.length()} bytes from a chat reply")
-            notice.value = null
+            notice.value = videoNote
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

@@ -631,6 +631,38 @@ class DeviceServicesTest {
         assertTrue("OCR did not read the Hindi line: ${b.text}", b.text.contains("नियम") || b.text.contains("छात्र"))
     }
 
+    /** A real MP4 is made on the phone from scenes (a picture + narration each), and Android can read it back. */
+    @Test
+    fun t16b_videoIsMadeOnThePhone() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val reply = "Scene 1: Diwali ki raat hai, har taraf roshni hai.\n```svg\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 720 1280\">" +
+            "<rect width=\"720\" height=\"1280\" fill=\"#1a1040\"/><circle cx=\"360\" cy=\"500\" r=\"120\" fill=\"#ffb703\"/></svg>\n```\n" +
+            "Scene 2: Diye jal rahe hain.\n```svg\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 720 1280\">" +
+            "<rect width=\"720\" height=\"1280\" fill=\"#0b3d2e\"/><rect x=\"260\" y=\"700\" width=\"200\" height=\"80\" fill=\"#ff4d6d\"/></svg>\n```"
+        val scenes = com.gravity.ide.core.MakeFiles.scenes(reply)
+        assertEquals(2, scenes.size)
+        val started = System.currentTimeMillis()
+        val made = runBlocking { com.gravity.ide.files.VideoMaker.make(ctx, "diwali", scenes, java.util.Locale.forLanguageTag("en-IN")) }
+        val ex = android.media.MediaExtractor()
+        ex.setDataSource(made.file.absolutePath)
+        val tracks = (0 until ex.trackCount).map { ex.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME).orEmpty() }
+        val videoFormat = (0 until ex.trackCount).map { ex.getTrackFormat(it) }.first { it.getString(android.media.MediaFormat.KEY_MIME) == "video/avc" }
+        val durationUs = videoFormat.getLong(android.media.MediaFormat.KEY_DURATION)
+        ex.release()
+        val retriever = android.media.MediaMetadataRetriever()
+        retriever.setDataSource(made.file.absolutePath)
+        val frame = retriever.getFrameAtTime(1_000_000)
+        val pixel = frame?.getPixel(frame.width / 2, frame.height / 3) ?: 0
+        retriever.release()
+        Ci.log("make", "MP4 ${made.file.length()} bytes in ${System.currentTimeMillis() - started} ms: tracks $tracks, ${durationUs / 1000} ms, voice=${made.withVoice}, " +
+            "frame ${frame?.width}x${frame?.height}, pixel #${Integer.toHexString(pixel)}")
+        assertTrue("No H.264 video track: $tracks", "video/avc" in tracks)
+        if (made.withVoice) assertTrue("No AAC audio track: $tracks", "audio/mp4a-latm" in tracks)
+        assertTrue("Video too short: ${durationUs / 1000} ms", durationUs >= 4_500_000)
+        assertNotNull("Android could not read a frame of the video", frame)
+        assertEquals(720, frame!!.width)
+    }
+
     @Test
     fun t16_filesAreMadeOnThePhone() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext

@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -366,6 +367,10 @@ internal fun ChatBubble(
                         if (canImage) DropdownMenuItem(
                             text = { Text("Picture (PNG)") }, leadingIcon = { Icon(Icons.Filled.Image, null) },
                             onClick = { makeMenu = false; onMake(com.gravity.ide.core.MakeFiles.Kind.IMAGE) },
+                        )
+                        if (canImage) DropdownMenuItem(
+                            text = { Text("Video (MP4, a scene per picture)") }, leadingIcon = { Icon(Icons.Filled.Movie, null) },
+                            onClick = { makeMenu = false; onMake(com.gravity.ide.core.MakeFiles.Kind.VIDEO) },
                         )
                     }
                 }
@@ -1037,6 +1042,13 @@ fun RichText(text: String) {
                 if (com.gravity.ide.core.ChatFormat.isProse(language, content)) {
                     // Lyrics, poems or letters that a model put in a code fence read as normal text.
                     MarkdownText(content.trim('\n'))
+                } else if (language.equals("svg", ignoreCase = true) || (language == null && content.trimStart().startsWith("<svg"))) {
+                    // A drawing the AI made for a picture or video: the file is what matters; the code is folded away.
+                    var open by remember { mutableStateOf(false) }
+                    TextButton(onClick = { open = !open }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
+                        Text(if (open) "Hide the drawing's code ▴" else "🎨 Drawing (SVG code, ${content.length} characters) ▾", style = MaterialTheme.typography.labelMedium)
+                    }
+                    if (open) CodeBlock(content, "svg")
                 } else {
                     CodeBlock(content, language)
                 }
@@ -1141,6 +1153,7 @@ private fun MadeFileCard(name: String, path: String, mime: String, size: Long) {
                         mime == "application/zip" -> Icons.Filled.FolderZip
                         mime.startsWith("image/") -> Icons.Filled.Image
                         mime.startsWith("audio/") -> Icons.Filled.GraphicEq
+                        mime.startsWith("video/") -> Icons.Filled.Movie
                         else -> Icons.Filled.Description
                     },
                     null, tint = GravityColors.Accent, modifier = Modifier.size(22.dp),
