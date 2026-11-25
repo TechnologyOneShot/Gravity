@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -118,7 +119,17 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         if (ttsReady == true) com.gravity.ide.files.VoicePicker.voices(tts, language.voice) else emptyList()
     }
     var voiceMenu by remember { mutableStateOf(false) }
-    val recognizer = remember { if (SpeechRecognizer.isRecognitionAvailable(context)) SpeechRecognizer.createSpeechRecognizer(context) else null }
+    // Recreated when the phone's speech service gets stuck (errors 5, 8, 11), so live mode keeps working.
+    var recognizer by remember { mutableStateOf(createRecognizer(context)) }
+    var retries by remember { mutableStateOf(0) }
+    fun resetRecognizer() {
+        runCatching { recognizer?.destroy() }
+        recognizer = createRecognizer(context)
+    }
+    // Live replies are spoken while they are still being written: what has been queued so far.
+    var spokenUpTo by remember { mutableStateOf(0) }
+    var partNo by remember { mutableStateOf(0) }
+    var voiceReady by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -160,33 +171,73 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, language.recognizeTag)
             .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            // Stop listening sooner after the user stops talking (services that support it).
+            .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
+            .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700L)
         runCatching { r.startListening(intent) }.onFailure {
             phase = LivePhase.IDLE
             problem = "Could not start listening: ${it.message}"
         }
     }
     listenNow.value = { listen() }
+    /** Listen again a moment later: the speech service refuses a new start right after the last one ended. */
+    fun listenSoon(delayMs: Long = 250) = main.postDelayed({ if (open.get()) listenNow.value() }, delayMs)
 
-    fun speak(text: String) {
-        val clean = SpeechText.clean(text)
-        if (clean.isBlank() || ttsReady != true) {
-            if (ttsReady == false) problem = "This phone's text-to-speech is not working, so the reply is only shown. Check Android Settings → Text-to-speech."
-            phase = LivePhase.IDLE
-            listen()
-            return
-        }
+    /** Voice and speed for this turn (set once, before the first piece is queued). */
+    fun prepareVoice() {
+        if (voiceReady) return
         val result = tts.setLanguage(language.voice)
         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
             problem = "This phone has no ${language.label} voice installed, so another voice reads the reply. Add one in Android Settings → Text-to-speech."
         }
-        // The clearest installed voice for the language (or the one picked below), at the chosen speed.
         com.gravity.ide.files.VoicePicker.choose(tts, language.voice, voiceName)?.let { tts.setVoice(it) }
         tts.setSpeechRate(rate)
         tts.setPitch(1.0f)
+        voiceReady = true
+    }
+
+    /** Queues one finished piece of the reply while the rest is still being written. */
+    fun speakPiece(piece: String) {
+        val clean = SpeechText.clean(piece)
+        if (clean.isBlank() || ttsReady != true) return
+        prepareVoice()
+        tts.speak(clean, TextToSpeech.QUEUE_ADD, null, "live-part-${partNo++}")
         phase = LivePhase.SPEAKING
-        val parts = SpeechText.chunks(clean, 3500)
-        parts.forEachIndexed { i, part ->
-            tts.speak(part, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, if (i == parts.lastIndex) "live-end" else "live-$i")
+    }
+
+    /** The reply is complete: queue what is left, then listen again when the voice is done. */
+    fun finishSpeaking(rest: String) {
+        if (ttsReady != true) {
+            if (ttsReady == false) problem = "This phone's text-to-speech is not working, so the reply is only shown. Check Android Settings → Text-to-speech."
+            phase = LivePhase.IDLE
+            listenSoon()
+            return
+        }
+        prepareVoice()
+        val parts = SpeechText.chunks(SpeechText.clean(rest), 3500).filter { it.isNotBlank() }
+        if (parts.isEmpty()) {
+            if (phase != LivePhase.SPEAKING) {
+                phase = LivePhase.IDLE
+                listenSoon()
+                return
+            }
+            tts.playSilentUtterance(10, TextToSpeech.QUEUE_ADD, "live-end")
+        } else {
+            parts.forEachIndexed { i, part -> tts.speak(part, TextToSpeech.QUEUE_ADD, null, if (i == parts.lastIndex) "live-end" else "live-rest-$i") }
+        }
+        phase = LivePhase.SPEAKING
+    }
+
+    // Speak each finished sentence as soon as the AI has written it.
+    val streamed by vm.streaming.collectAsState()
+    LaunchedEffect(streamed) {
+        val text = streamed ?: return@LaunchedEffect
+        if (phase != LivePhase.THINKING && phase != LivePhase.SPEAKING) return@LaunchedEffect
+        val end = SpeechText.speakableEnd(text, spokenUpTo)
+        if (end > spokenUpTo) {
+            val piece = text.substring(spokenUpTo, end)
+            spokenUpTo = end
+            speakPiece(piece)
         }
     }
 
@@ -197,7 +248,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                 if (utteranceId == "live-end") main.post {
                     if (open.get() && phase == LivePhase.SPEAKING) {
                         phase = LivePhase.IDLE
-                        listenNow.value()
+                        main.postDelayed({ if (open.get()) listenNow.value() }, 250)
                     }
                 }
             }
@@ -216,7 +267,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
 
     DisposableEffect(recognizer) {
         recognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onReadyForSpeech(params: Bundle?) { retries = 0 }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) { level = rmsdB }
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -240,7 +291,18 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                         problem = "Gravity needs the microphone to hear you (Android Settings → Apps → Gravity → Permissions)."
                     SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT, SpeechRecognizer.ERROR_SERVER ->
                         problem = "Speech recognition needs the internet on this phone, or an offline ${language.label} speech pack (Google app → Settings → Voice → Offline speech recognition)."
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> problem = "The speech service is busy. Tap the circle to try again."
+                    SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_RECOGNIZER_BUSY, SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> {
+                        // The phone's speech service got stuck: start a fresh one and listen again.
+                        retries++
+                        if (retries <= 2) {
+                            resetRecognizer()
+                            listenSoon(400)
+                        } else {
+                            problem = "The phone's speech service is not responding. Tap the circle to try again."
+                        }
+                    }
+                    SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ->
+                        problem = "The phone's speech service has no ${language.label} yet. Add it in the Google app → Settings → Voice → Languages / Offline speech, or pick another language."
                     else -> problem = "Speech recognition stopped (error $error). Tap the circle to try again."
                 }
             }
@@ -253,17 +315,24 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                     return
                 }
                 misses = 0
+                retries = 0
                 heard = said
                 reply = ""
+                spokenUpTo = 0
+                partNo = 0
+                voiceReady = false
                 phase = LivePhase.THINKING
                 val started = vm.sendLive(said) { answer, error ->
                     if (!open.get()) return@sendLive
                     reply = answer
-                    if (error != null) {
-                        phase = LivePhase.IDLE
-                        problem = error
-                    } else {
-                        speak(answer)
+                    when {
+                        error == "Stopped" -> Unit // interrupted by the user
+                        error != null -> {
+                            tts.stop()
+                            phase = LivePhase.IDLE
+                            problem = error
+                        }
+                        else -> finishSpeaking(if (spokenUpTo in 0..answer.length) answer.substring(spokenUpTo) else answer)
                     }
                 }
                 if (!started) {
@@ -285,6 +354,12 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                     Column(Modifier.weight(1f)) {
                         Text("Live", style = MaterialTheme.typography.titleLarge)
                         Text(modelName, style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (Regex("(?i)\\b(7|8|13|14)b\\b").containsMatchIn(modelName)) {
+                            Text(
+                                "Big phone models answer slowly. For quicker live talk use Gemini, or Llama 3.2 3B from Phone Models.",
+                                style = MaterialTheme.typography.labelSmall, color = GravityColors.Amber,
+                            )
+                        }
                     }
                     IconButton(onClick = onClose, modifier = Modifier.testTag("live-close")) { Icon(Icons.Filled.Close, "End live mode") }
                 }
@@ -297,7 +372,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                                 language = l
                                 if (phase == LivePhase.LISTENING) {
                                     recognizer?.cancel()
-                                    listenNow.value()
+                                    listenSoon(300)
                                 }
                             },
                             label = { Text(l.label) },
@@ -357,7 +432,12 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                             when (phase) {
                                 LivePhase.IDLE -> { misses = 0; listen() }
                                 LivePhase.LISTENING -> recognizer?.stopListening()
-                                LivePhase.SPEAKING -> { tts.stop(); phase = LivePhase.IDLE; listen() }
+                                LivePhase.SPEAKING -> {
+                                    tts.stop()
+                                    if (vm.busy.value) vm.stop()
+                                    phase = LivePhase.IDLE
+                                    listenSoon()
+                                }
                                 LivePhase.THINKING -> Unit
                             }
                         }
@@ -404,3 +484,6 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         }
     }
 }
+
+private fun createRecognizer(context: android.content.Context): SpeechRecognizer? =
+    if (SpeechRecognizer.isRecognitionAvailable(context)) SpeechRecognizer.createSpeechRecognizer(context) else null

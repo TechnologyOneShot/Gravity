@@ -405,8 +405,12 @@ private data class Suggested(val title: String, val repo: String, val file: Stri
 
 private val suggestedModels = listOf(
     Suggested(
+        "Llama 3.2 3B (chat, fast)", "bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf", 2_020_000_000L,
+        "Best for Hindi/English chat and live voice on the phone: Hindi is one of its official languages, and it answers about twice as fast as 7B models.",
+    ),
+    Suggested(
         "Qwen2.5 7B (chat)", "bartowski/Qwen2.5-7B-Instruct-GGUF", "Qwen2.5-7B-Instruct-Q4_K_M.gguf", 4_680_000_000L,
-        "For chat and writing (Hindi, Hinglish, English): a general model. The Coder models below are made for code and write weak lyrics or stories. About 12 GB RAM phones.",
+        "Better writing than the 3B chat model, but slower. The Coder models below are made for apps and code: they write weak lyrics or stories. About 12 GB RAM phones.",
     ),
     Suggested(
         "Qwen2.5-Coder 7B", "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf", 4_680_000_000L,

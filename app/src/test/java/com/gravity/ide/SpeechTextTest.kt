@@ -22,4 +22,14 @@ class SpeechTextTest {
         assertEquals(long, parts.joinToString(" "))
         assertEquals(listOf("hi"), SpeechText.chunks("hi", 10))
     }
+
+    @Test fun liveModeSpeaksFinishedSentencesFirst() {
+        assertEquals(0, SpeechText.speakableEnd("Namaste, main", 0))
+        assertEquals(13, SpeechText.speakableEnd("Namaste dost! Aaj ka din", 0))
+        assertEquals(22, SpeechText.speakableEnd("आज मौसम बहुत अच्छा है। चलो", 0))
+        assertEquals(0, SpeechText.speakableEnd("The price is 3.", 0))
+        assertEquals(0, SpeechText.speakableEnd("The price is 3.5 lakh rupees for this one", 0))
+        assertEquals(44, SpeechText.speakableEnd("Hello there friend. How are you doing today? Fine", 19))
+        assertTrue(SpeechText.speakableEnd("word ".repeat(40), 0) > 0)
+    }
 }

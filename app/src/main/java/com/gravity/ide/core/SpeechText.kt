@@ -43,4 +43,31 @@ object SpeechText {
         if (rest.isNotBlank()) out += rest.trim()
         return out.filter { it.isNotBlank() }
     }
+
+    /**
+     * While a reply is still being written: the end of the text from [from] that can be spoken
+     * now (up to the last finished sentence; or, for a long sentence, up to a comma or space once
+     * it passes [longAt] characters). Returns [from] when nothing is ready yet. Lets live mode
+     * start talking after the first sentence instead of waiting for the whole reply.
+     */
+    fun speakableEnd(text: String, from: Int, minChars: Int = 12, longAt: Int = 140): Int {
+        if (from >= text.length) return from
+        var end = -1
+        var i = from
+        while (i < text.length) {
+            val ch = text[i]
+            val next = if (i + 1 < text.length) text[i + 1] else null
+            val endsSentence = ch == '\n' || ((ch == '.' || ch == '!' || ch == '?' || ch == '।' || ch == '|') && (next == null || next.isWhitespace()))
+            // A sentence end at the very end of the text may still be followed by more (e.g. "3." of "3.5"): wait for the next character.
+            if (endsSentence && next != null && i + 1 - from >= minChars) end = i + 1
+            i++
+        }
+        if (end > from) return end
+        if (text.length - from >= longAt) {
+            val window = text.substring(from)
+            val cut = maxOf(window.lastIndexOf(", "), window.lastIndexOf("، "), window.lastIndexOf(' '))
+            if (cut > minChars) return from + cut + 1
+        }
+        return from
+    }
 }

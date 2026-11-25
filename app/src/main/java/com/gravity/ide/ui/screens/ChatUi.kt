@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -360,6 +361,14 @@ internal fun ChatBubble(
                 }
                 if (isLast && !busy) SmallAction(Icons.Filled.Refresh, "Regenerate reply", onRetry)
                 SmallAction(Icons.Filled.Share, "Share reply", onShare)
+                // Read the reply aloud (tap again to stop).
+                val speakingId by com.gravity.ide.files.ReplySpeaker.speakingId.collectAsState()
+                val speakContext = LocalContext.current
+                SmallAction(
+                    if (speakingId == m.id) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                    if (speakingId == m.id) "Stop reading aloud" else "Read aloud",
+                    { com.gravity.ide.files.ReplySpeaker.toggle(speakContext, m.id, m.content) },
+                )
                 SmallAction(Icons.Filled.Delete, "Delete reply", onDelete)
                 Spacer(Modifier.weight(1f))
                 m.model?.let {

@@ -64,6 +64,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -396,7 +397,14 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 }
                 llm += recent
                 val mode = ReasoningMode.fromName(chat.reasoning).let { if (it == ReasoningMode.AUTO) ReasoningMapper.resolveAuto(recent.lastOrNull()?.text ?: "") else it }
-                resolved.provider.stream(LlmRequest(resolved.model, llm, reasoning = mode, webGrounding = chat.webGrounding, contextSize = contextSize)) { ev ->
+                // Live voice: short spoken answers come back much sooner (and are spoken while written).
+                val live = liveLanguage.value != null
+                resolved.provider.stream(
+                    LlmRequest(
+                        resolved.model, llm, reasoning = if (live) ReasoningMode.FAST else mode, webGrounding = chat.webGrounding,
+                        contextSize = contextSize, maxOutputTokens = if (live) 220 else null,
+                    )
+                ) { ev ->
                     when (ev) {
                         is LlmEvent.TextDelta -> {
                             text.append(ev.text)
@@ -647,6 +655,10 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
     var aiSetup by remember { mutableStateOf(false) }
     var live by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    LaunchedEffect(Unit) {
+        com.gravity.ide.files.ReplySpeaker.problem.collect { p -> if (p != null) { toast(context, p); com.gravity.ide.files.ReplySpeaker.problem.value = null } }
+    }
+    DisposableEffect(Unit) { onDispose { com.gravity.ide.files.ReplySpeaker.stop() } }
 
     LaunchedEffect(messages.size, streaming?.length) {
         val count = messages.size + if (streaming != null) 1 else 0
