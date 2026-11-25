@@ -256,16 +256,17 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         }
         // App cards and failed replies are not part of the conversation the model sees.
         val history = c.db.chats().messages(chatId).filter { it.error == null && it.content.isNotBlank() }
-        val budget = if (resolved.provider.isLocal) settings.localContextSize * 3 else 300_000
-        var used = 0
+        // Counted in tokens (Hindi needs more), and the start moves only at fixed points, so a phone
+        // model re-reads the chat rarely instead of before every reply once the chat is long.
+        val (budget, step) = if (resolved.provider.isLocal) {
+            val ctx = c.localHost.loadedOrNull()?.contextSize?.takeIf { it > 0 } ?: settings.localContextSize
+            (ctx - com.gravity.ide.core.HistoryWindow.tokens(system) - minOf(1024, ctx / 4)).coerceAtLeast(256) to ctx / 3
+        } else 100_000 to 40_000
+        val from = com.gravity.ide.core.HistoryWindow.start(
+            history.map { com.gravity.ide.core.HistoryWindow.tokens(it.content) }, history.map { it.role == "user" }, budget, step,
+        )
         val recent = ArrayList<LlmMessage>()
-        for (m in history.asReversed()) {
-            val len = m.content.length
-            if (used + len > budget && recent.isNotEmpty()) break
-            used += len
-            recent += LlmMessage(if (m.role == "user") Role.USER else Role.ASSISTANT, out(m.content))
-        }
-        recent.reverse()
+        for (m in history.drop(from)) recent += LlmMessage(if (m.role == "user") Role.USER else Role.ASSISTANT, out(m.content))
         return out(system) to recent
     }
 
