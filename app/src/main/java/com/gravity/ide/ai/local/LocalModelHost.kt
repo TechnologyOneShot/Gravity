@@ -161,7 +161,8 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         if (prefs.getString(KEY_CRASHED_MODEL, null) == model.id) prefs.edit().remove(KEY_CRASHED_MODEL).apply() // loaded on purpose: try again
         (state.value as? State.Ready)?.let { current ->
             if (current.loaded.modelId == model.id) return@withLock current.loaded
-            unloadLocked()
+            // Another chat may still be answering with the current model: let it finish, then switch.
+            unloadLocked(abort = false)
         }
         _state.value = State.Loading(model.name)
         val checkable = model.hasChatTemplate || Regex("(?i)instruct|chat|-it\\b").containsMatchIn(model.name + " " + file.name)
@@ -267,15 +268,45 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         }
     }
 
-    suspend fun unload() = mutex.withLock { unloadLocked() }
+    suspend fun unload() = mutex.withLock { unloadLocked(abort = true) }
+
+    /** Finds a downloaded, ready model by id or name (set by AppContainer). */
+    @Volatile
+    var lookup: (suspend (String) -> LocalModelEntity?)? = null
+
+    /** Current settings (set by AppContainer), for context size and threads when loading. */
+    @Volatile
+    var settingsSource: (suspend () -> com.gravity.ide.data.settings.AppSettings)? = null
+
+    /**
+     * Makes sure [model] is the loaded model (each chat keeps its own phone model): loads it if
+     * another one is loaded, after any reply still being written with that one has finished.
+     */
+    suspend fun ensure(model: LocalModelEntity): Loaded {
+        loadedOrNull()?.takeIf { it.modelId == model.id }?.let { return it }
+        val s = settingsSource?.invoke() ?: throw IllegalStateException("Settings are not ready")
+        val info = com.gravity.ide.device.DeviceInspector(context).info()
+        return load(model, com.gravity.ide.device.PerformanceManager.contextSize(s, info), com.gravity.ide.device.PerformanceManager.threads(s, info))
+    }
+
+    /** [ensure] by model id or name; null if no such ready model (then the loaded one is used). */
+    suspend fun ensure(idOrName: String): Loaded? {
+        val m = lookup?.invoke(idOrName) ?: return null
+        return ensure(m)
+    }
+
+    /** True if [loaded] is the model asked for by id or name (or nothing in particular was asked for). */
+    fun matches(loaded: Loaded, idOrName: String?): Boolean =
+        idOrName.isNullOrBlank() || loaded.modelId == idOrName || loaded.name == idOrName
 
     /**
      * Frees the loaded model. A reply still being written with it is stopped first and waited for:
      * freeing the model under a running reply crashed Gravity (the engine's threads read freed memory).
      */
-    private suspend fun unloadLocked() {
+    private suspend fun unloadLocked(abort: Boolean) {
         val current = state.value as? State.Ready ?: return
-        abortRequested = true
+        // Stop a reply being written only when the user unloads the model; a switch for another chat waits for it.
+        abortRequested = abort
         try {
             generationMutex.withLock {
                 _state.value = State.Idle

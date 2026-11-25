@@ -262,6 +262,10 @@ class AppBuilderDeviceTest {
                 if (request.path.orEmpty().endsWith("/models")) return MockResponse().setBody("""{"data":[{"id":"scripted-model"}]}""")
                 val body = request.body.readUtf8()
                 lastBody = body
+                // A chat message for the background-reply test: answer slowly, so the screen closes mid-reply.
+                if (body.contains("CI_SLOW_REPLY")) {
+                    return sse(text("Hello from the background. "), text("The reply finished.")).setHeadersDelay(3, java.util.concurrent.TimeUnit.SECONDS)
+                }
                 val withShuffle = body.contains("Change request:") || body.contains("shuffle")
                 val html = if (withShuffle) APP_V1.replace("<!--controls-->", "<button id=\"shuffle\">Shuffle</button>") else APP_V1
                 return sse(text("Here is the app:\n```html\n"), text(html), text("\n```\n"))

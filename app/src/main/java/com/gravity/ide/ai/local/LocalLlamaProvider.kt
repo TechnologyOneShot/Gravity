@@ -30,8 +30,6 @@ class LocalLlamaProvider(
 
     override suspend fun stream(request: LlmRequest, onEvent: (LlmEvent) -> Unit) {
         if (!host.runtimeAvailable) throw LlmException(host.runtimeError ?: "Local runtime not available")
-        if (host.loadedOrNull() == null) throw LlmException("No local model is loaded. Load one in Model Manager.")
-
         val messages = flatten(request)
         val roles = messages.map { it.first }.toTypedArray()
         val contents = messages.map { it.second }.toTypedArray()
@@ -53,11 +51,24 @@ class LocalLlamaProvider(
         val guardLoops = prefix.isEmpty() && request.tools.isEmpty()
         var sinceCheck = 0
         var loopCut = -1
-        val (generated, nativeFinish) = host.generationMutex.withLock {
-            // The model is looked up once this reply holds the engine: it may have been changed or
-            // unloaded while waiting, and a freed model must never be used.
-            val loaded = host.loadedOrNull() ?: throw LlmException("The phone model was unloaded. Load one in Phone Models, then send again.")
-            withContext(Dispatchers.Default) {
+        // Each chat keeps its own phone model. If another chat switched the model (while this reply
+        // waited for the engine), switch back after that chat's reply and go on: never answer with
+        // the wrong model, never fail because of another chat.
+        var wanted: String? = request.model
+        var attempt = 0
+        var outcome: Pair<Int, String>? = null
+        while (outcome == null) {
+            val current = host.loadedOrNull()
+            if (current == null || !host.matches(current, wanted)) {
+                if (attempt++ >= 4) throw LlmException("The phone model kept being switched by other chats; send again.")
+                if (host.ensure(wanted.orEmpty()) == null) wanted = null // not a downloaded model's name: use the loaded one
+                if (host.loadedOrNull() == null) throw LlmException("No local model is loaded. Load one in Model Manager.")
+            }
+            outcome = host.generationMutex.withLock {
+                // Looked up once this reply holds the engine: a freed model must never be used.
+                val loaded = host.loadedOrNull() ?: throw LlmException("The phone model was unloaded. Load one in Phone Models, then send again.")
+                if (!host.matches(loaded, wanted)) return@withLock null // switched while waiting: go round again
+                withContext(Dispatchers.Default) {
                 val count = host.nativeWork(LlamaBridge.engineOf(loaded.handle), loaded.modelId) { LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
                     val piece = utf8.append(bytes)
                     if (piece.isNotEmpty()) {
@@ -80,8 +91,10 @@ class LocalLlamaProvider(
                     ctx.isActive && !stopped && !host.abortRequested
                 } }
                 count to runCatching { LlamaBridge.lastFinish() }.getOrDefault("")
+                }
             }
         }
+        val (generated, nativeFinish) = outcome
         val tail = utf8.flush()
         if (tail.isNotEmpty()) {
             full.append(tail)

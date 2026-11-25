@@ -51,7 +51,7 @@ class TaskForegroundService : Service() {
             false
         }
         startedForeground = shown
-        if (!shown || desiredCount <= 0) stopNow() else refresh()
+        if (!shown || total <= 0) stopNow() else refresh()
         return START_NOT_STICKY
     }
 
@@ -89,10 +89,16 @@ class TaskForegroundService : Service() {
         private const val NOTIFICATION_ID = 4101
 
         @Volatile private var desiredCount = 0
+        /** Chat replies being written (see ChatRuns); the service runs while tasks or replies run. */
+        @Volatile private var chatCount = 0
+        private val total get() = desiredCount + chatCount
         @Volatile private var instance: TaskForegroundService? = null
         @Volatile private var startedForeground = false
 
-        private fun runningText(count: Int) = "$count agent task${if (count == 1) "" else "s"} running"
+        private fun runningText(count: Int) = listOfNotNull(
+            desiredCount.takeIf { it > 0 }?.let { "$it agent task${if (it == 1) "" else "s"} running" },
+            chatCount.takeIf { it > 0 }?.let { if (it == 1) "Writing a reply…" else "Writing $it replies…" },
+        ).joinToString(" · ").ifEmpty { "Gravity" }
 
         fun ensureChannel(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -117,17 +123,23 @@ class TaskForegroundService : Service() {
         }
 
         /** Called whenever the number of running agent tasks changes. Never throws. */
+        /** Called whenever the number of chat replies being written changes. Never throws. */
+        fun updateChats(context: Context, count: Int) {
+            chatCount = count
+            update(context, desiredCount)
+        }
+
         fun update(context: Context, runningCount: Int) {
             desiredCount = runningCount
             // Post to the main thread: onStartCommand also runs there, so the two never interleave.
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 val live = instance
                 when {
-                    live != null && startedForeground -> if (desiredCount > 0) live.refresh() else live.stopNow()
+                    live != null && startedForeground -> if (total > 0) live.refresh() else live.stopNow()
                     // Not in the foreground (yet): start. An extra start is harmless, because every
                     // onStartCommand enters the foreground first; a pending start with nothing left
                     // to run stops itself after doing so.
-                    desiredCount > 0 -> start(context)
+                    total > 0 -> start(context)
                 }
             }
         }

@@ -384,6 +384,71 @@ class DeviceServicesTest {
     }
 
     /**
+     * Chat warm-up: reading the system prompt and the chat so far before the user sends (as the
+     * chat screen does when it opens) means the reply only reads the new message.
+     */
+    @Test
+    fun t12df_warmUpMeansTheReplyReadsOnlyTheNewMessage() {
+        Assume.assumeTrue("llama.cpp runtime is not bundled in this build", c.localHost.runtimeAvailable)
+        val model = runBlocking { c.db.models().all() }.firstOrNull { it.status == ModelStatus.READY.name && it.filePath.contains("0.5b-instruct", ignoreCase = true) }
+        Assume.assumeTrue("Needs the instruct model downloaded by t12d", model != null)
+        val loaded = runBlocking { c.localHost.load(model!!, 2048, 2) }
+        val system = LlmMessage(Role.SYSTEM, com.gravity.ide.core.ChatPrompt.system())
+        val earlier = listOf(LlmMessage(Role.USER, "Hi, my name is Asha."), LlmMessage(Role.ASSISTANT, "Hello Asha! How can I help you today?"))
+        val t0 = System.currentTimeMillis()
+        runBlocking { c.providers.local.stream(LlmRequest(loaded.name, listOf(system) + earlier, maxOutputTokens = 1)) { } }
+        val warmMs = System.currentTimeMillis() - t0
+        val t1 = System.currentTimeMillis()
+        var firstMs = -1L
+        val reply = StringBuilder()
+        runBlocking {
+            c.providers.local.stream(LlmRequest(loaded.name, listOf(system) + earlier + LlmMessage(Role.USER, "What is my name?"), maxOutputTokens = 16, temperature = 0.1)) { ev ->
+                if (ev is com.gravity.ide.ai.LlmEvent.TextDelta) { if (firstMs < 0) firstMs = System.currentTimeMillis() - t1; reply.append(ev.text) }
+            }
+        }
+        val reused = com.gravity.ide.ai.local.LlamaBridge.modelInfo(loaded.handle).getOrElse(5) { 0 }
+        Ci.log("local-warm", "Warm-up read the prompt in $warmMs ms; the reply then reused $reused tokens, first word after $firstMs ms: \"${reply.toString().trim()}\"")
+        assertTrue("The reply did not reuse the warmed-up prompt (reused $reused tokens)", reused > 300)
+        assertTrue("The model forgot the chat: ${reply}", reply.contains("Asha", ignoreCase = true))
+    }
+
+    /**
+     * Two chats, two phone models (the user's case: Gemma in one chat, Qwen in another), both
+     * asking at the same time: both must answer, each with its own model. The same file is
+     * registered twice, so Gravity really unloads one model and loads the other between them.
+     */
+    @Test
+    fun t12e_twoChatsWithTwoPhoneModelsBothAnswer() {
+        Assume.assumeTrue("llama.cpp runtime is not bundled in this build", c.localHost.runtimeAvailable)
+        val a = runBlocking { c.db.models().all() }.firstOrNull { it.status == ModelStatus.READY.name && it.filePath.contains("0.5b-instruct", ignoreCase = true) }
+        Assume.assumeTrue("Needs the instruct model downloaded by t12d", a != null)
+        val b = a!!.copy(id = "ci-second-model", name = "Second copy of ${a.name}", isDefault = false)
+        runBlocking { c.db.models().upsert(b); c.localHost.unload() }
+        val answers = java.util.concurrent.ConcurrentHashMap<String, String>()
+        fun ask(m: com.gravity.ide.data.db.LocalModelEntity) = Thread {
+            val r = runCatching {
+                runBlocking {
+                    val resolved = c.providers.resolve(com.gravity.ide.ai.local.LocalLlamaProvider.ID, m.id)
+                    val res = resolved.provider.complete(
+                        LlmRequest(resolved.model, listOf(LlmMessage(Role.USER, "What is the capital of France? Answer with one word.")), maxOutputTokens = 12, temperature = 0.1),
+                    )
+                    "${resolved.model} → ${res.text.trim()}"
+                }
+            }
+            answers[m.id] = r.getOrElse { "ERROR ${it.javaClass.simpleName}: ${it.message}" }
+        }
+        val started = System.currentTimeMillis()
+        val ta = ask(a).apply { start() }
+        Thread.sleep(300)
+        val tb = ask(b).apply { start() }
+        ta.join(300_000); tb.join(300_000)
+        Ci.log("local-switch", "Two chats, two models, ${System.currentTimeMillis() - started} ms: A=${answers[a.id]} | B=${answers[b.id]}; loaded now ${c.localHost.loadedOrNull()?.name}")
+        runBlocking { c.localHost.unload(); c.db.models().delete(b.id) }
+        assertTrue("Chat A failed: ${answers[a.id]}", answers[a.id]?.startsWith(a.name) == true && answers[a.id]!!.contains("Paris", ignoreCase = true))
+        assertTrue("Chat B failed: ${answers[b.id]}", answers[b.id]?.startsWith(b.name) == true && answers[b.id]!!.contains("Paris", ignoreCase = true))
+    }
+
+    /**
      * App Builder on the real on-device model (llama.cpp, the tiny CI model): whatever the model
      * writes, Gravity must never report an app as built unless a real page was written. A tiny
      * story model cannot write HTML, so the expected result is an honest failure with the

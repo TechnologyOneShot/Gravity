@@ -58,6 +58,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -187,6 +188,11 @@ fun GravityRoot() {
                     }
                 }
                 Box(Modifier.weight(1f)) { GravityNavHost(nav, ::go) }
+                // A "reply ready" notification was tapped: open that chat.
+                val openChat by com.gravity.ide.agent.ChatRuns.openChat.collectAsState()
+                LaunchedEffect(openChat) {
+                    openChat?.let { id -> com.gravity.ide.agent.ChatRuns.openChat.value = null; go(Routes.chat(id)) }
+                }
             }
         }
     }

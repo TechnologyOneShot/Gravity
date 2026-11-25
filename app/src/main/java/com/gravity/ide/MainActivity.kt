@@ -23,6 +23,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val container = (application as GravityApp).container
+        // Opened from a "reply ready" notification: show that chat.
+        intent?.getStringExtra("open_chat")?.let { com.gravity.ide.agent.ChatRuns.openChat.value = it }
         if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         setContent {
             val settings by container.settings.settings.collectAsState(initial = AppSettings())
@@ -30,5 +32,23 @@ class MainActivity : ComponentActivity() {
                 GravityTheme(settings.theme) { GravityRoot() }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra("open_chat")?.let { com.gravity.ide.agent.ChatRuns.openChat.value = it }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        com.gravity.ide.agent.ChatRuns.Visibility.onScreen = true
+        (application as GravityApp).container.chatRuns.refreshService()
+    }
+
+    override fun onStop() {
+        // Leaving Gravity while a reply is being written: the foreground service keeps it going.
+        com.gravity.ide.agent.ChatRuns.Visibility.onScreen = false
+        (application as GravityApp).container.chatRuns.refreshService()
+        super.onStop()
     }
 }

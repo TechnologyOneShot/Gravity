@@ -75,7 +75,9 @@ class ProviderRegistry(
         val wantsLocal = (providerId ?: s.defaultProviderId) == LocalLlamaProvider.ID
 
         suspend fun localOrThrow(reason: String?): ResolvedModel {
-            val loaded = localHost.loadedOrNull()
+            // The chat's own phone model (if it chose one), else the loaded one, else one loaded automatically.
+            val loaded = (if (wantsLocal || s.operatingMode == OperatingMode.LOCAL_ONLY) model?.takeIf { it.isNotBlank() }?.let { localHost.ensure(it) } else null)
+                ?: localHost.loadedOrNull()
                 ?: localHost.autoLoad(db.models().all(), s)
                 ?: throw NoProviderException(
                     (reason?.let { "$it " } ?: "") + if (!localHost.runtimeAvailable) (localHost.runtimeError ?: "Local runtime unavailable.")

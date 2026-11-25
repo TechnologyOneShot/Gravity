@@ -153,11 +153,15 @@ internal fun GravityAvatar(size: Dp = 30.dp) {
 /** What the chat will use, as shown on the model button. */
 internal data class ModelLabel(val text: String, val isLocal: Boolean, val needsAttention: Boolean)
 
-internal fun modelLabelFor(chat: ChatEntity, providers: List<ProviderEntity>, loadedLocal: LocalModelHost.Loaded?): ModelLabel {
+internal fun modelLabelFor(
+    chat: ChatEntity, providers: List<ProviderEntity>, loadedLocal: LocalModelHost.Loaded?,
+    localModels: List<com.gravity.ide.data.db.LocalModelEntity> = emptyList(),
+): ModelLabel {
     val chosen = providers.firstOrNull { it.id == chat.providerId }
     val hasCloud = providers.any { it.enabled && it.kind != ProviderKind.LOCAL.name }
     return when {
-        chat.providerId == LocalLlamaProvider.ID -> ModelLabel(loadedLocal?.name?.let(::shortModelName) ?: "Phone model", true, false)
+        chat.providerId == LocalLlamaProvider.ID ->
+            ModelLabel((localModels.firstOrNull { it.id == chat.model }?.name ?: loadedLocal?.name)?.let(::shortModelName) ?: "Phone model", true, false)
         chosen != null -> ModelLabel(shortModelName(chat.model ?: chosen.defaultModel.ifBlank { chosen.name }), false, false)
         hasCloud -> ModelLabel("Auto", false, false)
         loadedLocal != null -> ModelLabel(shortModelName(loadedLocal.name), true, false)
@@ -751,7 +755,8 @@ internal fun ModelPickerSheet(
             try {
                 val info = c.device.info()
                 c.localHost.load(m, PerformanceManager.contextSize(settings, info), PerformanceManager.threads(settings, info))
-                onUpdate(chat.copy(providerId = LocalLlamaProvider.ID, model = null))
+                // This chat remembers its own phone model (another chat can use another one).
+                onUpdate(chat.copy(providerId = LocalLlamaProvider.ID, model = m.id))
                 toast(context, "Using ${m.name} on this phone")
                 onDismiss()
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -827,7 +832,7 @@ internal fun ModelPickerSheet(
                 }
                 PickerRow(
                     Icons.Filled.PhoneAndroid, m.name, detail,
-                    selected = chat.providerId == LocalLlamaProvider.ID && isLoaded, loading = loadingId == m.id, tint = GravityColors.Purple,
+                    selected = chat.providerId == LocalLlamaProvider.ID && (chat.model == m.id || (chat.model == null && isLoaded)), loading = loadingId == m.id, tint = GravityColors.Purple,
                 ) {
                     if (loadingId != null) return@PickerRow
                     val warn = if (isLoaded) null else c.localHost.memoryWarning(m, settings.localContextSize)

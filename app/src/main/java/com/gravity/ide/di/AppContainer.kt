@@ -50,7 +50,13 @@ class AppContainer(context: Context) {
     val checkpoints = CheckpointManager(appContext, db, events)
     val terminals = TerminalManager(appContext, appScope, events)
 
-    val localHost = LocalModelHost(appContext, events)
+    /** Chat replies being written, per chat, for the whole app (they go on when the screen closes). */
+    val chatRuns = com.gravity.ide.agent.ChatRuns(appContext)
+    val localHost = LocalModelHost(appContext, events).apply {
+        // Each chat keeps its own phone model: the host finds and loads the one a chat asks for.
+        lookup = { key -> db.models().all().firstOrNull { (it.id == key || it.name == key) && it.status == com.gravity.ide.models.ModelStatus.READY.name } }
+        settingsSource = { settings.current() }
+    }
     val providers = ProviderRegistry(db, secrets, settings, network, localHost, events)
     val models = ModelManager(appContext, db, secrets, localHost, events)
     val search = WebSearchService(settings, secrets, network, events)
