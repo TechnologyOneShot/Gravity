@@ -1,8 +1,7 @@
 name: Android CI
 
 on:
-  push:
-  pull_request:
+  # Trial branch: the full build runs only when started by hand.
   workflow_dispatch:
     inputs:
       llama:
