@@ -3,6 +3,41 @@
 package com.gravity.ide.ui.screens
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Launch
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
+import com.gravity.ide.ai.local.LocalLlamaProvider
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -72,63 +107,95 @@ import java.io.File
 private sealed interface Control {
     data class Toggle(val get: (AppSettings) -> Boolean, val set: (AppSettings, Boolean) -> AppSettings) : Control
     data class Choice(val options: List<Pair<String, String>>, val get: (AppSettings) -> String, val set: (AppSettings, String) -> AppSettings) : Control
-    data class Num(val get: (AppSettings) -> Int, val set: (AppSettings, Int) -> AppSettings, val range: IntRange) : Control
+    data class Num(val get: (AppSettings) -> Int, val set: (AppSettings, Int) -> AppSettings, val range: IntRange, val step: Int = 1) : Control
     data class Secret(val key: String) : Control
     data class Link(val route: String) : Control
     data class Action(val label: String, val run: (Context) -> Unit) : Control
     data class Info(val text: (AppSettings) -> String) : Control
+    /** The default AI, shown by name (looked up from the providers list). */
+    object DefaultModel : Control
 }
 
-private data class SettingItem(val category: String, val title: String, val description: String, val control: Control)
+/** Top-level groups, like a phone's Settings app: tap one to open its own page. */
+private enum class SettingsPage(val title: String, val summary: String, val icon: ImageVector) {
+    GENERAL("General", "Notifications, language", Icons.Filled.Notifications),
+    DISPLAY("Display", "Theme (day / night), text size", Icons.Filled.Palette),
+    AI("AI & models", "Cloud AI, default model, thinking, web search", Icons.Filled.SmartToy),
+    PHONE_AI("Phone AI", "Offline models, speed, memory", Icons.Filled.PhoneAndroid),
+    APPS("Agent & apps", "Approvals, steps, tasks at once", Icons.Filled.AutoAwesome),
+    PRIVACY("Privacy & security", "Secrets, local-only projects", Icons.Filled.Lock),
+    STORAGE("Storage & backup", "Space used, backups, cache", Icons.Filled.Backup),
+    DEVELOPER("Developer tools", "Files, editor, terminal, builds, ADB, testing", Icons.Filled.Code),
+    ABOUT("About & help", "Self-test, version", Icons.Filled.Info),
+}
+
+private data class SettingItem(val page: SettingsPage, val title: String, val description: String, val control: Control)
+
+private fun numberLabel(n: Int) = "%,d".format(n)
 
 private val settingItems: List<SettingItem> = listOf(
-    SettingItem("General", "Notifications", "Task completion and download progress notifications", Control.Toggle({ it.notifications }, { s, v -> s.copy(notifications = v) })),
-    SettingItem("Appearance", "Theme", "Dark developer theme, light theme or follow the system", Control.Choice(ThemeMode.entries.map { it.name to it.name.lowercase().replaceFirstChar { c -> c.uppercase() } }, { it.theme.name }, { s, v -> s.copy(theme = ThemeMode.valueOf(v)) })),
-    SettingItem("Language", "App language", "Uses Android's per-app language setting", Control.Action("Open") { ctx ->
+    // General
+    SettingItem(SettingsPage.GENERAL, "Notifications", "When a task finishes and while models download", Control.Toggle({ it.notifications }, { s, v -> s.copy(notifications = v) })),
+    SettingItem(SettingsPage.GENERAL, "Notification settings", "Android's settings for Gravity's notifications", Control.Action("Open") { ctx ->
+        ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }),
+    SettingItem(SettingsPage.GENERAL, "App language", "Android's language setting for Gravity", Control.Action("Open") { ctx ->
         if (Build.VERSION.SDK_INT >= 33) ctx.startActivity(Intent(Settings.ACTION_APP_LOCALE_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         else ctx.startActivity(Intent(Settings.ACTION_LOCALE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }),
-    SettingItem("AI Providers", "Manage providers", "Gemini, OpenAI-compatible and custom endpoints", Control.Link(Routes.PROVIDERS)),
-    SettingItem("API Configuration", "Keys, base URLs, timeouts, limits", "Edited per provider; keys are Keystore-encrypted", Control.Link(Routes.PROVIDERS)),
-    SettingItem("Model Selection", "Default model", "Set from AI Providers (★ Set as default) or a local model", Control.Info { s -> s.defaultProviderId?.let { "Provider ${it.take(8)} · ${s.defaultModel ?: "provider default"}" } ?: "Not set" }),
-    SettingItem("Model Download", "Hugging Face token", "Optional; needed for gated models. Stored encrypted.", Control.Secret(SecretStore.HF_TOKEN)),
-    SettingItem("Model Download", "Model Manager", "Search, download, verify and load GGUF models", Control.Link(Routes.models(0))),
-    SettingItem("Hybrid Intelligence", "Operating mode", "Hybrid, Local only, Cloud only or Auto model", Control.Choice(OperatingMode.entries.map { it.name to it.label }, { it.operatingMode.name }, { s, v -> s.copy(operatingMode = OperatingMode.valueOf(v)) })),
-    SettingItem("Hybrid Intelligence", "Fall back to local model when offline", "Cloud tasks switch to the loaded local model", Control.Toggle({ it.offlineFallbackToLocal }, { s, v -> s.copy(offlineFallbackToLocal = v) })),
-    SettingItem("Hybrid Intelligence", "Retry cloud tasks when back online", "Tasks waiting for network resume automatically", Control.Toggle({ it.retryWhenOnline }, { s, v -> s.copy(retryWhenOnline = v) })),
-    SettingItem("Hybrid Intelligence", "AI teams", "Architect / Developer / Reviewer collaboration", Control.Link(Routes.TEAMS)),
-    SettingItem("Hybrid Intelligence", "Offline readiness", "Check what works without a network before going offline", Control.Link(Routes.OFFLINE)),
-    SettingItem("Thinking Modes", "Default reasoning mode", "Maps to thinkingBudget / thinkingLevel / reasoning_effort / local token budget", Control.Choice(ReasoningMode.entries.map { it.name to it.label }, { it.reasoning.name }, { s, v -> s.copy(reasoning = ReasoningMode.valueOf(v)) })),
-    SettingItem("Agent Behavior", "Max steps per run", "The task pauses at this limit (resume continues)", Control.Num({ it.agentMaxSteps }, { s, v -> s.copy(agentMaxSteps = v) }, 1..200)),
-    SettingItem("Agent Behavior", "Approve every command", "Otherwise only risky commands need approval", Control.Toggle({ it.approveAllCommands }, { s, v -> s.copy(approveAllCommands = v) })),
-    SettingItem("Agent Behavior", "Approve every file write", "Otherwise only sensitive files need approval", Control.Toggle({ it.approveFileWrites }, { s, v -> s.copy(approveFileWrites = v) })),
-    SettingItem("Agent Behavior", "Parallel tasks", "Independent tasks that may run at once", Control.Num({ it.maxParallelTasks }, { s, v -> s.copy(maxParallelTasks = v) }, 1..8)),
-    SettingItem("Workspace", "Storage location", "App-private storage (survives restarts, removed on uninstall — back up!)", Control.Info { "/data/data/${BuildConfig.APPLICATION_ID}/files/workspaces" }),
-    SettingItem("File Explorer", "Show hidden files", "Dot-files and folders", Control.Toggle({ it.showHiddenFiles }, { s, v -> s.copy(showHiddenFiles = v) })),
-    SettingItem("Code Editor", "Font size", "Editor text size (sp)", Control.Num({ it.editorFontSize }, { s, v -> s.copy(editorFontSize = v) }, 8..28)),
-    SettingItem("Code Editor", "Auto-save", "Save 2.5 s after the last edit (a version is kept each time)", Control.Toggle({ it.autoSave }, { s, v -> s.copy(autoSave = v) })),
-    SettingItem("Terminal", "Font size", "Terminal text size (sp)", Control.Num({ it.terminalFontSize }, { s, v -> s.copy(terminalFontSize = v) }, 8..28)),
-    SettingItem("Web Search", "Search provider", "Brave Search API (Gemini chats can also use Google Search grounding)", Control.Choice(listOf("none" to "None", "brave" to "Brave Search API"), { it.webSearchProvider }, { s, v -> s.copy(webSearchProvider = v) })),
-    SettingItem("Web Search", "Brave Search API key", "Stored encrypted", Control.Secret(SecretStore.BRAVE_KEY)),
-    SettingItem("Build Environment", "Build Center", "Build backends and the on-device feasibility report", Control.Link(Routes.build())),
-    SettingItem("SDK Manager", "Toolchains (JDK, SDK, Gradle, Node)", "Android blocks running them from Gravity's storage; install them in Termux and use the Termux companion backend", Control.Link(Routes.build())),
-    SettingItem("ADB", "Developer options", "USB/Wireless debugging (for Shizuku or a computer)", Control.Action("Open") { ctx -> ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }),
-    SettingItem("Device Testing", "Testing Center", "Screen capture, app tests, self-test results", Control.Link(Routes.TESTING)),
-    SettingItem("Notifications", "System notification settings", "Channels for tasks, downloads and capture", Control.Action("Open") { ctx ->
-        ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }),
-    SettingItem("Performance", "Performance mode", "Thread count for local inference (thermal state still caps it)", Control.Choice(listOf("ADAPTIVE" to "Adaptive", "HIGH" to "High performance", "LOW" to "Battery saver"), { it.performanceMode }, { s, v -> s.copy(performanceMode = v) })),
-    SettingItem("Performance", "Low memory mode", "2k context, 2 threads, one task at a time", Control.Toggle({ it.lowMemoryMode }, { s, v -> s.copy(lowMemoryMode = v) })),
-    SettingItem("Resource Limits", "Local inference threads", "Used in Adaptive mode", Control.Num({ it.localThreads }, { s, v -> s.copy(localThreads = v) }, 1..16)),
-    SettingItem("Resource Limits", "Local context size (tokens)", "Larger contexts need more RAM", Control.Num({ it.localContextSize }, { s, v -> s.copy(localContextSize = v) }, 512..32768)),
-    SettingItem("Security", "Redact secrets sent to cloud models", "API keys, tokens and private keys are replaced before upload", Control.Toggle({ it.redactSecrets }, { s, v -> s.copy(redactSecrets = v) })),
-    SettingItem("Privacy", "Local-only projects", "Mark a project local-only in Project settings: its files never go to cloud AI", Control.Link(Routes.PROJECTS_LIST)),
-    SettingItem("Storage", "Storage usage", "Workspaces, models, checkpoints, screenshots, trash", Control.Info { "See below" }),
-    SettingItem("Backup", "Backup & Recovery", "Encrypted backups, trash, versions", Control.Link(Routes.BACKUP)),
-    SettingItem("Plugins", "Plugins", "Extension status", Control.Link(Routes.PLUGINS)),
-    SettingItem("Experimental Features", "Experimental features", "None in this build", Control.Info { "No experimental features are included in this build." }),
-    SettingItem("Diagnostics", "Self-test & diagnostics", "Run real checks on this device", Control.Link(Routes.HELP)),
-    SettingItem("About Gravity", "About", "Version and build information", Control.Link(Routes.ABOUT)),
+    // Display
+    SettingItem(SettingsPage.DISPLAY, "Theme", "Night (dark), day (light) or the same as the phone", Control.Choice(
+        listOf(ThemeMode.DARK.name to "Night (dark)", ThemeMode.LIGHT.name to "Day (light)", ThemeMode.SYSTEM.name to "Same as phone"),
+        { it.theme.name }, { s, v -> s.copy(theme = ThemeMode.valueOf(v)) },
+    )),
+    SettingItem(SettingsPage.DISPLAY, "Code editor text size", "Size of code in the editor", Control.Num({ it.editorFontSize }, { s, v -> s.copy(editorFontSize = v) }, 8..28)),
+    SettingItem(SettingsPage.DISPLAY, "Terminal text size", "Size of text in the terminal", Control.Num({ it.terminalFontSize }, { s, v -> s.copy(terminalFontSize = v) }, 8..28)),
+    // AI & models
+    SettingItem(SettingsPage.AI, "Default AI", "Used for new chats and apps. Change it with ★ in AI providers, or pick a phone model", Control.DefaultModel),
+    SettingItem(SettingsPage.AI, "AI providers & keys", "Gemini, OpenAI-compatible and custom AI; keys are stored encrypted", Control.Link(Routes.PROVIDERS)),
+    SettingItem(SettingsPage.AI, "Operating mode", "Where the AI runs: cloud, phone or both", Control.Choice(OperatingMode.entries.map { it.name to it.label }, { it.operatingMode.name }, { s, v -> s.copy(operatingMode = OperatingMode.valueOf(v)) })),
+    SettingItem(SettingsPage.AI, "Thinking", "How long the AI thinks before answering (longer is slower, often better)", Control.Choice(ReasoningMode.entries.map { it.name to it.label }, { it.reasoning.name }, { s, v -> s.copy(reasoning = ReasoningMode.valueOf(v)) })),
+    SettingItem(SettingsPage.AI, "Use the phone model when offline", "Cloud tasks switch to the loaded phone model", Control.Toggle({ it.offlineFallbackToLocal }, { s, v -> s.copy(offlineFallbackToLocal = v) })),
+    SettingItem(SettingsPage.AI, "Retry cloud tasks when back online", "Tasks waiting for the network continue by themselves", Control.Toggle({ it.retryWhenOnline }, { s, v -> s.copy(retryWhenOnline = v) })),
+    SettingItem(SettingsPage.AI, "Web search", "Gemini chats can also search Google by themselves", Control.Choice(listOf("none" to "Off", "brave" to "Brave Search"), { it.webSearchProvider }, { s, v -> s.copy(webSearchProvider = v) })),
+    SettingItem(SettingsPage.AI, "Brave Search API key", "Needed for Brave Search; stored encrypted", Control.Secret(SecretStore.BRAVE_KEY)),
+    SettingItem(SettingsPage.AI, "AI teams", "Architect, developer and reviewer working together", Control.Link(Routes.TEAMS)),
+    SettingItem(SettingsPage.AI, "Offline readiness", "Check what works without the internet", Control.Link(Routes.OFFLINE)),
+    // Phone AI
+    SettingItem(SettingsPage.PHONE_AI, "Phone models", "Download, check and load offline models", Control.Link(Routes.models(0))),
+    SettingItem(SettingsPage.PHONE_AI, "Hugging Face token", "Only for gated models; stored encrypted", Control.Secret(SecretStore.HF_TOKEN)),
+    SettingItem(SettingsPage.PHONE_AI, "Memory for answers (context)", "More lets the phone model read and write bigger apps, but needs more RAM", Control.Choice(
+        listOf(2048, 4096, 8192, 16384, 32768).map { n ->
+            n.toString() to numberLabel(n) + " tokens" + when (n) { 2048 -> " (low RAM)"; 4096 -> " (normal)"; 16384 -> " (big apps)"; 32768 -> " (most RAM)"; else -> "" }
+        },
+        { it.localContextSize.toString() }, { s, v -> s.copy(localContextSize = v.toInt()) },
+    )),
+    SettingItem(SettingsPage.PHONE_AI, "Speed", "How many CPU cores the phone model uses (the phone's temperature still limits it)", Control.Choice(listOf("ADAPTIVE" to "Adaptive", "HIGH" to "Fastest", "LOW" to "Battery saver"), { it.performanceMode }, { s, v -> s.copy(performanceMode = v) })),
+    SettingItem(SettingsPage.PHONE_AI, "CPU threads", "Used by Adaptive speed", Control.Num({ it.localThreads }, { s, v -> s.copy(localThreads = v) }, 1..16)),
+    SettingItem(SettingsPage.PHONE_AI, "Low memory mode", "2k context, 2 threads, one task at a time", Control.Toggle({ it.lowMemoryMode }, { s, v -> s.copy(lowMemoryMode = v) })),
+    // Agent & apps
+    SettingItem(SettingsPage.APPS, "Ask before every command", "Otherwise only risky commands need your OK", Control.Toggle({ it.approveAllCommands }, { s, v -> s.copy(approveAllCommands = v) })),
+    SettingItem(SettingsPage.APPS, "Ask before every file change", "Otherwise only sensitive files need your OK", Control.Toggle({ it.approveFileWrites }, { s, v -> s.copy(approveFileWrites = v) })),
+    SettingItem(SettingsPage.APPS, "Steps per run", "A task pauses after this many steps (Resume continues)", Control.Num({ it.agentMaxSteps }, { s, v -> s.copy(agentMaxSteps = v) }, 1..200, step = 5)),
+    SettingItem(SettingsPage.APPS, "Tasks at once", "Independent tasks that may run together", Control.Num({ it.maxParallelTasks }, { s, v -> s.copy(maxParallelTasks = v) }, 1..8)),
+    // Privacy & security
+    SettingItem(SettingsPage.PRIVACY, "Hide secrets from cloud AI", "API keys, tokens and private keys are replaced before anything is sent", Control.Toggle({ it.redactSecrets }, { s, v -> s.copy(redactSecrets = v) })),
+    SettingItem(SettingsPage.PRIVACY, "Local-only projects", "In a project's settings: its files never go to cloud AI", Control.Link(Routes.PROJECTS_LIST)),
+    // Storage & backup (space used is shown above these)
+    SettingItem(SettingsPage.STORAGE, "Backup & recovery", "Encrypted backups, trash and old versions", Control.Link(Routes.BACKUP)),
+    SettingItem(SettingsPage.STORAGE, "Where projects are kept", "Private app storage: kept across restarts, removed on uninstall (back up!)", Control.Info { "/data/data/${BuildConfig.APPLICATION_ID}/files/workspaces" }),
+    // Developer tools
+    SettingItem(SettingsPage.DEVELOPER, "Show hidden files", "Files and folders that start with a dot", Control.Toggle({ it.showHiddenFiles }, { s, v -> s.copy(showHiddenFiles = v) })),
+    SettingItem(SettingsPage.DEVELOPER, "Auto-save", "Save 2.5 s after the last edit (a version is kept each time)", Control.Toggle({ it.autoSave }, { s, v -> s.copy(autoSave = v) })),
+    SettingItem(SettingsPage.DEVELOPER, "Build Center", "Build backends and what this phone can build", Control.Link(Routes.build())),
+    SettingItem(SettingsPage.DEVELOPER, "Toolchains (JDK, SDK, Gradle, Node)", "Android does not let apps run them from their own storage; install them in Termux", Control.Link(Routes.build())),
+    SettingItem(SettingsPage.DEVELOPER, "Testing Center", "Screen capture, app tests, self-test results", Control.Link(Routes.TESTING)),
+    SettingItem(SettingsPage.DEVELOPER, "Android developer options", "USB / wireless debugging (for Shizuku or a computer)", Control.Action("Open") { ctx -> ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }),
+    SettingItem(SettingsPage.DEVELOPER, "Plugins", "Extensions and their status", Control.Link(Routes.PLUGINS)),
+    SettingItem(SettingsPage.DEVELOPER, "Experimental features", "None in this build", Control.Info { "" }),
+    // About & help
+    SettingItem(SettingsPage.ABOUT, "Self-test & diagnostics", "Run real checks on this phone", Control.Link(Routes.HELP)),
+    SettingItem(SettingsPage.ABOUT, "About Gravity", "Version and build information", Control.Link(Routes.ABOUT)),
 )
 
 @Composable
@@ -137,56 +204,161 @@ fun SettingsScreen(go: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val settings by c.settings.settings.collectAsState(initial = AppSettings())
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var pageName by rememberSaveable { mutableStateOf<String?>(null) }
+    val page = pageName?.let { n -> SettingsPage.entries.firstOrNull { it.name == n } }
     var secretEdit by remember { mutableStateOf<String?>(null) }
-    var storage by remember { mutableStateOf<List<Pair<String, Long>>?>(null) }
-    LaunchedEffect(Unit) {
-        storage = withContext(Dispatchers.IO) {
-            val files = c.appContext.filesDir
-            listOf("workspaces", "models", "checkpoints", "screenshots", "trash", "builds").map { it to File(files, it).walkBottomUp().filter { f -> f.isFile }.sumOf { f -> f.length() } } +
-                ("cache" to c.appContext.cacheDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() })
+    var choosing by remember { mutableStateOf<SettingItem?>(null) }
+    var secretsVersion by remember { mutableStateOf(0) }
+    BackHandler(enabled = page != null) { pageName = null }
+
+    val defaultModelText by produceState("…", settings.defaultProviderId, settings.defaultModel) {
+        val id = settings.defaultProviderId
+        value = when {
+            id == null -> "Not set: Gravity picks the best AI available"
+            id == LocalLlamaProvider.ID -> "Phone model" + (settings.defaultModel?.let { " · $it" } ?: "")
+            else -> (withContext(Dispatchers.IO) { c.db.providers().get(id)?.name } ?: "Removed provider") + " · " + (settings.defaultModel ?: "its default model")
         }
     }
-    val shown = settingItems.filter { query.isBlank() || it.title.contains(query, true) || it.description.contains(query, true) || it.category.contains(query, true) }
 
-    LazyColumn(contentPadding = PaddingValues(16.dp)) {
-        item { OutlinedTextField(query, { query = it }, placeholder = { Text("Search settings") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-        var last = ""
-        for (si in shown) {
-            if (si.category != last) {
-                last = si.category
-                item(key = "h-${si.category}") { SectionHeader(si.category) }
-            }
-            item(key = "s-${si.category}-${si.title}") {
-                SettingRow(si, settings, update = { t ->
-                    scope.launch {
-                        val before = c.settings.current().operatingMode
-                        c.settings.update(t)
-                        // Spec §17: inspect readiness when the user switches to offline (Local only).
-                        if (before != OperatingMode.LOCAL_ONLY && c.settings.current().operatingMode == OperatingMode.LOCAL_ONLY) go(Routes.OFFLINE)
-                    }
-                }, go = go, context = context, hasSecret = { c.secrets.has(it) }, editSecret = { secretEdit = it })
-            }
+    fun update(t: (AppSettings) -> AppSettings) {
+        scope.launch {
+            val before = c.settings.current().operatingMode
+            c.settings.update(t)
+            // Spec §17: inspect readiness when the user switches to offline (Local only).
+            if (before != OperatingMode.LOCAL_ONLY && c.settings.current().operatingMode == OperatingMode.LOCAL_ONLY) go(Routes.OFFLINE)
         }
-        if (query.isBlank()) item {
-            SectionHeader("Storage")
-            val s = storage
-            if (s == null) LoadingRow("Measuring…") else Panel {
-                Column {
-                    s.forEach { (name, size) -> KeyValue(name, formatBytes(size)) }
-                    KeyValue("free", formatBytes(c.models.freeBytes()))
-                    TextButton(onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) { c.appContext.cacheDir.listFiles()?.forEach { it.deleteRecursively() } }
-                            toast(context, "Cache cleared")
+    }
+
+    @Composable
+    fun ItemRow(item: SettingItem) {
+        // secretsVersion is read so a saved key shows "Saved" at once.
+        val saved = secretsVersion >= 0 && (item.control as? Control.Secret)?.let { c.secrets.has(it.key) } == true
+        SettingRow(
+            item, settings, ::update, go, context,
+            secretSaved = saved,
+            defaultModel = defaultModelText,
+            onSecret = { secretEdit = it },
+            onChoose = { choosing = it },
+        )
+    }
+
+    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (page == null) {
+            item {
+                OutlinedTextField(
+                    query, { query = it }, placeholder = { Text("Search settings") }, singleLine = true,
+                    shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().testTag("settings-search"),
+                )
+            }
+            if (query.isBlank()) {
+                item {
+                    SettingsCard {
+                        SettingsPage.entries.forEachIndexed { i, p ->
+                            if (i > 0) HorizontalDivider(Modifier.padding(start = 72.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            PageRow(p) { pageName = p.name }
                         }
-                    }) { Text("Clear cache") }
+                    }
+                }
+            } else {
+                val hits = settingItems.filter {
+                    it.title.contains(query, true) || it.description.contains(query, true) || it.page.title.contains(query, true)
+                }
+                if (hits.isEmpty()) item { EmptyState("Nothing found", "Try another word, for example theme, model or backup.") }
+                else item {
+                    SettingsCard {
+                        hits.forEachIndexed { i, si ->
+                            if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            Text(si.page.title.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
+                            ItemRow(si)
+                        }
+                    }
+                }
+            }
+        } else {
+            item {
+                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    IconButton(onClick = { pageName = null }, modifier = Modifier.testTag("settings-back")) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to all settings")
+                    }
+                    Icon(page.icon, null, tint = GravityColors.Accent, modifier = Modifier.padding(end = 10.dp).size(22.dp))
+                    Text(page.title, style = MaterialTheme.typography.titleLarge)
+                }
+            }
+            if (page == SettingsPage.STORAGE) item { StorageCard() }
+            item {
+                SettingsCard {
+                    settingItems.filter { it.page == page }.forEachIndexed { i, si ->
+                        if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        ItemRow(si)
+                    }
                 }
             }
         }
     }
+
+    val chosen = choosing
+    val chosenCtl = chosen?.control as? Control.Choice
+    if (chosen != null && chosenCtl != null) {
+        val current = chosenCtl.get(settings)
+        AlertDialog(
+            onDismissRequest = { choosing = null },
+            title = { Text(chosen.title) },
+            text = {
+                Column {
+                    chosenCtl.options.forEach { (value, label) ->
+                        androidx.compose.foundation.layout.Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                                .clickable { update { st -> chosenCtl.set(st, value) }; choosing = null }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = value == current, onClick = { update { st -> chosenCtl.set(st, value) }; choosing = null })
+                            Text(label, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosing = null }) { Text("Close") } },
+        )
+    }
     secretEdit?.let { key ->
-        TextInputDialog("Set secret", "Value (leave as-is to keep)", "", "Save", onConfirm = { v -> c.secrets.put(key, v); toast(context, "Saved (encrypted)") }, onDismiss = { secretEdit = null })
+        TextInputDialog(
+            "Set key", "Paste the key (stored encrypted)", "", "Save",
+            onConfirm = { v -> c.secrets.put(key, v); secretsVersion++; toast(context, "Saved (encrypted)") },
+            onDismiss = { secretEdit = null },
+        )
+    }
+}
+
+/** A rounded group of rows, like the cards in a phone's Settings app. */
+@Composable
+private fun SettingsCard(content: @Composable () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(vertical = 4.dp)) { content() }
+    }
+}
+
+@Composable
+private fun PageRow(page: SettingsPage, onClick: () -> Unit) {
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp).testTag("settings-page-${page.name.lowercase()}"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(40.dp).clip(CircleShape).background(GravityColors.Accent.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) { Icon(page.icon, null, tint = GravityColors.Accent, modifier = Modifier.size(22.dp)) }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(page.title, style = MaterialTheme.typography.titleMedium)
+            Text(page.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -197,32 +369,98 @@ private fun SettingRow(
     update: ((AppSettings) -> AppSettings) -> Unit,
     go: (String) -> Unit,
     context: Context,
-    hasSecret: (String) -> Boolean,
-    editSecret: (String) -> Unit,
+    secretSaved: Boolean,
+    defaultModel: String,
+    onSecret: (String) -> Unit,
+    onChoose: (SettingItem) -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    val ctl = item.control
+    val onClick: (() -> Unit)? = when (ctl) {
+        is Control.Toggle -> { { update { ctl.set(it, !ctl.get(s)) } } }
+        is Control.Choice -> { { onChoose(item) } }
+        is Control.Secret -> { { onSecret(ctl.key) } }
+        is Control.Link -> { { go(ctl.route) } }
+        is Control.Action -> { { runCatching { ctl.run(context) }.onFailure { toast(context, "Not available on this phone") } } }
+        Control.DefaultModel -> { { go(Routes.PROVIDERS) } }
+        is Control.Num, is Control.Info -> null
+    }
+    val value: String? = when (ctl) {
+        is Control.Choice -> ctl.get(s).let { v -> ctl.options.firstOrNull { it.first == v }?.second ?: v }
+        is Control.Secret -> if (secretSaved) "Saved" else "Not set"
+        is Control.Info -> ctl.text(s).ifBlank { null }
+        Control.DefaultModel -> defaultModel
+        else -> null
+    }
+    val base = Modifier.fillMaxWidth()
+    androidx.compose.foundation.layout.Row(
+        (if (onClick != null) base.clickable(onClick = onClick) else base).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
-            Text(item.title, style = MaterialTheme.typography.bodyMedium)
-            Text(item.description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (item.control is Control.Info) Text(item.control.text(s), style = MaterialTheme.typography.labelSmall, color = GravityColors.Cyan)
-        }
-        when (val ctl = item.control) {
-            is Control.Toggle -> Switch(ctl.get(s), { v -> update { ctl.set(it, v) } })
-            is Control.Choice -> Selector("", ctl.options, ctl.options.firstOrNull { it.first == ctl.get(s) }, { it.second }, { o -> update { ctl.set(it, o.first) } }, Modifier.width(170.dp))
-            is Control.Num -> {
-                var text by remember(ctl.get(s)) { mutableStateOf(ctl.get(s).toString()) }
-                OutlinedTextField(
-                    text, { v ->
-                        text = v.filter(Char::isDigit)
-                        text.toIntOrNull()?.takeIf { it in ctl.range }?.let { n -> update { ctl.set(it, n) } }
-                    },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(96.dp),
+            Text(item.title, style = MaterialTheme.typography.bodyLarge)
+            if (item.description.isNotBlank()) {
+                Text(item.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (value != null) {
+                Text(
+                    value, style = MaterialTheme.typography.bodyMedium,
+                    color = if (ctl is Control.Info) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            is Control.Secret -> TextButton(onClick = { editSecret(ctl.key) }) { Text(if (hasSecret(ctl.key)) "Change" else "Set") }
-            is Control.Link -> TextButton(onClick = { go(ctl.route) }) { Text("Open") }
-            is Control.Action -> TextButton(onClick = { runCatching { ctl.run(context) }.onFailure { toast(context, "Not available on this device") } }) { Text(ctl.label) }
+        }
+        Spacer(Modifier.width(12.dp))
+        when (ctl) {
+            is Control.Toggle -> Switch(ctl.get(s), { v -> update { ctl.set(it, v) } })
+            is Control.Num -> {
+                val n = ctl.get(s)
+                IconButton(onClick = { update { ctl.set(it, (n - ctl.step).coerceIn(ctl.range)) } }, enabled = n > ctl.range.first) {
+                    Icon(Icons.Filled.Remove, "Less")
+                }
+                Text(n.toString(), style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(36.dp), textAlign = TextAlign.Center)
+                IconButton(onClick = { update { ctl.set(it, (n + ctl.step).coerceIn(ctl.range)) } }, enabled = n < ctl.range.last) {
+                    Icon(Icons.Filled.Add, "More")
+                }
+            }
+            is Control.Link, Control.DefaultModel, is Control.Choice, is Control.Secret ->
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            is Control.Action -> Icon(Icons.Filled.Launch, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             is Control.Info -> Unit
+        }
+    }
+}
+
+/** Space used by Gravity, with Clear cache. */
+@Composable
+private fun StorageCard() {
+    val c = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var storage by remember { mutableStateOf<List<Pair<String, Long>>?>(null) }
+    var refresh by remember { mutableStateOf(0) }
+    LaunchedEffect(refresh) {
+        storage = withContext(Dispatchers.IO) {
+            val files = c.appContext.filesDir
+            listOf("Projects" to "workspaces", "Phone models" to "models", "Versions" to "checkpoints", "Screenshots" to "screenshots", "Trash" to "trash", "Builds" to "builds")
+                .map { (label, dir) -> label to File(files, dir).walkBottomUp().filter { f -> f.isFile }.sumOf { f -> f.length() } } +
+                ("Cache" to c.appContext.cacheDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() })
+        }
+    }
+    SettingsCard {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text("Space used", style = MaterialTheme.typography.titleMedium)
+            val s = storage
+            if (s == null) LoadingRow("Measuring…") else {
+                s.forEach { (name, size) -> KeyValue(name, formatBytes(size)) }
+                KeyValue("Free on this phone", formatBytes(c.models.freeBytes()))
+                TextButton(onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { c.appContext.cacheDir.listFiles()?.forEach { it.deleteRecursively() } }
+                        refresh++
+                        toast(context, "Cache cleared")
+                    }
+                }) { Text("Clear cache") }
+            }
         }
     }
 }
