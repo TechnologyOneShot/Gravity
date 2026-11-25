@@ -32,11 +32,14 @@ def score(case, text):
 
 def main():
     vdir, cases_path, url, out, model = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3], pathlib.Path(sys.argv[4]), sys.argv[5]
-    cases = json.loads(cases_path.read_text(encoding="utf-8"))
+    plain = json.loads(cases_path.read_text(encoding="utf-8"))
+    hinted_path = cases_path.with_name("cases_hint.json")
+    hinted = json.loads(hinted_path.read_text(encoding="utf-8")) if hinted_path.exists() else plain
     out.mkdir(parents=True, exist_ok=True)
     summary = []
     for v in sorted(vdir.glob("*.txt")):
         system = v.read_text(encoding="utf-8")
+        cases = hinted if "hint" in v.stem else plain
         report = [f"# {model} / {v.stem}\n"]
         ok_count, prompt_tokens = 0, None
         for case in cases:
@@ -46,6 +49,9 @@ def main():
             ok_count += not problems
             head = f"## {case['name']}  [{'OK' if not problems else '; '.join(problems)}]  ({took:.0f} s, prompt {pn} tokens)"
             print(f"[{v.stem}] {head}", flush=True)
+            print("Q: " + case["messages"][-1]["content"].replace("\n", " / "), flush=True)
+            print(text.strip(), flush=True)
+            print("-" * 60, flush=True)
             report.append(f"{head}\n\n**Q:** {case['messages'][-1]['content']}\n\n{text.strip()}\n")
         line = f"RESULT {model} {v.stem}: {ok_count}/{len(cases)} OK, system+question ≈ {prompt_tokens} tokens"
         print(line, flush=True)
