@@ -161,6 +161,11 @@ private val settingItems: List<SettingItem> = listOf(
     SettingItem(SettingsPage.AI, "Retry cloud tasks when back online", "Tasks waiting for the network continue by themselves", Control.Toggle({ it.retryWhenOnline }, { s, v -> s.copy(retryWhenOnline = v) })),
     SettingItem(SettingsPage.AI, "Web search", "Gemini chats can also search Google by themselves", Control.Choice(listOf("none" to "Off", "brave" to "Brave Search"), { it.webSearchProvider }, { s, v -> s.copy(webSearchProvider = v) })),
     SettingItem(SettingsPage.AI, "Brave Search API key", "Needed for Brave Search; stored encrypted", Control.Secret(SecretStore.BRAVE_KEY)),
+    SettingItem(
+        SettingsPage.AI, "Pictures and videos",
+        "Online: real AI pictures from Pollinations.ai (free, no account; your picture description is sent there; 1 picture per 15 s, may carry a small watermark). Draw: the chat's AI draws it on this phone (works offline, simpler pictures)",
+        Control.Choice(listOf("ask" to "Ask me the first time", "online" to "Free online image AI", "draw" to "Draw on this phone"), { it.pictureMaker }, { s, v -> s.copy(pictureMaker = v) }),
+    ),
     SettingItem(SettingsPage.AI, "AI teams", "Architect, developer and reviewer working together", Control.Link(Routes.TEAMS)),
     SettingItem(SettingsPage.AI, "Offline readiness", "Check what works without the internet", Control.Link(Routes.OFFLINE)),
     // Phone AI

@@ -663,6 +663,20 @@ class DeviceServicesTest {
         assertEquals(720, frame!!.width)
     }
 
+    /** The free online image AI (Pollinations) really returns a picture. An outside service: if it is down, the test is skipped, not passed. */
+    @Test
+    fun t16c_onlineImageAiMakesARealPicture() {
+        val started = System.currentTimeMillis()
+        val result = runCatching { runBlocking { com.gravity.ide.files.OnlineImages.bitmap("a cute cartoon monkey eating a banana on a tree, bright colours", 512, 512) } }
+        val bmp = result.getOrNull()
+        Ci.log("make", "Online image AI: ${if (bmp != null) "${bmp.width}x${bmp.height} picture" else "failed: ${result.exceptionOrNull()?.message}"} in ${System.currentTimeMillis() - started} ms")
+        org.junit.Assume.assumeTrue("The online image service could not be reached from the emulator: ${result.exceptionOrNull()?.message}", bmp != null)
+        assertEquals(512, bmp!!.width)
+        // A real picture has many colours (not one flat colour).
+        val colours = (0 until 20).map { i -> bmp.getPixel(25 * i + 10, 25 * i + 10) }.toSet()
+        assertTrue("The picture is one flat colour", colours.size > 3)
+    }
+
     @Test
     fun t16_filesAreMadeOnThePhone() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext

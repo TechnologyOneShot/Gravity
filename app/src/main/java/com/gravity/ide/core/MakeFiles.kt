@@ -51,8 +51,24 @@ object MakeFiles {
         }
     }
 
-    /** Extra instruction for the AI for this one message, so its reply can be turned into the file. */
-    fun instruction(kind: Kind): String = when (kind) {
+    /**
+     * Extra instruction for the AI for this one message, so its reply can be turned into the file.
+     * With [onlinePictures], pictures come from an online image AI: the AI only describes them.
+     */
+    fun instruction(kind: Kind, onlinePictures: Boolean = false): String = when {
+        onlinePictures && kind == Kind.IMAGE ->
+            "The user wants a picture. Gravity makes it with an image AI from your description. Write one line \"Picture: <a vivid, detailed " +
+                "description in English for an image AI: the subject, what it is doing, style (for example photo, cartoon, watercolor), colours, " +
+                "lighting, background>\" and then one short friendly sentence for the user in their language. Do not draw it yourself, no code."
+        onlinePictures && kind == Kind.VIDEO ->
+            "The user wants a short video. Gravity makes it on the phone as an MP4: one AI picture per scene, your narration read aloud by the " +
+                "phone's voice. Write 3 to 6 scenes. For each scene write a line \"Scene N: <one or two narration sentences in the user's " +
+                "language>\" and right after it a line \"Picture: <a vivid, detailed description in English of that scene's picture for an image " +
+                "AI, portrait format>\". Keep the same characters and style in every scene. No other text, no code."
+        else -> instruction(kind)
+    }
+
+    private fun instruction(kind: Kind): String = when (kind) {
         Kind.PDF -> "The user wants a PDF. Write the complete content for it (start with a # title line; use ## headings, " +
             "- bullet points and short paragraphs). Gravity saves your reply as a PDF file, so do not say you cannot make files."
         Kind.ZIP -> "The user wants a ZIP file. Put every file in its own fenced code block, and write its file name on the line " +
@@ -91,6 +107,35 @@ object MakeFiles {
                 .replace("*", "").trim()
             out += narration to reply.substring(start, end + "</svg>".length)
             from = end + "</svg>".length
+        }
+        return out
+    }
+
+    private val pictureLine = Regex("(?im)^\\s*[*_]*\\s*(picture|image|image\\s*prompt|prompt|चित्र|तस्वीर)\\s*[*_]*\\s*[:：]\\s*[*_]*\\s*(.+)$")
+    private val sceneLine = Regex("(?i)^\\s*[*_#]*\\s*(scene|दृश्य|सीन)\\s*\\d+\\s*[*_]*\\s*[:.)-]\\s*[*_]*\\s*(.*)$")
+
+    /** The picture description in a reply ("Picture: …"), or null. */
+    fun picturePrompt(reply: String): String? =
+        pictureLine.find(reply)?.groupValues?.get(2)?.trim()?.trim('*', '_', '"', ' ')?.takeIf { it.length >= 3 }
+
+    /** Video scenes with picture descriptions: (narration, picture description) pairs, in order. */
+    fun pictureScenes(reply: String): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>()
+        var narration = StringBuilder()
+        for (line in reply.lines()) {
+            val scene = sceneLine.find(line)
+            val pic = pictureLine.find(line)
+            when {
+                pic != null -> {
+                    val prompt = pic.groupValues[2].trim().trim('*', '_', '"', ' ')
+                    if (prompt.isNotEmpty()) out += narration.toString().trim() to prompt
+                    narration = StringBuilder()
+                }
+                scene != null -> {
+                    narration = StringBuilder(scene.groupValues[2].replace("*", "").trim())
+                }
+                line.isNotBlank() && narration.isNotEmpty() -> narration.append(' ').append(line.replace("*", "").trim())
+            }
         }
         return out
     }

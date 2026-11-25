@@ -346,7 +346,7 @@ internal fun ChatBubble(
         if (m.content.isNotBlank()) {
             var makeMenu by remember { mutableStateOf(false) }
             val canZip = remember(m.content) { com.gravity.ide.core.MakeFiles.codeFiles(m.content).isNotEmpty() }
-            val canImage = remember(m.content) { com.gravity.ide.core.MakeFiles.svg(m.content) != null }
+            val canImage = remember(m.content) { com.gravity.ide.core.MakeFiles.svg(m.content) != null || com.gravity.ide.core.MakeFiles.picturePrompt(m.content) != null }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SmallAction(Icons.Filled.ContentCopy, "Copy reply", onCopy)
                 Box {

@@ -38,6 +38,8 @@ data class AppSettings(
     val terminalFontSize: Int = 12,
     val showHiddenFiles: Boolean = false,
     val webSearchProvider: String = "none",
+    /** Pictures and video scenes: "ask" (first time), "online" (free online image AI, Pollinations), "draw" (drawn by the chat's AI). */
+    val pictureMaker: String = "ask",
     val localThreads: Int = 4,
     val localContextSize: Int = 4096,
     val lowMemoryMode: Boolean = false,
@@ -77,6 +79,7 @@ class SettingsRepository(private val context: Context) {
         val terminalFont = intPreferencesKey("terminal_font")
         val hidden = booleanPreferencesKey("show_hidden")
         val webSearch = stringPreferencesKey("web_search_provider")
+        val pictureMaker = stringPreferencesKey("picture_maker")
         val threads = intPreferencesKey("local_threads")
         val ctx = intPreferencesKey("local_ctx")
         val lowMem = booleanPreferencesKey("low_memory")
@@ -115,6 +118,7 @@ class SettingsRepository(private val context: Context) {
             terminalFontSize = this[Keys.terminalFont] ?: d.terminalFontSize,
             showHiddenFiles = this[Keys.hidden] ?: d.showHiddenFiles,
             webSearchProvider = this[Keys.webSearch] ?: d.webSearchProvider,
+            pictureMaker = this[Keys.pictureMaker] ?: d.pictureMaker,
             localThreads = this[Keys.threads] ?: d.localThreads,
             localContextSize = this[Keys.ctx] ?: d.localContextSize,
             lowMemoryMode = this[Keys.lowMem] ?: d.lowMemoryMode,
@@ -148,6 +152,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.terminalFont] = s.terminalFontSize.coerceIn(8, 28)
             prefs[Keys.hidden] = s.showHiddenFiles
             prefs[Keys.webSearch] = s.webSearchProvider
+            prefs[Keys.pictureMaker] = s.pictureMaker
             prefs[Keys.threads] = s.localThreads.coerceIn(1, 16)
             prefs[Keys.ctx] = s.localContextSize.coerceIn(512, 32768)
             prefs[Keys.lowMem] = s.lowMemoryMode

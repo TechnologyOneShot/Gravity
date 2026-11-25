@@ -36,25 +36,34 @@ object VideoMaker {
 
     class Result(val file: File, val seconds: Double, val scenes: Int, val withVoice: Boolean)
 
+    /** A video from scenes the AI drew: (narration, SVG drawing) pairs. */
     suspend fun make(
         context: Context, name: String, scenes: List<Pair<String, String>>, locale: Locale,
         progress: (String) -> Unit = {},
     ): Result {
         require(scenes.isNotEmpty()) { "No scenes to put in the video" }
-        // 1. Narration for each scene (the phone's voice); without text-to-speech the video is silent.
-        progress("Recording the narration…")
-        val clips: List<Pair<ShortArray, Int>?> = runCatching { FileMaker.speechClips(context, scenes.map { it.first }, locale) }
-            .getOrElse { List(scenes.size) { null } }
-            .map { wav -> wav?.let { runCatching { WavJoin.pcmMono16(it) }.getOrNull() } }
-        val rate = clips.firstOrNull { it != null }?.second ?: 0
-        val voices = clips.map { c -> if (c == null || rate == 0) ShortArray(0) else WavJoin.resample(c.first, c.second, rate) }
-        val seconds = VideoPlan.durations(voices.map { it.size }, rate)
-
-        // 2. Pictures.
         progress("Drawing ${scenes.size} scene(s)…")
         val pictures = scenes.map { (_, svg) ->
             runCatching { FileMaker.renderSvg(svg, W, H) }.getOrElse { Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.DKGRAY) } }
         }
+        return makeFromPictures(context, name, scenes.map { it.first }, pictures, locale, progress)
+    }
+
+    /** A video from ready pictures ([W]x[H], e.g. from the online image AI), one per narration. They are recycled. */
+    suspend fun makeFromPictures(
+        context: Context, name: String, narrations: List<String>, pictures: List<Bitmap>, locale: Locale,
+        progress: (String) -> Unit = {},
+    ): Result {
+        require(pictures.isNotEmpty() && pictures.size == narrations.size) { "No scenes to put in the video" }
+        // Narration for each scene (the phone's voice); without text-to-speech the video is silent.
+        progress("Recording the narration…")
+        val clips: List<Pair<ShortArray, Int>?> = runCatching { FileMaker.speechClips(context, narrations, locale) }
+            .getOrElse { List(narrations.size) { null } }
+            .map { wav -> wav?.let { runCatching { WavJoin.pcmMono16(it) }.getOrNull() } }
+        val rate = clips.firstOrNull { it != null }?.second ?: 0
+        val voices = clips.map { c -> if (c == null || rate == 0) ShortArray(0) else WavJoin.resample(c.first, c.second, rate) }
+        val seconds = VideoPlan.durations(voices.map { it.size }, rate)
+        val scenes = narrations.map { it to "" }
 
         val out = FileMaker.unique(FileMaker.dir(context), FileMaker.clean(name) + ".mp4")
         val muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)

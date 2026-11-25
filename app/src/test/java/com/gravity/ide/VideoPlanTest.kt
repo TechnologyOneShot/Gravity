@@ -34,4 +34,15 @@ class VideoPlanTest {
         assertEquals(MakeFiles.Kind.VIDEO, MakeFiles.detect("मुझे दिवाली पर एक वीडियो बना दो"))
         assertEquals(null, MakeFiles.detect("video kaise banate hain?"))
     }
+
+    @Test fun onlinePictureDescriptionsAreFound() {
+        assertEquals("A playful brown monkey eating a banana on a tree, cartoon style",
+            MakeFiles.picturePrompt("**Picture:** A playful brown monkey eating a banana on a tree, cartoon style\nYeh raha aapka bandar!"))
+        val reply = "Scene 1: दिवाली की रात है।\nPicture: A night sky full of fireworks over an Indian village\n\n**Scene 2:** Diye jal rahe hain.\n**Picture:** Clay lamps glowing on a doorstep"
+        val scenes = MakeFiles.pictureScenes(reply)
+        assertEquals(listOf("दिवाली की रात है।", "Diye jal rahe hain."), scenes.map { it.first })
+        assertEquals("Clay lamps glowing on a doorstep", scenes[1].second)
+        org.junit.Assert.assertTrue(MakeFiles.instruction(MakeFiles.Kind.IMAGE, onlinePictures = true).contains("Picture:"))
+        org.junit.Assert.assertTrue(MakeFiles.instruction(MakeFiles.Kind.IMAGE).contains("SVG"))
+    }
 }
