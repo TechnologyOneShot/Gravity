@@ -715,6 +715,8 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
                     needsSetup = !hasCloud && !hasPhoneModel,
                     onSetup = { aiSetup = true },
                     onSuggestion = { text, app -> vm.chooseMode(app); input = text },
+                    appMode = appMode,
+                    onModeChange = { vm.chooseMode(it) },
                 )
             }
             val lastId = messages.lastOrNull()?.id
@@ -738,7 +740,8 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
         notice?.let { MessageBanner(it) { vm.notice.value = null } }
         ChatComposer(
             value = input,
-            onValueChange = { input = it; vm.suggestMode(it) },
+            // Only a new chat picks its mode from the text; a started chat keeps Chat or App.
+            onValueChange = { input = it; if (messages.isEmpty()) vm.suggestMode(it) },
             busy = busy, attachments = attachments,
             onRemoveAttachment = { vm.removeAttachment(it) },
             onAttachFiles = { picker.launch(arrayOf("*/*")) },
@@ -766,6 +769,8 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
             onStop = { vm.stop() },
             appMode = appMode,
             onModeChange = { vm.chooseMode(it) },
+            showModeSwitch = false,
+            started = messages.isNotEmpty(),
             modelLabel = label,
             onPickModel = { modelSheet = true },
             onLive = { if (!hasCloud && !hasPhoneModel) aiSetup = true else live = true },

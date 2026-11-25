@@ -381,7 +381,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disk-size: 4096M
-          ram-size: 3072M
+          ram-size: 4096M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
           script: bash .github/scripts/emulator-tests.sh
@@ -475,7 +475,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disk-size: 4096M
-          ram-size: 3072M
+          ram-size: 4096M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
           script: GRAVITY_GRADLE_ARGS=-Pgravity.llama=true bash .github/scripts/emulator-tests.sh

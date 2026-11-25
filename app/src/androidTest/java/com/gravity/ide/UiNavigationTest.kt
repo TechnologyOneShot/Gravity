@@ -187,6 +187,8 @@ class UiNavigationTest {
         val prompt = "hello from CI ${System.currentTimeMillis() % 100000}"
         openDrawerEntry("New Chat")
         waitForTitle("Chat")
+        // A new chat offers Chat / App; once the chat has started the switch is gone.
+        compose.onNodeWithTag("mode-chat").assertExists()
         compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput(prompt)
         compose.onNodeWithContentDescription("Send").performClick()
 
@@ -219,6 +221,8 @@ class UiNavigationTest {
         compose.waitForIdle()
         Ci.log("chat", "Chat screen: ${visibleText().take(2000)}")
         Ci.screenshot("03_chat_no_provider")
+        assertTrue("The Chat / App switch is still shown after the chat started",
+            compose.onAllNodesWithTag("mode-chat").fetchSemanticsNodes().isEmpty() && compose.onAllNodesWithTag("mode-app").fetchSemanticsNodes().isEmpty())
 
         // Recreate the activity: the chat must still be listed.
         compose.activityRule.scenario.recreate()

@@ -184,14 +184,23 @@ internal fun ModelPill(label: ModelLabel, onClick: () -> Unit, modifier: Modifie
 
 /** Empty-chat welcome: a calm greeting, AI setup if needed, and starter ideas. */
 @Composable
-internal fun ChatWelcome(needsSetup: Boolean, onSetup: () -> Unit, onSuggestion: (text: String, app: Boolean) -> Unit) {
+internal fun ChatWelcome(
+    needsSetup: Boolean,
+    onSetup: () -> Unit,
+    onSuggestion: (text: String, app: Boolean) -> Unit,
+    appMode: Boolean = false,
+    onModeChange: (Boolean) -> Unit = {},
+) {
     val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
     val greeting = when (hour) {
         in 5..11 -> "Good morning"
         in 12..16 -> "Good afternoon"
         else -> "Good evening"
     }
-    Column(Modifier.fillMaxWidth().padding(top = 48.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        // Chat or App is chosen once, on a new chat; after the first message the chat keeps its mode.
+        ModeSwitch(appMode, onModeChange)
+        Spacer(Modifier.height(28.dp))
         GravityAvatar(44.dp)
         Spacer(Modifier.height(18.dp))
         Text(greeting, fontFamily = DisplayFamily, fontSize = 32.sp, textAlign = TextAlign.Center)
@@ -516,6 +525,10 @@ internal fun ChatComposer(
     onStop: () -> Unit,
     appMode: Boolean = false,
     onModeChange: (Boolean) -> Unit = {},
+    /** The Chat / App switch in the box (the chat screen shows it at the top of a new chat instead). */
+    showModeSwitch: Boolean = true,
+    /** The chat already has messages (App mode then changes the app it built). */
+    started: Boolean = false,
     modelLabel: ModelLabel? = null,
     onPickModel: () -> Unit = {},
     /** Live voice mode; when set, the round button starts it while the message box is empty. */
@@ -561,7 +574,16 @@ internal fun ChatComposer(
             }
             TextField(
                 value = value, onValueChange = onValueChange,
-                placeholder = { Text(if (appMode) "Describe the app you want…" else "Message Gravity…", color = GravityColors.Muted) },
+                placeholder = {
+                    Text(
+                        when {
+                            appMode && started -> "Describe a change to this app…"
+                            appMode -> "Describe the app you want…"
+                            else -> "Message Gravity…"
+                        },
+                        color = GravityColors.Muted,
+                    )
+                },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 200.dp).testTag("chat-input"),
                 maxLines = 8,
                 textStyle = MaterialTheme.typography.bodyLarge,
@@ -587,7 +609,7 @@ internal fun ChatComposer(
                         )
                     }
                 }
-                ModeSwitch(appMode, onModeChange)
+                if (showModeSwitch) ModeSwitch(appMode, onModeChange)
                 Spacer(Modifier.weight(1f))
                 if (modelLabel != null) ModelPill(modelLabel, onPickModel, Modifier.widthIn(max = 140.dp))
                 IconButton(onClick = onMic, modifier = Modifier.size(40.dp).testTag("mic-button")) {
@@ -625,7 +647,7 @@ internal fun ChatComposer(
 
 /** Chat or App: what a message does (answer in the chat, or build / change an app). */
 @Composable
-private fun ModeSwitch(appMode: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ModeSwitch(appMode: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.clip(RoundedCornerShape(50)).background(GravityColors.Surface).padding(3.dp)) {
         for ((app, label) in listOf(false to "Chat", true to "App")) {
             val on = appMode == app
