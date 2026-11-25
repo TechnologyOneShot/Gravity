@@ -42,6 +42,8 @@ HINDI_WORDS = re.compile(r"\b(hai|hain|nahi|nahin|karo|kar|karein|aap|apne|apna|
 
 def problems_in(case, text):
     """What is wrong with an answer: script, real Hinglish, expected words (an echoed question is ignored)."""
+    # Curly and straight apostrophes are the same word ("can’t" = "can't").
+    text = text.replace("\u2019", "'").replace("\u2018", "'")
     question = case["messages"][-1]["content"].split("\n\n(")[0].strip()
     if len(question) > 12:
         text = text.replace(question, " ")
