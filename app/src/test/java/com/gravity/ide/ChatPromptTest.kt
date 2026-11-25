@@ -29,10 +29,10 @@ class ChatPromptTest {
         val cases = JSONArray()
         fun case(name: String, expectAny: List<String>, vararg turns: JSONObject) =
             cases.put(JSONObject().put("name", name).put("expect_any", JSONArray(expectAny)).put("messages", JSONArray(turns.toList())))
-        case("capabilities (user's question)", listOf("नहीं", "nahi", "nahin", "cannot", "can't"), turn("user", capability))
+        case("capabilities (user's question)", listOf("नहीं", "nahi", "nahin", "nahee"), turn("user", capability))
         // The same question right after a poem: small models tend to answer it with another poem.
         case(
-            "capabilities after a poem", listOf("नहीं", "nahi", "nahin", "cannot", "can't"),
+            "capabilities after a poem", listOf("नहीं", "nahi", "nahin", "nahee"),
             turn("user", "mere liye ek Hindi mein gana Gao"),
             turn("assistant", "मैं आपकी रात की खुशी में हूँ\nतुम के साथ बहुत जुटका हूँ\nआपकी गाना बजाऊँगा\nतुम से बहुत जुटका हूँ"),
             turn("user", capability),

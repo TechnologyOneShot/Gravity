@@ -24,4 +24,14 @@ object TextQuality {
         }
         return false
     }
+
+    /**
+     * The Devanagari OCR model sometimes reads a printed "8" as the Bengali digit "৪" (and "0" as
+     * "০"), which look the same. Gravity reads Hindi and English, so on a page with no Bengali
+     * letters those digits are turned back into 8 and 0.
+     */
+    fun fixOcrDigits(text: String): String {
+        if (text.any { it in '\u0985'..'\u09B9' }) return text
+        return text.replace('\u09EA', '8').replace('\u09E6', '0')
+    }
 }

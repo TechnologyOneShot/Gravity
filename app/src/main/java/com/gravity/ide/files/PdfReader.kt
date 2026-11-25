@@ -76,7 +76,7 @@ object PdfReader {
                         val count = minOf(renderer.pageCount, MAX_OCR_PAGES)
                         for (i in 0 until count) {
                             val bmp = render(renderer, i, 2000)
-                            val text = Tasks.await(recognizer.process(InputImage.fromBitmap(bmp, 0)), 60, TimeUnit.SECONDS).text
+                            val text = TextQuality.fixOcrDigits(Tasks.await(recognizer.process(InputImage.fromBitmap(bmp, 0)), 60, TimeUnit.SECONDS).text)
                             if (i >= previews.size) bmp.recycle()
                             if (text.isNotBlank()) sb.append("--- Page ").append(i + 1).append(" ---\n").append(text.trim()).append("\n\n")
                         }

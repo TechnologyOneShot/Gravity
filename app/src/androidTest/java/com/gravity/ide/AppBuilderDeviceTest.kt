@@ -150,11 +150,21 @@ class AppBuilderDeviceTest {
                 Ci.shell("am start -W -n ${out.packageName}/${WebAppPackager.SHELL_ACTIVITY}")
                 loaded = poll(60_000) { pageShown() }
             }
-            val resumed = Ci.shell("dumpsys activity activities").lineSequence().filter { "ResumedActivity" in it }.joinToString(" / ") { it.trim() }
+            fun resumedNow() = Ci.shell("dumpsys activity activities").lineSequence().filter { "ResumedActivity" in it }.joinToString(" / ") { it.trim() }
+            var resumed = resumedNow()
+            if (loaded != null && !resumed.contains(out.packageName)) {
+                // The page loaded, but Android closed the app (on the CI emulator this happens when Google
+                // Play services, which WebView fonts depend on, dies under memory pressure). Say why, and
+                // start it once more: it must really be in front.
+                val why = Ci.shell("logcat -d -s ActivityManager:I").lineSequence().filter { out.packageName in it && ("Killing" in it || "died" in it) }.toList()
+                Ci.log("builder", "App not in front after loading; Android said: ${why.takeLast(3).joinToString(" | ").ifBlank { "nothing" }}. Starting it again.")
+                Ci.shell("am start -W -n ${out.packageName}/${WebAppPackager.SHELL_ACTIVITY}")
+                resumed = poll(30_000) { resumedNow().takeIf { it.contains(out.packageName) } } ?: resumedNow()
+            }
             Ci.log("builder", "Installed app launched: ${loaded ?: "no page-load log"} | resumed: $resumed")
             Ci.screenshot("06_generated_app_installed")
             assertNotNull("The installed app did not load its page", loaded)
-            assertTrue(resumed.contains(out.packageName))
+            assertTrue("The installed app is not in front: $resumed", resumed.contains(out.packageName))
         } finally {
             Ci.shell("am force-stop ${out.packageName}")
             Ci.shell("pm uninstall ${out.packageName}")

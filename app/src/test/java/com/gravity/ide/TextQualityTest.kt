@@ -17,4 +17,11 @@ class TextQualityTest {
         assertTrue(TextQuality.pdfTextLooksBroken("Page 1", 3))
         assertTrue(TextQuality.pdfTextLooksBroken("��ab�".repeat(100), 1))
     }
+
+    @Test fun ocrLookalikeDigitsAreFixedOnHindiAndEnglishPages() {
+        org.junit.Assert.assertEquals("Arrive by 8 AM, room 10", com.gravity.ide.core.TextQuality.fixOcrDigits("Arrive by \u09EA AM, room 1\u09E6"))
+        // A real Bengali page keeps its digits.
+        val bengali = "\u0986\u09AE\u09BE\u09B0 \u09EA"
+        org.junit.Assert.assertEquals(bengali, com.gravity.ide.core.TextQuality.fixOcrDigits(bengali))
+    }
 }
