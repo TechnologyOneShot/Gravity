@@ -540,7 +540,29 @@ class AgentEngine(
         val index = File(root, "index.html")
         val isChange = AppBuilder.isChangeInstruction(task.instruction)
         val current = if (isChange && index.isFile) index.readText().takeUnless { AppBuilder.isPlaceholder(it) } else null
-        val (system, user) = AppBuilder.directPrompt(AppBuilder.requestFrom(task.instruction), current, compact = local)
+        // Design pictures the user attached: a cloud AI sees them; a phone model gets their text and positions.
+        val designFiles = AppBuilder.designsFrom(task.instruction).map { File(root, it) }.filter { it.isFile }
+        var designImages = emptyList<com.gravity.ide.ai.ImagePart>()
+        var designText: String? = null
+        if (designFiles.isNotEmpty()) {
+            if (!local) {
+                designImages = designFiles.map { f ->
+                    com.gravity.ide.ai.ImagePart(if (f.name.endsWith(".png")) "image/png" else "image/jpeg", android.util.Base64.encodeToString(f.readBytes(), android.util.Base64.NO_WRAP))
+                }
+                events.log(EventCategory.AGENT, "Reading your design picture(s): ${designFiles.size}", designFiles.joinToString { it.name }, taskId = task.id, model = resolved.model)
+            } else {
+                designText = withContext(Dispatchers.IO) {
+                    designFiles.joinToString("\n") { f -> runCatching { com.gravity.ide.files.ImageText.describe(context, f) }.getOrDefault("") }
+                }.trim().take(1500)
+                events.log(
+                    EventCategory.AGENT, "Design read as text (the phone model cannot see pictures)",
+                    designText.ifBlank { "No text was found in the picture." }, EventLevel.WARN, taskId = task.id,
+                )
+            }
+        }
+        val (system, user) = AppBuilder.directPrompt(
+            AppBuilder.requestFrom(task.instruction), current, compact = local, designImages = designImages.size, designText = designText,
+        )
         val loaded = if (local) localHost.loadedOrNull() else null
         // A whole app in one answer needs room: on the phone, use a bigger context for this request if free memory allows.
         // A change must hold the current app and the new one (≈3 characters per token), so it may ask for more.
@@ -556,9 +578,10 @@ class AgentEngine(
         suspend fun ask(
             sys: String, usr: String, maxTokens: Int?,
             prefix: String = AppBuilder.DIRECT_PREFIX, stopAt: List<String> = listOf("</html>"),
+            images: List<com.gravity.ide.ai.ImagePart> = emptyList(),
         ): com.gravity.ide.ai.LlmResult = call(
             task.id, resolved,
-            listOf(LlmMessage(Role.SYSTEM, sys), LlmMessage(Role.USER, usr)),
+            listOf(LlmMessage(Role.SYSTEM, sys), LlmMessage(Role.USER, usr, images = images)),
             emptyList(), ReasoningMode.BALANCED,
             maxOutputTokens = maxTokens?.let { minOf(it, 7500) },
             temperature = if (local) 0.2 else null,
@@ -616,7 +639,7 @@ class AgentEngine(
             }
             stage(task.id, (if (current != null) "Rewriting the app with your change" else "Writing the app") + if (local) " · phone model, up to $room tokens" else " · $who")
             events.log(EventCategory.AGENT, "Single-file app with $who", if (local) "context $ctx tokens (loaded with ${loaded?.contextSize}), answer up to $room tokens" else "", taskId = task.id, model = resolved.model)
-            val result = ask(system, user, room)
+            val result = ask(system, user, room, images = designImages)
             val extracted = AppBuilder.extractHtml(result.text)
             if (extracted == null) {
                 // Keep the whole reply in the task log (Details) so the user can see what the model wrote.

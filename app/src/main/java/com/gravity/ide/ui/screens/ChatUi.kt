@@ -629,7 +629,7 @@ internal fun ChatComposer(
                     Text(
                         when {
                             appMode && started -> "Describe a change to this app…"
-                            appMode -> "Describe the app you want…"
+                            appMode -> "Describe the app (📎 add a design picture to copy it)…"
                             else -> "Message Gravity…"
                         },
                         color = GravityColors.Muted,

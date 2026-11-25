@@ -28,23 +28,34 @@ class AppBuilder(
      * Creates the app project and starts the build run with the given AI ([providerId]/[model]:
      * the model chosen in the chat; null = the default AI). Returns the project and the task id.
      */
-    suspend fun create(request: String, providerId: String? = null, model: String? = null): Pair<ProjectEntity, String> {
-        val text = request.trim()
+    suspend fun create(
+        request: String, providerId: String? = null, model: String? = null,
+        /** Pictures of how the app must look (a design from another app, a screenshot, a sketch). */
+        designs: List<com.gravity.ide.ai.ImagePart> = emptyList(),
+        /** Attached files with details for the app (name to text). */
+        references: List<Pair<String, String>> = emptyList(),
+    ): Pair<ProjectEntity, String> {
+        val text = request.trim().ifEmpty { if (designs.isNotEmpty()) "Build the app shown in the design picture." else "" }
         require(text.isNotEmpty()) { "Describe the app you want." }
         val project = workspace.createProject(nameFor(text), ProjectTemplate.WEB_APP)
         File(project.rootPath, "GRAVITY.md").writeText(projectNotes(project.name, text))
-        val taskId = agent.create(project.id, buildInstruction(text), providerId, model, ReasoningMode.BALANCED, null)
+        val saved = saveDesigns(project, designs)
+        val taskId = agent.create(project.id, withDesigns(buildInstruction(withReferences(text, references)), saved), providerId, model, ReasoningMode.BALANCED, null)
         events.log(EventCategory.AGENT, "App Builder: building ${project.name}", text, taskId = taskId, projectId = project.id)
         agent.start(taskId)
         return project to taskId
     }
 
     /** Starts a run that applies [request] to an existing app. Returns the task id. */
-    suspend fun change(project: ProjectEntity, request: String, providerId: String? = null, model: String? = null): String {
-        val text = request.trim()
+    suspend fun change(
+        project: ProjectEntity, request: String, providerId: String? = null, model: String? = null,
+        designs: List<com.gravity.ide.ai.ImagePart> = emptyList(), references: List<Pair<String, String>> = emptyList(),
+    ): String {
+        val text = request.trim().ifEmpty { if (designs.isNotEmpty()) "Make the app look like the design picture." else "" }
         require(text.isNotEmpty()) { "Describe the change." }
         File(project.rootPath, "GRAVITY.md").appendText("\n- Change requested: ${text.replace('\n', ' ')}\n")
-        val taskId = agent.create(project.id, changeInstruction(text), providerId, model, ReasoningMode.BALANCED, null)
+        val saved = saveDesigns(project, designs)
+        val taskId = agent.create(project.id, withDesigns(changeInstruction(withReferences(text, references)), saved), providerId, model, ReasoningMode.BALANCED, null)
         events.log(EventCategory.AGENT, "App Builder: change to ${project.name}", text, taskId = taskId, projectId = project.id)
         agent.start(taskId)
         return taskId
@@ -56,6 +67,19 @@ class AppBuilder(
         val taskId = agent.create(project.id, task.instruction, task.providerId, task.model, ReasoningMode.BALANCED, null)
         agent.start(taskId)
         return taskId
+    }
+
+    /** Saves design pictures in the app's folder (design/…), so retries and later changes can use them. */
+    private fun saveDesigns(project: ProjectEntity, designs: List<com.gravity.ide.ai.ImagePart>): List<String> {
+        if (designs.isEmpty()) return emptyList()
+        val dir = File(project.rootPath, "design").apply { mkdirs() }
+        val stamp = System.currentTimeMillis()
+        return designs.mapIndexed { i, img ->
+            val ext = if (img.mimeType.contains("png")) "png" else "jpg"
+            val f = File(dir, "design-$stamp-${i + 1}.$ext")
+            f.writeBytes(android.util.Base64.decode(img.base64, android.util.Base64.DEFAULT))
+            "design/${f.name}"
+        }
     }
 
     /** Most recent run on this app (build or change). */
@@ -105,12 +129,36 @@ class AppBuilder(
         fun isPlaceholder(html: String) = html.contains(PLACEHOLDER_MARKER) || html.contains("<p>Gravity is building this app…</p>")
 
         fun isBuilderInstruction(instruction: String) = instruction.startsWith(BUILD_PREFIX) || instruction.startsWith(CHANGE_PREFIX)
+
+        /** Marks the design pictures of a build or change (paths in the app folder), at the end of the instruction. */
+        const val DESIGN_PREFIX = "Design pictures to match (in the app folder): "
+
+        fun withDesigns(instruction: String, paths: List<String>): String =
+            if (paths.isEmpty()) instruction else instruction.trimEnd() + "\n\n" + DESIGN_PREFIX + paths.joinToString(", ")
+
+        fun designsFrom(instruction: String): List<String> =
+            instruction.lineSequence().firstOrNull { it.startsWith(DESIGN_PREFIX) }?.removePrefix(DESIGN_PREFIX)
+                ?.split(", ")?.map { it.trim() }?.filter { it.isNotEmpty() && !it.contains("..") }.orEmpty()
+
+        /** Adds attached files (specs, data, text) to the request, kept short enough for a prompt. */
+        fun withReferences(request: String, references: List<Pair<String, String>>, maxChars: Int = 8000): String {
+            if (references.isEmpty()) return request
+            var room = maxChars
+            val parts = references.mapNotNull { (name, text) ->
+                if (room <= 200) return@mapNotNull null
+                val t = text.take(room)
+                room -= t.length
+                "Attached file $name (details for the app):\n```\n$t\n```"
+            }
+            return request + "\n\n" + parts.joinToString("\n\n")
+        }
         fun isChangeInstruction(instruction: String) = instruction.startsWith(CHANGE_PREFIX)
 
         /** The user's own words inside a build/change instruction. */
         fun requestFrom(instruction: String): String {
             val body = instruction.removePrefix(BUILD_PREFIX).removePrefix(CHANGE_PREFIX)
-            return body.substringBefore("\n\nDeliver a complete").substringBefore("\n\nRead the relevant files first").trim()
+            return body.substringBefore("\n\nDeliver a complete").substringBefore("\n\nRead the relevant files first")
+                .substringBefore("\n\n$DESIGN_PREFIX").trim()
         }
 
         private val fileWords = Regex(
@@ -134,7 +182,13 @@ class AppBuilder(
          * Prompt for on-device models: one self-contained HTML file in a single reply. Small
          * models cannot follow the multi-step tool protocol, but many can write one file.
          */
-        fun directPrompt(request: String, currentHtml: String?, compact: Boolean = true): Pair<String, String> {
+        fun directPrompt(
+            request: String, currentHtml: String?, compact: Boolean = true,
+            /** How many design pictures are attached to the message (cloud AI that can see them). */
+            designImages: Int = 0,
+            /** For a phone model that cannot see pictures: the text read from the design, with positions. */
+            designText: String? = null,
+        ): Pair<String, String> {
             val system = if (compact) {
                 "You are an expert web developer. You write small, complete, working mobile web apps as ONE self-contained HTML file " +
                     "with inline <style> and <script>. No external libraries, no CDNs, no comments, no explanations: output only the code."
@@ -155,10 +209,22 @@ class AppBuilder(
                 } else {
                     ""
                 }
+            val design = when {
+                designImages > 0 ->
+                    "\n\nThe user attached ${if (designImages == 1) "a design picture" else "$designImages design pictures"} of exactly how the app must look. " +
+                        "Recreate it as exactly as you can: the same screens, layout and positions, sizes, spacing and rounded corners, the exact colors " +
+                        "(use the hex values you see), the closest fonts and font weights, look-alike icons (inline SVG or emoji), pictures as CSS/SVG " +
+                        "shapes of the same size, and every visible text word for word. Fit it to a phone screen. Then make every control in the design " +
+                        "really work. If the request text and the picture disagree, follow the request text."
+                !designText.isNullOrBlank() ->
+                    "\n\nThe user's design picture contains these texts (top to bottom, with where they are on the screen):\n$designText\n" +
+                        "Use these exact texts and place them where the design has them."
+                else -> ""
+            }
             val user = if (currentHtml == null) {
-                "Build this app: $request\n\n$rules"
+                "Build this app: $request$design\n\n$rules"
             } else {
-                "Here is the current app:\n```html\n$currentHtml\n```\n\nChange request: $request\n\n" +
+                "Here is the current app:\n```html\n$currentHtml\n```\n\nChange request: $request$design\n\n" +
                     "Reply with the COMPLETE updated file (not a diff), keeping everything else working. $rules"
             }
             return system to user

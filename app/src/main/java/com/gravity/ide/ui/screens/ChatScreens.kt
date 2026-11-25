@@ -574,23 +574,32 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
     }
 
     fun sendApp(text: String) {
-        if (busy.value || text.isBlank()) return
-        if (attachments.value.isNotEmpty()) {
-            error.value = "Files can't be sent with an app request yet. Switch to Chat to ask about them, or remove them."
+        val atts = attachments.value
+        if (busy.value || (text.isBlank() && atts.isEmpty())) return
+        // A picture is a design to copy; a text, code or PDF file gives details. Other files (ZIP, audio…) can't be used.
+        val unusable = atts.firstOrNull { it.kind != "image" && it.text.isNullOrBlank() && it.images.isEmpty() }
+        if (unusable != null) {
+            error.value = "${unusable.name} can't be used to build an app. Attach a design picture (screenshot, mockup) or a text / PDF file with details."
             return
         }
+        val designs = atts.filter { it.kind == "image" || it.text.isNullOrBlank() }.flatMap { it.images }
+        val references = atts.filter { it.kind != "image" && !it.text.isNullOrBlank() }.map { it.name to it.text!! }
+        attachments.value = emptyList()
         viewModelScope.launch {
             busy.value = true
             try {
                 val now = System.currentTimeMillis()
-                c.db.chats().insertMessage(MessageEntity(chatId = chatId, role = "user", content = text, createdAt = now))
+                val meta = JSONArray().apply { atts.forEach { put(JSONObject().put("name", it.name).put("mime", it.mime).put("size", it.size).put("kind", it.kind)) } }
+                c.db.chats().insertMessage(
+                    MessageEntity(chatId = chatId, role = "user", content = text.ifBlank { "Build this design" }, attachments = meta.toString(), createdAt = now)
+                )
                 val chat = c.db.chats().get(chatId)
                 val linked = chat?.projectId?.let { c.db.projects().get(it) }?.takeIf { it.type == "APP" }
                 // The app is built by the AI chosen in this chat (e.g. the phone model), not always the default.
                 val providerId = chat?.providerId
                 val model = chat?.model
-                val (project, taskId) = if (linked != null) linked to c.appBuilder.change(linked, text, providerId, model)
-                else c.appBuilder.create(text, providerId, model)
+                val (project, taskId) = if (linked != null) linked to c.appBuilder.change(linked, text, providerId, model, designs, references)
+                else c.appBuilder.create(text, providerId, model, designs, references)
                 if (chat != null && linked == null) {
                     c.db.chats().upsert(
                         chat.copy(projectId = project.id, title = if (chat.title == "New chat" || chat.title.isBlank()) project.name else chat.title, updatedAt = now)
@@ -760,7 +769,7 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
                 val text = input
                 if (appMode) {
                     if (!hasCloud && !hasPhoneModel) aiSetup = true
-                    else if (text.isNotBlank()) { vm.sendApp(text); input = "" }
+                    else if (text.isNotBlank() || attachments.isNotEmpty()) { vm.sendApp(text); input = "" }
                 } else {
                     vm.send(text)
                     input = ""

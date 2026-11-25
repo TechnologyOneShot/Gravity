@@ -44,6 +44,9 @@ object BuildNarration {
         noPage.find(t)?.let { return "The AI stopped before finishing the page (${it.groupValues[1]} tokens)." }
         noEdits.find(t)?.let { return "The AI answered without any edits I could apply (${it.groupValues[1]} tokens)." }
         return when {
+            t.startsWith("Reading your design picture") -> "I'm studying your design picture: layout, positions, colors and text…"
+            t.startsWith("Design read as text") -> "The phone model can't see pictures, so I read the text in your design and placed it as best I can. " +
+                "For an exact copy of the design, use Gemini."
             t.startsWith("Writing the app") -> "I'm writing the app" + who(t) + "…"
             t.startsWith("Rewriting the app with your change") -> "I'm rewriting the app with your change" + who(t) + "…"
             t.startsWith("Changing the app in small edits") -> "The app is big, so I'm making your change in small edits…"

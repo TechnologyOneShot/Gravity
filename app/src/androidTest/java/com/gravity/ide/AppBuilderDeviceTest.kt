@@ -15,6 +15,7 @@ import androidx.test.rule.GrantPermissionRule
 import com.gravity.ide.ai.ProviderKind
 import com.gravity.ide.build.WebAppPackager
 import com.gravity.ide.data.db.ProviderEntity
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -92,6 +93,32 @@ class AppBuilderDeviceTest {
         assertEquals(1, good.controlsTapped)
         assertTrue("A working page was reported as broken: ${good.errors}", good.errors.isEmpty())
         runBlocking { c.db.projects().get(project.id)?.let { c.db.projects().upsert(it.copy(archived = true)) } }
+    }
+
+    /**
+     * Building from a design picture: the picture is saved with the app, sent to the AI (a cloud AI
+     * can see it) with instructions to copy the design, and the build log says so.
+     */
+    @Test
+    fun t00b_buildFromADesignPicture() {
+        val bmp = android.graphics.Bitmap.createBitmap(360, 640, android.graphics.Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(bmp).apply {
+            drawColor(android.graphics.Color.parseColor("#101828"))
+            drawText("Login", 140f, 120f, android.graphics.Paint().apply { color = android.graphics.Color.WHITE; textSize = 36f })
+        }
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+        val design = com.gravity.ide.ai.ImagePart("image/jpeg", android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP))
+        val (project, taskId) = runBlocking { c.appBuilder.create("music player in this design", designs = listOf(design)) }
+        val done = finished(taskId)
+        val saved = File(project.rootPath, "design").listFiles().orEmpty().map { it.name }
+        val log = runBlocking { c.db.events().observeForTask(taskId).first() }.map { it.title }
+        Ci.log("builder", "Design build → ${done?.status}; saved $saved; image sent: ${lastBody.contains("\"image_url\"")}; log: ${log.take(8)}")
+        assertEquals("COMPLETED", done?.status)
+        assertEquals(1, saved.size)
+        assertTrue("The design picture was not sent to the AI", lastBody.contains("\"image_url\"") && lastBody.contains("data:image/jpeg;base64,"))
+        assertTrue("The AI was not asked to copy the design", lastBody.contains("design picture"))
+        assertTrue("The build log does not say it read the design", log.any { it.startsWith("Reading your design picture") })
     }
 
     @Test
@@ -174,6 +201,10 @@ class AppBuilderDeviceTest {
     companion object {
         private val ACTIVE = setOf("PENDING", "RUNNING", "WAITING_APPROVAL", "WAITING_NETWORK")
         private const val PROVIDER_ID = "ci-scripted-model"
+
+        /** The last request the scripted model received (to check what Gravity sent). */
+        @Volatile
+        private var lastBody = ""
         private lateinit var server: MockWebServer
 
         private val APP_V1 = """
@@ -229,6 +260,7 @@ class AppBuilderDeviceTest {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 if (request.path.orEmpty().endsWith("/models")) return MockResponse().setBody("""{"data":[{"id":"scripted-model"}]}""")
                 val body = request.body.readUtf8()
+                lastBody = body
                 val withShuffle = body.contains("Change request:") || body.contains("shuffle")
                 val html = if (withShuffle) APP_V1.replace("<!--controls-->", "<button id=\"shuffle\">Shuffle</button>") else APP_V1
                 return sse(text("Here is the app:\n```html\n"), text(html), text("\n```\n"))
