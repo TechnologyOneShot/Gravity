@@ -865,6 +865,8 @@ class DeviceServicesTest {
         assertEquals("An idle kill (e.g. by the system) is not reported", null, idleKill)
         assertEquals("Swiping Gravity away is not reported", null, swiped)
         assertNotNull("The phone's cleaner during work is reported", cleaner)
+        val dependency = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_DEPENDENCY_DIED, "depends on provider", 0, doing, "details")
+        assertEquals("Android closed Gravity when a system app it used restarted", dependency?.title)
     }
 
     @Test

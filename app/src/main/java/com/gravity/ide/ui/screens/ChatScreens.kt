@@ -307,7 +307,11 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             val (system, recent) = conversationStart(resolved, c.settings.current(), project, "", liveLanguage.value != null) { it }
             if (busy.value) return@launch
             runCatching {
-                resolved.provider.stream(LlmRequest(resolved.model, listOf(LlmMessage(Role.SYSTEM, system)) + recent, maxOutputTokens = 1)) { }
+                // Ends with an empty user turn: some chat formats (Gemma's) put the system prompt inside
+                // the first user turn, so without one the warm-up read nothing (CI: 2 tokens reused).
+                val warm = listOf(LlmMessage(Role.SYSTEM, system)) + recent +
+                    (if (recent.lastOrNull()?.role == Role.USER) emptyList() else listOf(LlmMessage(Role.USER, "")))
+                resolved.provider.stream(LlmRequest(resolved.model, warm, maxOutputTokens = 1)) { }
             }
         } else {
             val host = when (resolved.entity?.kind) {

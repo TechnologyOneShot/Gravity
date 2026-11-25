@@ -146,7 +146,13 @@ class CrashReports(private val context: Context) {
                     "Phone models need a lot of memory (a 7B model about 5 GB).$was Use a smaller model (Gemma 3 4B, Llama 3.2 3B), close other apps, or use Gemini. Please share the report.",
                     details,
                 )
-                ApplicationExitInfo.REASON_INITIALIZATION_FAILURE, ApplicationExitInfo.REASON_DEPENDENCY_DIED -> Report("Gravity could not start last time", "Please share the report.", details)
+                ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> Report("Gravity could not start last time", "Please share the report.", details)
+                ApplicationExitInfo.REASON_DEPENDENCY_DIED -> Report(
+                    "Android closed Gravity when a system app it used restarted",
+                    "Something Gravity was connected to (often Google Play services, which updates itself) stopped, and Android closes the apps " +
+                        "connected to it.$was This build no longer uses Play services' fonts, the usual cause. Please share the report if it happens again.",
+                    details,
+                )
                 ApplicationExitInfo.REASON_SIGNALED, ApplicationExitInfo.REASON_OTHER, ApplicationExitInfo.REASON_UNKNOWN, -1 -> when {
                     // Phones' own battery savers (MIUI/HyperOS "powerkeeper" and others) show up here.
                     oem && doing.isEmpty() -> Report(

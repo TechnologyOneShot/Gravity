@@ -51,7 +51,8 @@ int main(int argc, char **argv) {
         if (const char *warm = std::getenv("WARM_SYSTEM"); warm != nullptr) {
             std::string ignored, fin;
             const double t = now();
-            const int w = gravity::generate(s, {"system"}, {read(warm)}, 1, temperature, 0.95f, 0, "", [](const char *, int) { return true; }, fin, error);
+            // As the app's warm-up: the system prompt and an empty user turn (Gemma's format needs one).
+            const int w = gravity::generate(s, {"system", "user"}, {read(warm), ""}, 1, temperature, 0.95f, 0, "", [](const char *, int) { return true; }, fin, error);
             std::printf("STEP warm-up: %d token(s) in %.1f s, peak memory %ld MB, error=%s\n", w, now() - t, peak_mb(), error.c_str());
         }
         const int draw_ctx = std::getenv("DRAW_CTX") ? std::atoi(std::getenv("DRAW_CTX")) : 0;
