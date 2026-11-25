@@ -52,7 +52,10 @@ class BackgroundReplyTest {
             assertNotNull("No reply was saved after the chat screen closed", reply)
             assertTrue("The reply did not finish: ${reply!!.content}", reply.content.contains("The reply finished."))
             assertFalse("The reply was stopped when the screen closed", reply.content.contains("generation stopped"))
-            assertFalse("Still marked as busy", c.chatRuns.forChat(chatId).busy.value)
+            // The busy mark is cleared right after the reply is saved (a moment later than the save).
+            val clearBy = System.currentTimeMillis() + 5_000
+            while (c.chatRuns.forChat(chatId).busy.value && System.currentTimeMillis() < clearBy) Thread.sleep(50)
+            assertFalse("Still marked as busy 5 s after the reply was saved", c.chatRuns.forChat(chatId).busy.value)
         } finally {
             AppBuilderDeviceTest.removeScriptedModel()
         }

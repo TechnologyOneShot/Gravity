@@ -38,9 +38,16 @@ object OnlineImages {
                     Triple(r.code, r.header("Content-Type").orEmpty(), r.body?.bytes() ?: ByteArray(0))
                 }
             }
-            if (code == 429 && attempt == 0) { attempt++; continue } // busy: wait the gap once more and retry
+            // Busy (429) or temporarily down (5xx): the free service often recovers in seconds; try twice more.
+            if ((code == 429 || code in 500..599) && attempt < 2) { attempt++; delay(4_000L * attempt); continue }
             if (code != 200 || !type.startsWith("image/")) {
-                throw IllegalStateException("the online image AI answered HTTP $code${if (code == 429) " (too many pictures; wait a minute)" else ""}")
+                throw IllegalStateException(
+                    "the online image AI answered HTTP $code" + when {
+                        code == 429 -> " (too many pictures; wait a minute)"
+                        code in 500..599 -> " (the free service is busy or down right now; try again in a few minutes)"
+                        else -> ""
+                    }
+                )
             }
             val check = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 ?: throw IllegalStateException("the online image AI sent something that is not a picture")

@@ -28,7 +28,8 @@ object ReasoningMapper {
         return when {
             score >= 3 -> ReasoningMode.HIGH
             score >= 1 -> ReasoningMode.DEEP_THINK
-            instruction.length < 80 -> ReasoningMode.FAST
+            // Ordinary chat (up to a long paragraph, nothing heavy): answer at once, little thinking.
+            instruction.length < 300 -> ReasoningMode.FAST
             else -> ReasoningMode.BALANCED
         }
     }
@@ -47,7 +48,15 @@ object ReasoningMapper {
         val m = model.lowercase()
         val effective = if (mode == ReasoningMode.AUTO) ReasoningMode.BALANCED else mode
         if (m.contains("gemini-3")) {
-            return GeminiThinking.Level(if (effective == ReasoningMode.FAST || effective == ReasoningMode.BALANCED) "low" else "high")
+            // Flash models (also Flash-Lite) accept "minimal" (no thinking for most questions, the
+            // quickest answer); Pro models do not (an error), so they get "low".
+            return GeminiThinking.Level(
+                when (effective) {
+                    ReasoningMode.FAST -> if (m.contains("flash")) "minimal" else "low"
+                    ReasoningMode.BALANCED -> "low"
+                    else -> "high"
+                }
+            )
         }
         if (!m.contains("2.5")) return GeminiThinking.None
         val isPro = m.contains("pro")

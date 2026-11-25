@@ -128,6 +128,11 @@ class ProviderProtocolTest {
         assertEquals(ReasoningMapper.GeminiThinking.Budget(0), ReasoningMapper.gemini("gemini-2.5-flash", ReasoningMode.FAST))
         assertEquals(ReasoningMapper.GeminiThinking.Budget(128), ReasoningMapper.gemini("gemini-2.5-pro", ReasoningMode.FAST))
         assertEquals(ReasoningMapper.GeminiThinking.Level("high"), ReasoningMapper.gemini("gemini-3-pro-preview", ReasoningMode.HIGH))
+        // Chat speed: Flash models answer without thinking for quick questions; Pro cannot take "minimal".
+        assertEquals(ReasoningMapper.GeminiThinking.Level("minimal"), ReasoningMapper.gemini("gemini-3.5-flash", ReasoningMode.FAST))
+        assertEquals(ReasoningMapper.GeminiThinking.Level("low"), ReasoningMapper.gemini("gemini-3.1-pro-preview", ReasoningMode.FAST))
+        assertEquals(ReasoningMode.FAST, ReasoningMapper.resolveAuto("Tum aisa pura baat batao ki tum mere liye kya-kya kar sakte ho aur kya-kya nahi kar sakte ho, ek-ek line karke batao"))
+        assertEquals(ReasoningMode.DEEP_THINK, ReasoningMapper.resolveAuto("debug this crash in my app"))
         assertEquals(ReasoningMapper.GeminiThinking.None, ReasoningMapper.gemini("gemini-1.5-flash", ReasoningMode.HIGH))
         assertEquals("high", ReasoningMapper.openAiEffort(ReasoningMode.MAXIMUM))
     }
