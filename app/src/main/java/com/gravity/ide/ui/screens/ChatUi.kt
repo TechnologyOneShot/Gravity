@@ -400,6 +400,11 @@ private fun AppTaskCard(projectId: String, taskId: String, isChange: Boolean, on
     val t = task
     val status = t?.status
     val running = status == null || status in ACTIVE_TASK
+    // What the builder did, step by step, from its real task log (BuildNarration).
+    val log by remember(taskId) { c.db.events().observeForTask(taskId) }.collectAsState(initial = emptyList())
+    val steps = remember(log) { com.gravity.ide.core.BuildNarration.lines(log.map { com.gravity.ide.core.BuildNarration.Entry(it.category, it.title, it.detail, it.level) }) }
+    var showSteps by remember { mutableStateOf(false) }
+    var preview by remember { mutableStateOf(false) }
     Surface(
         shape = RoundedCornerShape(18.dp), color = GravityColors.Surface, border = BorderStroke(1.dp, GravityColors.Outline),
         modifier = Modifier.fillMaxWidth().testTag("app-card"),
@@ -433,18 +438,33 @@ private fun AppTaskCard(projectId: String, taskId: String, isChange: Boolean, on
                 if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             }
             if (running) {
-                t?.stage?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, maxLines = 2, modifier = Modifier.padding(top = 8.dp)) }
+                // Live: each step as it happens; the last one is in progress.
+                val shown = steps.takeLast(6)
+                if (shown.isEmpty()) {
+                    t?.stage?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, maxLines = 2, modifier = Modifier.padding(top = 8.dp)) }
+                }
+                Column(Modifier.padding(top = 8.dp).testTag("app-card-steps"), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    shown.forEachIndexed { i, line -> BuildStep(line, current = i == shown.lastIndex) }
+                }
                 live[taskId]?.takeIf { it.isNotBlank() }?.let {
-                    Text("Written so far: ${"%,d".format(it.length)} characters", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted)
+                    Text("Written so far: ${"%,d".format(it.length)} characters", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, modifier = Modifier.padding(top = 4.dp))
+                }
+            } else if (steps.isNotEmpty()) {
+                TextButton(onClick = { showSteps = !showSteps }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp), modifier = Modifier.testTag("app-card-show-steps")) {
+                    Text((if (showSteps) "Hide what I did" else "What I did (${steps.size} steps)") + if (showSteps) " ▴" else " ▾", style = MaterialTheme.typography.labelMedium)
+                }
+                if (showSteps) {
+                    Column(Modifier.testTag("app-card-steps"), verticalArrangement = Arrangement.spacedBy(3.dp)) { steps.forEach { BuildStep(it, current = false) } }
                 }
             }
             if (status == "COMPLETED") t?.summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
             if (status == "FAILED") t?.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = GravityColors.Red, modifier = Modifier.padding(top = 8.dp)) }
-            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (status == "COMPLETED") {
-                    Surface(onClick = { onOpenApp(projectId) }, shape = RoundedCornerShape(50), color = GravityColors.Accent, modifier = Modifier.testTag("open-app")) {
-                        Text("Open app", color = GravityColors.OnAccent, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp))
+                    Surface(onClick = { preview = !preview }, shape = RoundedCornerShape(50), color = GravityColors.Accent, modifier = Modifier.testTag("preview-app")) {
+                        Text(if (preview) "Hide preview" else "▶ Preview", color = GravityColors.OnAccent, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp))
                     }
+                    TextButton(onClick = { onOpenApp(projectId) }, modifier = Modifier.testTag("open-app")) { Text("Open app") }
                 } else {
                     TextButton(onClick = { onOpenApp(projectId) }, modifier = Modifier.testTag("open-app")) { Text("Open app") }
                 }
@@ -452,7 +472,37 @@ private fun AppTaskCard(projectId: String, taskId: String, isChange: Boolean, on
                     TextButton(onClick = { onRetryApp(projectId, taskId) }) { Text("Try again") }
                 }
             }
+            // The app itself, running right here in the chat (the same live preview as the App screen).
+            val p = project
+            if (preview && status == "COMPLETED" && p != null) {
+                val errors = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+                var reload by remember { mutableStateOf(0) }
+                Surface(
+                    shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, GravityColors.Outline),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(480.dp),
+                ) {
+                    if (java.io.File(p.rootPath, "index.html").isFile) AppPreview(p, reload, errors, Modifier.fillMaxSize())
+                    else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("This app has no index.html yet.", color = GravityColors.Muted) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { reload++ }) { Text("Reload") }
+                    if (errors.isNotEmpty()) Text("${errors.size} JavaScript error(s): ${errors.last().take(80)}", style = MaterialTheme.typography.labelSmall, color = GravityColors.Red, maxLines = 2)
+                }
+            }
         }
+    }
+}
+
+/** One step of an app build in the chat: a dot, or a small spinner for the step in progress. */
+@Composable
+private fun BuildStep(line: String, current: Boolean) {
+    Row(verticalAlignment = Alignment.Top) {
+        Box(Modifier.padding(top = 4.dp).size(12.dp), contentAlignment = Alignment.Center) {
+            if (current) CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp)
+            else Box(Modifier.size(5.dp).clip(CircleShape).background(GravityColors.Muted))
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(line, style = MaterialTheme.typography.bodySmall, color = if (current) MaterialTheme.colorScheme.onSurface else GravityColors.Muted)
     }
 }
 

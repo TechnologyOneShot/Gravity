@@ -119,7 +119,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
     val style = VoiceStyles.byId(styleId)
     var voiceName by remember(language) { mutableStateOf(VoicePrefs.voiceName(context, hindiVoice)) }
     val voices = remember(ttsReady, language) {
-        if (ttsReady == true) com.gravity.ide.files.VoicePicker.voices(tts, VoicePrefs.locale(hindiVoice)) else emptyList()
+        if (ttsReady == true) com.gravity.ide.files.VoicePicker.voices(tts, VoicePrefs.locale(context, hindiVoice)) else emptyList()
     }
     var voiceMenu by remember { mutableStateOf(false) }
     var styleMenu by remember { mutableStateOf(false) }
@@ -152,7 +152,11 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         }
     }
     LaunchedEffect(language) { vm.liveLanguage.value = language.forModel }
-    LaunchedEffect(styleId) { vm.livePersona.value = style.persona }
+    // The voice in use (chosen, or the clearest installed one) decides the Hindi grammar for "I".
+    val voiceGender = (voices.firstOrNull { it.name == voiceName } ?: voices.firstOrNull())?.let { com.gravity.ide.files.VoicePicker.gender(it) }
+    LaunchedEffect(styleId, voiceGender, hindiVoice) {
+        vm.livePersona.value = VoiceStyles.personaFor(style, VoicePrefs.address(context), voiceGender, hindiVoice)
+    }
     LaunchedEffect(fastest, hasCloud) { vm.liveFastest.value = fastest && hasCloud }
     // Load the AI now (e.g. the phone model), not after the user's first sentence.
     LaunchedEffect(Unit) { vm.warmUp() }
@@ -388,15 +392,29 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         onDispose { }
     }
 
-    // Start listening as soon as live mode opens.
-    LaunchedEffect(Unit) { listen() }
+    // When live mode opens: a short greeting in the chosen style (then it listens), or straight to listening.
+    var opened by remember { mutableStateOf(false) }
+    LaunchedEffect(ttsReady) {
+        if (opened || ttsReady == null) return@LaunchedEffect
+        opened = true
+        if (ttsReady == true && VoicePrefs.greet(context)) {
+            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            val line = VoiceStyles.greeting(style, hindiVoice, VoicePrefs.address(context), hour, voiceGender == "female")
+            prepareVoice()
+            reply = line
+            phase = LivePhase.SPEAKING
+            VoicePrefs.speak(tts, line, style, "greet", "live-end", flush = false)
+        } else {
+            listen()
+        }
+    }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().testTag("live-dialog"), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Live", style = MaterialTheme.typography.titleLarge)
+                        Text("Live · ${style.title}", style = MaterialTheme.typography.titleLarge)
                         Text(modelName, style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (Regex("(?i)\\b(7|8|13|14)b\\b").containsMatchIn(modelName)) {
                             Text(
@@ -489,6 +507,48 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                     LivePhase.THINKING, LivePhase.SPEAKING -> pulse
                     LivePhase.IDLE -> 1f
                 }
+                // HUD rings: they turn while it thinks or speaks and follow your voice while it listens.
+                val spin by rememberInfiniteTransition(label = "hud").animateFloat(
+                    initialValue = 0f, targetValue = 360f,
+                    animationSpec = infiniteRepeatable(tween(if (phase == LivePhase.THINKING) 1400 else 5200, easing = androidx.compose.animation.core.LinearEasing)),
+                    label = "spin",
+                )
+                val ringColor = GravityColors.Accent
+                Box(contentAlignment = Alignment.Center) {
+                androidx.compose.foundation.Canvas(Modifier.size(250.dp).testTag("live-hud")) {
+                    val active = phase != LivePhase.IDLE
+                    val alpha = if (active) 0.9f else 0.3f
+                    val stroke1 = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                    val stroke2 = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                    val grow = if (phase == LivePhase.LISTENING) level.coerceIn(0f, 10f) / 10f * 10.dp.toPx() else 0f
+                    val r1 = size.minDimension / 2 - 4.dp.toPx()
+                    // Outer ring: three arcs turning clockwise.
+                    for (k in 0 until 3) {
+                        drawArc(
+                            ringColor.copy(alpha = alpha), startAngle = spin + k * 120f, sweepAngle = 70f, useCenter = false, style = stroke1,
+                            topLeft = androidx.compose.ui.geometry.Offset(center.x - r1, center.y - r1), size = androidx.compose.ui.geometry.Size(r1 * 2, r1 * 2),
+                        )
+                    }
+                    // Inner ring: two arcs turning the other way, a little larger with your voice.
+                    val r2 = r1 - 14.dp.toPx() + grow
+                    for (k in 0 until 2) {
+                        drawArc(
+                            ringColor.copy(alpha = alpha * 0.7f), startAngle = -spin * 1.5f + k * 180f, sweepAngle = 110f, useCenter = false, style = stroke2,
+                            topLeft = androidx.compose.ui.geometry.Offset(center.x - r2, center.y - r2), size = androidx.compose.ui.geometry.Size(r2 * 2, r2 * 2),
+                        )
+                    }
+                    // Tick marks around the outside.
+                    val r3 = r1 + 2.dp.toPx()
+                    for (k in 0 until 48) {
+                        val a = Math.toRadians((k * 7.5 + spin / 4).toDouble())
+                        val len = if (k % 4 == 0) 6.dp.toPx() else 3.dp.toPx()
+                        val cx = center.x + (r3 * kotlin.math.cos(a)).toFloat()
+                        val cy = center.y + (r3 * kotlin.math.sin(a)).toFloat()
+                        val ex = center.x + ((r3 + len) * kotlin.math.cos(a)).toFloat()
+                        val ey = center.y + ((r3 + len) * kotlin.math.sin(a)).toFloat()
+                        drawLine(ringColor.copy(alpha = alpha * 0.45f), androidx.compose.ui.geometry.Offset(cx, cy), androidx.compose.ui.geometry.Offset(ex, ey), strokeWidth = 1.dp.toPx())
+                    }
+                }
                 Box(
                     Modifier.size(180.dp).scale(scale).clip(CircleShape)
                         .background(GravityColors.Accent.copy(alpha = if (phase == LivePhase.IDLE) 0.35f else 0.9f))
@@ -512,6 +572,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                         if (phase == LivePhase.SPEAKING) Icons.Filled.GraphicEq else Icons.Filled.Mic, null,
                         tint = GravityColors.OnAccent, modifier = Modifier.size(56.dp),
                     )
+                }
                 }
                 Spacer(Modifier.height(24.dp))
                 Text(

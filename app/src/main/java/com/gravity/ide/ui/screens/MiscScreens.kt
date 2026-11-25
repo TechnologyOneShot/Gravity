@@ -121,7 +121,7 @@ private sealed interface Control {
 private enum class SettingsPage(val title: String, val summary: String, val icon: ImageVector) {
     GENERAL("General", "Notifications, language", Icons.Filled.Notifications),
     DISPLAY("Display", "Theme (day / night), text size", Icons.Filled.Palette),
-    VOICE("Voice & speech", "10 speaking styles, male / female voices, speed, pitch", Icons.Filled.RecordVoiceOver),
+    VOICE("Voice & speech", "AI Butler + 12 more styles, male / female voices, accent, speed", Icons.Filled.RecordVoiceOver),
     AI("AI & models", "Cloud AI, default model, thinking, web search", Icons.Filled.SmartToy),
     PHONE_AI("Phone AI", "Offline models, speed, memory", Icons.Filled.PhoneAndroid),
     APPS("Agent & apps", "Approvals, steps, tasks at once", Icons.Filled.AutoAwesome),

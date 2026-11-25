@@ -62,7 +62,10 @@ internal fun VoiceSettingsPanel() {
     var pitch by remember { mutableStateOf(VoicePrefs.pitch(context)) }
     var hindiVoice by remember { mutableStateOf(VoicePrefs.voiceName(context, true)) }
     var englishVoice by remember { mutableStateOf(VoicePrefs.voiceName(context, false)) }
-    val voices = remember(ready, hindiTab) { if (ready == true) VoicePicker.voices(tts, VoicePrefs.locale(hindiTab)) else emptyList() }
+    var accent by remember { mutableStateOf(VoicePrefs.accent(context)) }
+    var address by remember { mutableStateOf(VoicePrefs.address(context)) }
+    var greet by remember { mutableStateOf(VoicePrefs.greet(context)) }
+    val voices = remember(ready, hindiTab, accent) { if (ready == true) VoicePicker.voices(tts, VoicePrefs.locale(context, hindiTab)) else emptyList() }
     val shown = voices.filter { gender == "all" || VoicePicker.gender(it) == gender }
     val chosen = if (hindiTab) hindiVoice else englishVoice
 
@@ -97,10 +100,36 @@ internal fun VoiceSettingsPanel() {
             }
         }
 
-        VoiceCard("Voice", "The phone's own voices. Hindi and Hinglish use the Hindi voice; English uses the English (India) voice.") {
+        VoiceCard("Live mode", "How Gravity talks to you when live mode opens and during the conversation.") {
+            androidx.compose.material3.OutlinedTextField(
+                value = address, onValueChange = { address = it.take(40); VoicePrefs.setAddress(context, address) },
+                label = { Text("Call me…") }, placeholder = { Text("Sir, Boss, your name… (empty = the style decides)") },
+                singleLine = true, modifier = Modifier.fillMaxWidth().testTag("voice-address"),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Greet me when live mode opens", style = MaterialTheme.typography.bodyMedium)
+                    Text("e.g. AI Butler: \"Good evening, Sir. All systems are ready.\"", style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted)
+                }
+                androidx.compose.material3.Switch(checked = greet, onCheckedChange = { greet = it; VoicePrefs.setGreet(context, it) }, modifier = Modifier.testTag("voice-greet"))
+            }
+        }
+
+        VoiceCard("Voice", "The phone's own voices. Hindi and Hinglish use the Hindi voice; English uses the accent you pick.") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = hindiTab, onClick = { hindiTab = true }, label = { Text("हिंदी / Hinglish") })
                 FilterChip(selected = !hindiTab, onClick = { hindiTab = false }, label = { Text("English") })
+            }
+            if (!hindiTab) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("IN" to "Indian", "GB" to "British", "US" to "American").forEach { (code, label) ->
+                        FilterChip(
+                            selected = accent == code,
+                            onClick = { accent = code; englishVoice = null; VoicePrefs.setAccent(context, code); preview(VoiceStyles.byId(styleId), false) },
+                            label = { Text(label) }, modifier = Modifier.testTag("voice-accent-$code"),
+                        )
+                    }
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("all" to "All", "female" to "Female", "male" to "Male").forEach { (key, label) ->

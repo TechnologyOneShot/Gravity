@@ -306,7 +306,8 @@ class UiNavigationTest {
         compose.onNodeWithTag("live-lang-hindi").performClick()
         compose.onNodeWithTag("live-lang-english").performClick()
         // Either it is really listening, or it says why it cannot (e.g. no speech service on the emulator).
-        assertTrue("Live mode shows neither listening nor a reason: status=$status", status.startsWith("Listening") || problem != null || status.startsWith("Tap"))
+        // (or is still saying its greeting, when the emulator has a text-to-speech voice)
+        assertTrue("Live mode shows neither listening nor a reason: status=$status", status.startsWith("Listening") || problem != null || status.startsWith("Tap") || status.startsWith("Speaking"))
         compose.onNodeWithTag("live-end").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("live-dialog").fetchSemanticsNodes().isEmpty() }
     }

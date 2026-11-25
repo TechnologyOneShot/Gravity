@@ -21,6 +21,18 @@ object VoiceStyles {
     val all: List<Style> = listOf(
         Style("friend", "Friendly", "दोस्त जैसा", 1.0f, 1.0f, 0,
             "Talk like a warm, caring close friend: natural, easy and cheerful."),
+        // Original assistant personalities in the spirit of film and desktop AI assistants.
+        Style("butler", "AI Butler", "स्मार्ट AI असिस्टेंट (सर / बॉस)", 1.0f, 0.92f, 160,
+            "You are a highly capable personal AI butler, like the assistant of a genius inventor: calm, polite, precise and quietly " +
+                "confident, with light dry wit. Address the user as {you}. Give the answer first in one crisp sentence, then offer the " +
+                "next step (for example \"Shall I…?\"). Composed, never overexcited, never long-winded."),
+        Style("companion", "Companion", "दिल से बात करने वाला साथी", 1.04f, 1.04f, 60,
+            "Talk like a warm, expressive companion in a real back-and-forth conversation: relaxed and natural, react first to what " +
+                "the user said (\"Oh nice!\", \"Hmm, samjha\"), show real feeling, keep it short and often ask something back. " +
+                "A light filler now and then is fine; no rambling."),
+        Style("mission", "Mission Control", "मिशन कंट्रोल (फटाफट रिपोर्ट)", 1.08f, 0.98f, 100,
+            "Talk like a sharp mission-control AI giving status reports: crisp, efficient and confident. Address the user as {you}. " +
+                "Short sentences, key facts first, numbers when useful, then \"Ready for the next one.\""),
         Style("romantic", "Romantic", "रोमांटिक", 0.9f, 1.04f, 220,
             "Talk in a soft, tender, romantic way, like someone deeply in love: gentle, sweet and poetic, never vulgar."),
         Style("sad", "Sad / emotional", "उदास / भावुक", 0.84f, 0.92f, 320,
@@ -42,6 +54,56 @@ object VoiceStyles {
     )
 
     fun byId(id: String?): Style = all.firstOrNull { it.id == id } ?: all.first()
+
+    /** How a style addresses the user when they have not said: the butler says Sir, mission control Boss. */
+    fun defaultAddress(style: Style, hindi: Boolean): String? = when (style.id) {
+        "butler" -> if (hindi) "सर" else "Sir"
+        "mission" -> if (hindi) "बॉस" else "Boss"
+        else -> null
+    }
+
+    /**
+     * What the AI is told in live mode: the style's personality, how to address the user, and —
+     * so Hindi sounds right — grammar that matches the voice (a woman's voice says "कर सकती हूँ").
+     */
+    fun personaFor(style: Style, address: String?, voiceGender: String?, hindi: Boolean): String = buildString {
+        val name = address?.trim()?.takeIf { it.isNotEmpty() }
+        val you = name ?: defaultAddress(style, hindi) ?: "the user"
+        append(style.persona.replace("{you}", "\"$you\""))
+        if (name != null && !style.persona.contains("{you}")) append(" Call the user \"$name\" now and then.")
+        when (voiceGender) {
+            "female" -> append(" Your voice is a woman's: in Hindi use feminine forms for yourself (मैं कर सकती हूँ, मैं सुन रही हूँ).")
+            "male" -> append(" Your voice is a man's: in Hindi use masculine forms for yourself (मैं कर सकता हूँ, मैं सुन रहा हूँ).")
+        }
+    }
+
+    /** The line live mode says when it opens (part of the app, not an AI answer). */
+    fun greeting(style: Style, hindi: Boolean, address: String?, hour: Int, female: Boolean): String {
+        val name = address?.trim()?.takeIf { it.isNotEmpty() } ?: defaultAddress(style, hindi)
+        val listening = if (female) "सुन रही हूँ" else "सुन रहा हूँ"
+        return when (style.id) {
+            "butler" -> if (hindi) {
+                "${hindiDaypart(hour)}, ${name ?: "सर"}। सब तैयार है। बताइए, क्या करना है?"
+            } else {
+                "${englishDaypart(hour)}, ${name ?: "Sir"}. All systems are ready. What shall we do?"
+            }
+            "mission" -> if (hindi) "${name ?: "बॉस"}, सिस्टम ऑनलाइन। अगला काम बताइए।" else "Systems online, ${name ?: "Boss"}. Ready for your next task."
+            "companion" -> if (hindi) "हाय${name?.let { " $it" } ?: ""}! कैसा चल रहा है? मैं $listening।" else "Hey${name?.let { " $it" } ?: ""}! How's it going? I'm listening."
+            else -> if (hindi) "हाँ${name?.let { " $it" } ?: ""}, बोलिए! मैं $listening।" else "Hi${name?.let { " $it" } ?: ""}! I'm listening."
+        }
+    }
+
+    private fun englishDaypart(hour: Int) = when (hour) {
+        in 5..11 -> "Good morning"
+        in 12..16 -> "Good afternoon"
+        else -> "Good evening"
+    }
+
+    private fun hindiDaypart(hour: Int) = when (hour) {
+        in 5..11 -> "सुप्रभात"
+        in 12..16 -> "नमस्कार"
+        else -> "शुभ संध्या"
+    }
 
     /** The style's speed and pitch on top of the user's own speed and pitch settings. */
     fun rate(style: Style, userRate: Float) = (style.rate * userRate).coerceIn(0.5f, 2.0f)

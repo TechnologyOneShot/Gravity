@@ -32,7 +32,20 @@ object VoicePrefs {
     fun setVoice(context: Context, hindi: Boolean, name: String?) =
         prefs(context).edit().apply { if (name == null) remove(if (hindi) HINDI else ENGLISH) else putString(if (hindi) HINDI else ENGLISH, name) }.apply()
 
+    /** How Gravity addresses the user in live mode ("Sir", "Boss", a name); blank = the style's own way. */
+    fun address(context: Context): String = prefs(context).getString("address", "").orEmpty()
+    fun setAddress(context: Context, v: String) = prefs(context).edit().putString("address", v.trim().take(40)).apply()
+
+    /** Live mode greets the user when it opens (on by default). */
+    fun greet(context: Context): Boolean = prefs(context).getBoolean("greet", true)
+    fun setGreet(context: Context, on: Boolean) = prefs(context).edit().putBoolean("greet", on).apply()
+
+    /** English voice accent: IN (India), GB (British) or US. */
+    fun accent(context: Context): String = prefs(context).getString("accent", "IN") ?: "IN"
+    fun setAccent(context: Context, v: String) = prefs(context).edit().putString("accent", v).remove(ENGLISH).apply() // voices differ per accent
+
     fun locale(hindi: Boolean): Locale = Locale.forLanguageTag(if (hindi) "hi-IN" else "en-IN")
+    fun locale(context: Context, hindi: Boolean): Locale = if (hindi) locale(true) else Locale.forLanguageTag("en-${accent(context)}")
 
     /** True when [text] is mostly Hindi in Devanagari (then a Hindi voice reads it). */
     fun isHindi(text: String): Boolean {
@@ -43,7 +56,7 @@ object VoicePrefs {
 
     /** Sets language, voice, speed and pitch on [tts]; [style] overrides the saved one (e.g. a preview). */
     fun apply(context: Context, tts: TextToSpeech, hindi: Boolean, style: VoiceStyles.Style = style(context), voice: Voice? = null): Int {
-        val locale = locale(hindi)
+        val locale = locale(context, hindi)
         val result = tts.setLanguage(locale)
         (voice ?: VoicePicker.choose(tts, locale, voiceName(context, hindi)))?.let { tts.setVoice(it) }
         tts.setSpeechRate(VoiceStyles.rate(style, rate(context)))
@@ -80,6 +93,9 @@ object VoicePrefs {
         "news" -> if (hindi) "नमस्कार, आज की मुख्य ख़बरें इस प्रकार हैं।" else "Good evening, here are today's top stories."
         "teacher" -> if (hindi) "चलो इसे आसान तरीके से समझते हैं।" else "Let us understand this in a simple way."
         "poet" -> if (hindi) "चाँद भी शरमा जाए, ऐसी तेरी बात है।" else "Even the moon would blush at the way you smile."
+        "butler" -> if (hindi) "जी सर, काम हो गया। आगे क्या करना है?" else "Done, Sir. Shall I prepare the next one?"
+        "companion" -> if (hindi) "अरे वाह, सच में? फिर क्या हुआ, बताओ ना!" else "Oh wow, really? Then what happened? Tell me!"
+        "mission" -> if (hindi) "तीन काम पूरे, एक बाकी। अगला काम बताइए, बॉस।" else "Three tasks complete, one remaining. Ready for the next one, Boss."
         else -> if (hindi) "नमस्ते दोस्त! बताओ, आज क्या बात करें?" else "Hey friend! What shall we talk about today?"
     }
 }

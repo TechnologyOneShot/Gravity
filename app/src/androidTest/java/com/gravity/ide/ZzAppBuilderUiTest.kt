@@ -111,6 +111,15 @@ class ZzAppBuilderUiTest {
         Ci.log("builder-ui", "Chat after the build: ${visibleText().take(1200)}")
         Ci.screenshot("07b_app_card_ready")
         assertTrue("The build did not finish as Ready", compose.onAllNodesWithText("Ready").fetchSemanticsNodes().isNotEmpty())
+        // What the builder did, step by step (from its real log), and the app running inside the chat.
+        compose.onAllNodesWithTag("app-card-show-steps")[0].performClick()
+        compose.waitForIdle()
+        Ci.log("builder-ui", "Steps shown in the chat: ${visibleText().take(900)}")
+        assertTrue("No build steps were shown", visibleText().contains("Tested it"))
+        compose.onAllNodesWithTag("preview-app")[0].performClick()
+        waitFor("preview in the chat", 30_000) { compose.onAllNodesWithTag("app-preview").fetchSemanticsNodes().isNotEmpty() }
+        Thread.sleep(2500)
+        Ci.screenshot("07b2_app_preview_in_chat")
         compose.onAllNodesWithTag("open-app")[0].performClick()
         waitFor("App screen", 60_000) { title() == "App" }
         waitFor("finished app", 60_000) { compose.onAllNodesWithTag("app-summary").fetchSemanticsNodes().isNotEmpty() }

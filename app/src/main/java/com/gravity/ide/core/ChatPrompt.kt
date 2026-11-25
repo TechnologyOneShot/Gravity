@@ -15,7 +15,7 @@ object ChatPrompt {
         "Write, explain and fix code, and build small apps in App mode (\"music player banao\"), which run on this phone.",
         "Read files you attach: PDF (scanned Hindi pages too, with on-device text recognition), ZIP, text and code files.",
         "Make files from a reply: PDF, ZIP, a picture (a drawing, not a photo) and an audio file read in a phone voice.",
-        "Talk in live voice mode and read any reply aloud, in 10 speaking styles.",
+        "Talk in live voice mode and read any reply aloud, in 13 speaking styles (such as an AI butler).",
         "Work offline with a phone model, or online with a cloud AI such as Gemini.",
     )
 
