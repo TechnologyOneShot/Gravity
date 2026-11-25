@@ -98,6 +98,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -259,6 +260,7 @@ internal fun ChatBubble(
     onOpenUrl: (String) -> Unit,
     onOpenApp: (String) -> Unit = {},
     onRetryApp: (projectId: String, taskId: String) -> Unit = { _, _ -> },
+    onMake: (com.gravity.ide.core.MakeFiles.Kind) -> Unit = {},
 ) {
     val atts = remember(m.attachments) {
         runCatching { JSONArray(m.attachments) }.getOrNull()?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: emptyList()
@@ -324,9 +326,38 @@ internal fun ChatBubble(
                 }
             }
         }
+        // Files made from this reply (PDF, ZIP, PNG, WAV).
+        atts.filter { it.optString("kind") == "file" }.forEach { f ->
+            Spacer(Modifier.height(8.dp))
+            MadeFileCard(f.optString("name"), f.optString("path"), f.optString("mime"), f.optLong("size"))
+        }
         if (m.content.isNotBlank()) {
+            var makeMenu by remember { mutableStateOf(false) }
+            val canZip = remember(m.content) { com.gravity.ide.core.MakeFiles.codeFiles(m.content).isNotEmpty() }
+            val canImage = remember(m.content) { com.gravity.ide.core.MakeFiles.svg(m.content) != null }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SmallAction(Icons.Filled.ContentCopy, "Copy reply", onCopy)
+                Box {
+                    SmallAction(Icons.Filled.Download, "Save as a file", { makeMenu = true })
+                    DropdownMenu(expanded = makeMenu, onDismissRequest = { makeMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("PDF") }, leadingIcon = { Icon(Icons.Filled.PictureAsPdf, null) },
+                            onClick = { makeMenu = false; onMake(com.gravity.ide.core.MakeFiles.Kind.PDF) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Audio (read aloud)") }, leadingIcon = { Icon(Icons.Filled.GraphicEq, null) },
+                            onClick = { makeMenu = false; onMake(com.gravity.ide.core.MakeFiles.Kind.AUDIO) },
+                        )
+                        if (canZip) DropdownMenuItem(
+                            text = { Text("ZIP of the code") }, leadingIcon = { Icon(Icons.Filled.FolderZip, null) },
+                            onClick = { makeMenu = false; onMake(com.gravity.ide.core.MakeFiles.Kind.ZIP) },
+                        )
+                        if (canImage) DropdownMenuItem(
+                            text = { Text("Picture (PNG)") }, leadingIcon = { Icon(Icons.Filled.Image, null) },
+                            onClick = { makeMenu = false; onMake(com.gravity.ide.core.MakeFiles.Kind.IMAGE) },
+                        )
+                    }
+                }
                 if (isLast && !busy) SmallAction(Icons.Filled.Refresh, "Regenerate reply", onRetry)
                 SmallAction(Icons.Filled.Share, "Share reply", onShare)
                 SmallAction(Icons.Filled.Delete, "Delete reply", onDelete)
@@ -978,6 +1009,66 @@ fun CodeBlock(code: String, language: String?) {
             }
             Box(Modifier.horizontalScroll(rememberScrollState()).padding(12.dp)) {
                 Text(code, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 18.sp, color = Color(0xFFE2E8F0), softWrap = false)
+            }
+        }
+    }
+}
+
+/** A file Gravity made from a reply: preview for pictures, Open and Share. */
+@Composable
+private fun MadeFileCard(name: String, path: String, mime: String, size: Long) {
+    val context = LocalContext.current
+    val file = remember(path) { java.io.File(path) }
+    val thumb = remember(path) {
+        if (mime.startsWith("image/") && file.isFile) runCatching {
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
+            android.graphics.BitmapFactory.decodeFile(path, opts)?.asImageBitmap()
+        }.getOrNull() else null
+    }
+    fun uri() = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    Surface(
+        shape = RoundedCornerShape(16.dp), color = GravityColors.SurfaceHigh, border = BorderStroke(1.dp, GravityColors.Outline),
+        modifier = Modifier.fillMaxWidth().testTag("made-file"),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            thumb?.let {
+                androidx.compose.foundation.Image(
+                    it, name, contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).clip(RoundedCornerShape(10.dp)),
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    when {
+                        mime == "application/pdf" -> Icons.Filled.PictureAsPdf
+                        mime == "application/zip" -> Icons.Filled.FolderZip
+                        mime.startsWith("image/") -> Icons.Filled.Image
+                        mime.startsWith("audio/") -> Icons.Filled.GraphicEq
+                        else -> Icons.Filled.Description
+                    },
+                    null, tint = GravityColors.Accent, modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (file.isFile) formatBytes(size) else "File was removed", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted)
+                }
+                if (file.isFile) {
+                    TextButton(onClick = {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(uri(), mime)
+                                    .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }.onFailure { toast(context, "No app on this phone opens ${file.extension.uppercase()} files; use Share") }
+                    }) { Text("Open") }
+                    TextButton(onClick = {
+                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType(mime)
+                            .putExtra(android.content.Intent.EXTRA_STREAM, uri()).addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        context.startActivity(android.content.Intent.createChooser(send, "Share $name").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }) { Text("Share") }
+                }
             }
         }
     }

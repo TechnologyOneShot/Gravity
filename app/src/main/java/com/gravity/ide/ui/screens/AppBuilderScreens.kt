@@ -363,7 +363,8 @@ fun AppScreen(projectId: String, go: (String) -> Unit) {
 
     fun submitChange(text: String) {
         scope.launch {
-            runCatching { c.appBuilder.change(p, text) }
+            // Same AI that built this app (e.g. the phone model), unless none is recorded.
+            runCatching { c.appBuilder.latestTask(p.id).let { last -> c.appBuilder.change(p, text, last?.providerId, last?.model) } }
                 .onSuccess { change = "" }
                 .onFailure { toast(context, it.message ?: "Could not start the change") }
         }

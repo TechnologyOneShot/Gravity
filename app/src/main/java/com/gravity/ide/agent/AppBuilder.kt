@@ -24,24 +24,27 @@ class AppBuilder(
     private val checkpoints: CheckpointManager,
     private val events: EventLog,
 ) {
-    /** Creates the app project and starts the build run. Returns the project and the task id. */
-    suspend fun create(request: String): Pair<ProjectEntity, String> {
+    /**
+     * Creates the app project and starts the build run with the given AI ([providerId]/[model]:
+     * the model chosen in the chat; null = the default AI). Returns the project and the task id.
+     */
+    suspend fun create(request: String, providerId: String? = null, model: String? = null): Pair<ProjectEntity, String> {
         val text = request.trim()
         require(text.isNotEmpty()) { "Describe the app you want." }
         val project = workspace.createProject(nameFor(text), ProjectTemplate.WEB_APP)
         File(project.rootPath, "GRAVITY.md").writeText(projectNotes(project.name, text))
-        val taskId = agent.create(project.id, buildInstruction(text), null, null, ReasoningMode.BALANCED, null)
+        val taskId = agent.create(project.id, buildInstruction(text), providerId, model, ReasoningMode.BALANCED, null)
         events.log(EventCategory.AGENT, "App Builder: building ${project.name}", text, taskId = taskId, projectId = project.id)
         agent.start(taskId)
         return project to taskId
     }
 
     /** Starts a run that applies [request] to an existing app. Returns the task id. */
-    suspend fun change(project: ProjectEntity, request: String): String {
+    suspend fun change(project: ProjectEntity, request: String, providerId: String? = null, model: String? = null): String {
         val text = request.trim()
         require(text.isNotEmpty()) { "Describe the change." }
         File(project.rootPath, "GRAVITY.md").appendText("\n- Change requested: ${text.replace('\n', ' ')}\n")
-        val taskId = agent.create(project.id, changeInstruction(text), null, null, ReasoningMode.BALANCED, null)
+        val taskId = agent.create(project.id, changeInstruction(text), providerId, model, ReasoningMode.BALANCED, null)
         events.log(EventCategory.AGENT, "App Builder: change to ${project.name}", text, taskId = taskId, projectId = project.id)
         agent.start(taskId)
         return taskId
@@ -49,7 +52,8 @@ class AppBuilder(
 
     /** Runs a failed or stopped instruction again as a fresh run. Returns the new task id. */
     suspend fun retry(project: ProjectEntity, task: AgentTaskEntity): String {
-        val taskId = agent.create(project.id, task.instruction, null, null, ReasoningMode.BALANCED, null)
+        // Same AI as the run being retried (e.g. the phone model the user chose).
+        val taskId = agent.create(project.id, task.instruction, task.providerId, task.model, ReasoningMode.BALANCED, null)
         agent.start(taskId)
         return taskId
     }

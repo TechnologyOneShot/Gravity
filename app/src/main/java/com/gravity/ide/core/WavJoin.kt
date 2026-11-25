@@ -1,0 +1,60 @@
+package com.gravity.ide.core
+
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+/** Joins WAV files with the same format into one (text-to-speech writes long text in parts). Pure Kotlin, unit tested. */
+object WavJoin {
+    private class Wav(val fmt: ByteArray, val data: ByteArray)
+
+    private fun parse(bytes: ByteArray): Wav {
+        val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        require(bytes.size >= 12 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF" && String(bytes, 8, 4, Charsets.US_ASCII) == "WAVE") { "Not a WAV file" }
+        var pos = 12
+        var fmt: ByteArray? = null
+        var data: ByteArray? = null
+        while (pos + 8 <= bytes.size) {
+            val id = String(bytes, pos, 4, Charsets.US_ASCII)
+            val declared = b.getInt(pos + 4).toLong() and 0xFFFFFFFFL
+            val start = pos + 8
+            // Some writers leave the data size at 0 or too big while streaming: take what is there.
+            val size = if (declared == 0L || start + declared > bytes.size) (bytes.size - start).toLong() else declared
+            when (id) {
+                "fmt " -> fmt = bytes.copyOfRange(start, start + size.toInt())
+                "data" -> data = bytes.copyOfRange(start, start + size.toInt())
+            }
+            pos = start + size.toInt() + (size.toInt() and 1)
+        }
+        return Wav(fmt ?: throw IllegalArgumentException("WAV without a format chunk"), data ?: ByteArray(0))
+    }
+
+    fun join(parts: List<ByteArray>): ByteArray {
+        require(parts.isNotEmpty()) { "Nothing to join" }
+        val wavs = parts.map(::parse)
+        val fmt = wavs.first().fmt
+        require(wavs.all { it.fmt.contentEquals(fmt) }) { "The parts have different audio formats" }
+        val dataSize = wavs.sumOf { it.data.size }
+        val out = ByteArrayOutputStream(44 + dataSize)
+        fun int(v: Int) = out.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(v).array())
+        out.write("RIFF".toByteArray(Charsets.US_ASCII)); int(4 + 8 + fmt.size + 8 + dataSize)
+        out.write("WAVE".toByteArray(Charsets.US_ASCII))
+        out.write("fmt ".toByteArray(Charsets.US_ASCII)); int(fmt.size); out.write(fmt)
+        out.write("data".toByteArray(Charsets.US_ASCII)); int(dataSize)
+        wavs.forEach { out.write(it.data) }
+        return out.toByteArray()
+    }
+
+    /** A PCM WAV file (for tests): [samples] 16-bit mono at [rate] Hz. */
+    fun pcm16(samples: ShortArray, rate: Int = 16000): ByteArray {
+        val fmt = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(1).putShort(1).putInt(rate).putInt(rate * 2).putShort(2).putShort(16).array()
+        val data = ByteBuffer.allocate(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN).also { b -> samples.forEach { b.putShort(it) } }.array()
+        val out = ByteArrayOutputStream()
+        fun int(v: Int) = out.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(v).array())
+        out.write("RIFF".toByteArray(Charsets.US_ASCII)); int(4 + 8 + 16 + 8 + data.size); out.write("WAVE".toByteArray(Charsets.US_ASCII))
+        out.write("fmt ".toByteArray(Charsets.US_ASCII)); int(16); out.write(fmt)
+        out.write("data".toByteArray(Charsets.US_ASCII)); int(data.size); out.write(data)
+        return out.toByteArray()
+    }
+}

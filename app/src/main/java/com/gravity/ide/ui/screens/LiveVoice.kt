@@ -71,10 +71,19 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Languages for live voice mode: what the phone listens for, how the reply is spoken, what the AI is told. */
 internal enum class LiveLanguage(val label: String, val recognizeTag: String, val voice: Locale, val forModel: String) {
-    HINGLISH("Hinglish", "en-IN", Locale.forLanguageTag("en-IN"), "Hinglish (Hindi written in Latin letters, mixed with English)"),
-    HINDI("हिंदी", "hi-IN", Locale.forLanguageTag("hi-IN"), "Hindi, written in Devanagari script"),
-    ENGLISH("English", "en-IN", Locale.forLanguageTag("en-IN"), "English"),
+    // Hinglish is heard with the Hindi recognizer (it knows Hindi words and English ones) and spoken
+    // with a Hindi voice; Hindi words come in Devanagari so that voice pronounces them right.
+    HINGLISH(
+        "Hinglish", "hi-IN", Locale.forLanguageTag("hi-IN"),
+        "Hinglish: mix Hindi and English the way people in India talk. Write the Hindi words in Devanagari and the English words " +
+            "in English letters (for example: \"आज का weather काफी pleasant है\"), so the voice pronounces both correctly",
+    ),
+    HINDI("हिंदी", "hi-IN", Locale.forLanguageTag("hi-IN"), "Hindi, written in Devanagari script, in simple everyday Hindi"),
+    ENGLISH("English", "en-IN", Locale.forLanguageTag("en-IN"), "clear, simple English"),
 }
+
+/** Speaking speeds offered in live mode. */
+private val speeds = listOf("Slow" to 0.85f, "Normal" to 1.0f, "Fast" to 1.2f)
 
 private enum class LivePhase { IDLE, LISTENING, THINKING, SPEAKING }
 
@@ -101,6 +110,14 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
     val listenNow = remember { mutableStateOf<() -> Unit>({}) }
 
     val tts = remember { TextToSpeech(context.applicationContext) { status -> main.post { ttsReady = status == TextToSpeech.SUCCESS } } }
+    val prefs = remember { context.getSharedPreferences("live_voice", android.content.Context.MODE_PRIVATE) }
+    var rate by remember { mutableStateOf(prefs.getFloat("rate", 1.0f)) }
+    // The voice chosen for each language (null = the clearest installed one, see VoicePicker).
+    var voiceName by remember(language) { mutableStateOf(prefs.getString("voice_${language.name}", null)) }
+    val voices = remember(ttsReady, language) {
+        if (ttsReady == true) com.gravity.ide.files.VoicePicker.voices(tts, language.voice) else emptyList()
+    }
+    var voiceMenu by remember { mutableStateOf(false) }
     val recognizer = remember { if (SpeechRecognizer.isRecognitionAvailable(context)) SpeechRecognizer.createSpeechRecognizer(context) else null }
 
     DisposableEffect(Unit) {
@@ -162,6 +179,10 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
             problem = "This phone has no ${language.label} voice installed, so another voice reads the reply. Add one in Android Settings → Text-to-speech."
         }
+        // The clearest installed voice for the language (or the one picked below), at the chosen speed.
+        com.gravity.ide.files.VoicePicker.choose(tts, language.voice, voiceName)?.let { tts.setVoice(it) }
+        tts.setSpeechRate(rate)
+        tts.setPitch(1.0f)
         phase = LivePhase.SPEAKING
         val parts = SpeechText.chunks(clean, 3500)
         parts.forEachIndexed { i, part ->
@@ -281,6 +302,41 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                             },
                             label = { Text(l.label) },
                             modifier = Modifier.testTag("live-lang-${l.name.lowercase()}"),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box {
+                        val current = voices.indexOfFirst { it.name == voiceName }.let { if (it < 0) 0 else it }
+                        androidx.compose.material3.TextButton(onClick = { voiceMenu = true }, enabled = voices.isNotEmpty(), modifier = Modifier.testTag("live-voice")) {
+                            Text(if (voices.isEmpty()) "No ${language.label} voice installed" else "Voice ${current + 1} ▾")
+                        }
+                        androidx.compose.material3.DropdownMenu(expanded = voiceMenu, onDismissRequest = { voiceMenu = false }) {
+                            voices.forEachIndexed { i, v ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(com.gravity.ide.files.VoicePicker.label(v, i)) },
+                                    onClick = {
+                                        voiceMenu = false
+                                        voiceName = v.name
+                                        prefs.edit().putString("voice_${language.name}", v.name).apply()
+                                        // Say a few words so the voice can be heard right away.
+                                        if (phase != LivePhase.LISTENING) {
+                                            tts.setLanguage(language.voice)
+                                            tts.setVoice(v)
+                                            tts.setSpeechRate(rate)
+                                            tts.speak(if (language == LiveLanguage.ENGLISH) "Hello! This is my voice." else "नमस्ते! मेरी आवाज़ ऐसी है।", TextToSpeech.QUEUE_FLUSH, null, "voice-sample")
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    speeds.forEach { (label, value) ->
+                        FilterChip(
+                            selected = rate == value,
+                            onClick = { rate = value; prefs.edit().putFloat("rate", value).apply() },
+                            label = { Text(label) },
                         )
                     }
                 }

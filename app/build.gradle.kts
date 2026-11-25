@@ -170,6 +170,9 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
+    implementation(libs.pdfbox.android)
+    implementation(libs.mlkit.text.devanagari)
+    implementation(libs.androidsvg)
 
     testImplementation(libs.junit)
     testImplementation(libs.org.json)

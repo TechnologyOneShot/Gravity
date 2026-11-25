@@ -18,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.clip
 import com.gravity.ide.ui.theme.DisplayFamily
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -168,6 +169,8 @@ fun GravityRoot() {
                         }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                    // Thinner than Material's 64dp bar, so the chat gets more of the screen.
+                    expandedHeight = 48.dp,
                 )
             },
         ) { padding ->
@@ -198,22 +201,36 @@ private fun GravitySidebar(route: String?, go: (String) -> Unit) {
     val recents = chats.filter { it.title.isNotBlank() && it.title != "New chat" }.sortedByDescending { it.updatedAt }.take(30)
     var devOpen by rememberSaveable { mutableStateOf(false) }
 
+    /** One compact sidebar row (less space between rows than Material's 56dp items). */
+    @Composable
+    fun Row1(
+        label: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, selected: Boolean, onClick: () -> Unit,
+        modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null,
+    ) {
+        Row(
+            modifier.padding(horizontal = 12.dp).fillMaxWidth().height(38.dp).clip(RoundedCornerShape(50))
+                .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                .clickable(onClick = onClick).padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) {
+                Icon(icon, null, modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(14.dp))
+            }
+            Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            trailing?.invoke()
+        }
+    }
+
     @Composable
     fun Entry(item: NavItem) {
         val selected = route?.substringBefore('?') == item.route.substringBefore('?')
-        NavigationDrawerItem(
-            label = { Text(item.label) },
-            icon = { Icon(item.icon, null, modifier = Modifier.size(20.dp)) },
-            selected = selected,
-            onClick = { go(item.route) },
-            colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-            modifier = Modifier.padding(horizontal = 12.dp).height(44.dp).testTag("nav:${item.label}"),
-        )
+        Row1(item.label, item.icon, selected, { go(item.route) }, Modifier.testTag("nav:${item.label}"))
     }
 
     @Composable
     fun Header(text: String) {
-        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp, top = 16.dp, bottom = 4.dp))
+        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 26.dp, top = 12.dp, bottom = 2.dp))
     }
 
     ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow, drawerShape = RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp)) {
@@ -235,44 +252,22 @@ private fun GravitySidebar(route: String?, go: (String) -> Unit) {
                     Text("New chat", color = GravityColors.OnAccent, fontWeight = FontWeight.SemiBold)
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             mainItems.filter { it.route != Routes.NEW_CHAT && it.route != Routes.SETTINGS }.forEach { Entry(it) }
             if (apps.isNotEmpty()) {
                 Header("Your apps")
-                apps.forEach { p ->
-                    NavigationDrawerItem(
-                        label = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        icon = { Icon(Icons.Filled.PhoneAndroid, null, modifier = Modifier.size(18.dp)) },
-                        selected = false,
-                        onClick = { go(Routes.app(p.id)) },
-                        colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                        modifier = Modifier.padding(horizontal = 12.dp).height(40.dp),
-                    )
-                }
+                apps.forEach { p -> Row1(p.name, Icons.Filled.PhoneAndroid, false, { go(Routes.app(p.id)) }) }
             }
             if (recents.isNotEmpty()) {
                 Header("Recents")
-                recents.forEach { ch ->
-                    NavigationDrawerItem(
-                        label = { Text(ch.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        selected = false,
-                        onClick = { go(Routes.chat(ch.id)) },
-                        colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                        modifier = Modifier.padding(horizontal = 12.dp).height(40.dp),
-                    )
-                }
+                recents.forEach { ch -> Row1(ch.title, null, route?.contains(ch.id) == true, { go(Routes.chat(ch.id)) }) }
             }
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant)
             mainItems.filter { it.route == Routes.SETTINGS }.forEach { Entry(it) }
-            NavigationDrawerItem(
-                label = { Text("Developer tools") },
-                icon = { Icon(Icons.Filled.Code, null, modifier = Modifier.size(20.dp)) },
-                badge = { Icon(if (devOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null) },
-                selected = false,
-                onClick = { devOpen = !devOpen },
-                colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                modifier = Modifier.padding(horizontal = 12.dp).height(44.dp).testTag("nav:Developer tools"),
+            Row1(
+                "Developer tools", Icons.Filled.Code, false, { devOpen = !devOpen }, Modifier.testTag("nav:Developer tools"),
+                trailing = { Icon(if (devOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, modifier = Modifier.size(20.dp)) },
             )
             if (devOpen) devItems.forEach { Entry(it) }
         }

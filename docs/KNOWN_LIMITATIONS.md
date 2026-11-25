@@ -45,3 +45,10 @@ The specification asks Gravity never to fake a feature. This file lists everythi
 | 37 | Landscape layouts | Screens reflow but have no dedicated two-pane landscape layout. |
 | 38 | Migrations | Schema v1. Future versions must add migrations. |
 | — | Cleartext HTTP | Allowed app-wide for LAN model servers. The provider screen warns about public `http://` hosts. |
+
+## Files Gravity makes, voice and PDFs (added 2026-11-25)
+
+- **Pictures are drawings, not photos.** "Image banao" asks the AI to draw an SVG, which Gravity turns into a PNG on the phone (AndroidSVG). It is free and has no limit, but the picture is only as good as the AI's drawing: Gemini draws much better than small phone models, and it cannot make photo-realistic images.
+- **Audio is the phone's text-to-speech voice reading the reply** (WAV). It is not music or a cloned voice. How clear it sounds depends on the voices installed on the phone (Android Settings → Text-to-speech); Gravity picks the clearest installed voice for Hindi or English and lets you choose another in live mode.
+- **PDF reading:** text PDFs are read from their text layer; scanned PDFs and Hindi typed in old fonts (Kruti Dev etc.) are read with on-device OCR (ML Kit, Devanagari + Latin), up to 60 pages. OCR can misread small, faint or handwritten text. A phone model gets as much of the text as fits its memory (context) and is told when the rest was left out.
+- **Live mode speech recognition** is the phone's own service (usually Google). It may need the internet unless the offline speech pack for the language is installed.

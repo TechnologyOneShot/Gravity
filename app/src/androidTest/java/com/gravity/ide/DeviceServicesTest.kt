@@ -546,4 +546,77 @@ class DeviceServicesTest {
             scenario.close()
         }
     }
+
+    @Test
+    fun t15_pdfIsReadFromItsTextLayerAndWithOcr() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        fun makePdf(file: java.io.File, asPicture: Boolean) {
+            val doc = android.graphics.pdf.PdfDocument()
+            val page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create())
+            val paint = android.graphics.Paint().apply { textSize = 22f; color = android.graphics.Color.BLACK; isAntiAlias = true }
+            val lines = listOf("School Rules", "Students must arrive by 8 AM.", "विद्यालय के नियम", "सभी छात्र समय पर आएँ।")
+            if (asPicture) {
+                // Text drawn into a picture: the PDF has no text layer, like a scanned page.
+                val bmp = android.graphics.Bitmap.createBitmap(1190, 1684, android.graphics.Bitmap.Config.ARGB_8888)
+                val c = android.graphics.Canvas(bmp)
+                c.drawColor(android.graphics.Color.WHITE)
+                val big = android.graphics.Paint(paint).apply { textSize = 56f }
+                lines.forEachIndexed { i, l -> c.drawText(l, 80f, 160f + i * 110f, big) }
+                page.canvas.drawBitmap(bmp, null, android.graphics.Rect(0, 0, 595, 842), null)
+            } else {
+                lines.forEachIndexed { i, l -> page.canvas.drawText(l, 40f, 80f + i * 40f, paint) }
+            }
+            doc.finishPage(page)
+            file.outputStream().use { doc.writeTo(it) }
+            doc.close()
+        }
+        val textPdf = java.io.File(ctx.cacheDir, "rules-text.pdf").also { makePdf(it, asPicture = false) }
+        val scanPdf = java.io.File(ctx.cacheDir, "rules-scan.pdf").also { makePdf(it, asPicture = true) }
+
+        val a = com.gravity.ide.files.PdfReader.read(ctx, Uri.fromFile(textPdf))
+        Ci.log("pdf", "Text PDF via ${a.method}: ${a.text.replace('\n', ' ').take(300)}")
+        val b = com.gravity.ide.files.PdfReader.read(ctx, Uri.fromFile(scanPdf))
+        Ci.log("pdf", "Scanned PDF via ${b.method}: ${b.text.replace('\n', ' ').take(300)}")
+        textPdf.delete(); scanPdf.delete()
+        assertTrue("A short text page is read with OCR or from its text: ${a.text}", a.text.contains("Students must arrive", ignoreCase = true))
+        assertEquals("on-device OCR", b.method)
+        assertTrue("OCR did not read the English line: ${b.text}", b.text.contains("arrive", ignoreCase = true))
+        assertTrue("OCR did not read the Hindi line: ${b.text}", b.text.contains("नियम") || b.text.contains("छात्र"))
+    }
+
+    @Test
+    fun t16_filesAreMadeOnThePhone() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val reply = "# School Rules\nविद्यालय के नियम: सभी छात्र समय पर आएँ।\n\n## Timing\n- Arrive by 8 AM\n- Leave at 2 PM\n\n" +
+            "File: index.html\n```html\n<html><body>Hi</body></html>\n```\n```svg\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 50\">" +
+            "<rect width=\"100\" height=\"50\" fill=\"#00e5ff\"/><circle cx=\"25\" cy=\"25\" r=\"20\" fill=\"#ff4d6d\"/></svg>\n```"
+        val pdf = com.gravity.ide.files.FileMaker.pdf(ctx, "rules", reply)
+        val back = com.gravity.ide.files.PdfReader.read(ctx, Uri.fromFile(pdf), previewPages = 0)
+        Ci.log("make", "PDF ${pdf.length()} bytes, ${back.pages} page(s), read back via ${back.method}: ${back.text.replace('\n', ' ').take(200)}")
+        assertTrue("The PDF does not contain the text", back.text.contains("Arrive by 8 AM"))
+
+        val zip = com.gravity.ide.files.FileMaker.zip(ctx, "site", com.gravity.ide.core.MakeFiles.codeFiles(reply).map { it.first to it.second.toByteArray() })
+        val names = java.util.zip.ZipFile(zip).use { z -> z.entries().toList().map { it.name } }
+        Ci.log("make", "ZIP ${zip.length()} bytes: $names")
+        assertEquals(listOf("index.html", "image.svg"), names)
+
+        val png = com.gravity.ide.files.FileMaker.png(ctx, "picture", com.gravity.ide.core.MakeFiles.svg(reply)!!)
+        val bmp = android.graphics.BitmapFactory.decodeFile(png.absolutePath)
+        val pixel = bmp.getPixel(bmp.width / 4, bmp.height / 2)
+        Ci.log("make", "PNG ${bmp.width}x${bmp.height}, pixel in the circle = #${Integer.toHexString(pixel)}")
+        assertEquals(1024, bmp.width)
+        assertEquals(512, bmp.height)
+        assertTrue("The circle was not drawn (pixel #${Integer.toHexString(pixel)})", android.graphics.Color.red(pixel) > 200 && android.graphics.Color.green(pixel) < 120)
+
+        // Audio needs a text-to-speech engine; emulators may have none, which is reported, not faked.
+        val wav = runCatching { runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "speech", "Hello from Gravity. School starts at eight.", java.util.Locale.forLanguageTag("en-IN")) } }
+        wav.onSuccess { f ->
+            val head = f.readBytes().copyOfRange(0, 4).toString(Charsets.US_ASCII)
+            Ci.log("make", "WAV ${f.length()} bytes ($head)")
+            assertEquals("RIFF", head)
+            assertTrue("The audio is empty", f.length() > 1000)
+        }.onFailure { Ci.log("make", "Audio not made on this device: ${it.message}") }
+        listOf(pdf, zip, png).forEach { it.delete() }
+        wav.getOrNull()?.delete()
+    }
 }

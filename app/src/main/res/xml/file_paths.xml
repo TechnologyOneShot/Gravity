@@ -4,4 +4,6 @@
     <files-path name="screenshots" path="screenshots/" />
     <files-path name="workspaces" path="workspaces/" />
     <files-path name="builds" path="builds/" />
+    <!-- Files Gravity makes from replies (PDF, ZIP, PNG, WAV). -->
+    <files-path name="created" path="created/" />
 </paths>
