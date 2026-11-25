@@ -310,8 +310,10 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 val system = buildString {
                     append(
                         "You are Gravity, a friendly and capable AI assistant in an Android app. Reply in the language and script the user writes in " +
-                            "(Hindi, Hinglish or English). Give clear, correct, well-organised answers; keep them as short as the question allows. " +
-                            "Use Markdown, and put code in fenced code blocks. If you are not sure, say so instead of guessing."
+                            "(Hindi, Hinglish or English). Give clear, correct, well-organised answers; keep them as short as the question allows, " +
+                            "but when the user asks for a length (for example 200 words), write about that much. " +
+                            "Write poems, song lyrics, stories and letters as normal text (never in code blocks); make them original and natural, " +
+                            "with fresh lines and no repeated filler. Use Markdown, and put code in fenced code blocks. If you are not sure, say so instead of guessing."
                     )
                     if (project != null) {
                         val root = File(project.rootPath)

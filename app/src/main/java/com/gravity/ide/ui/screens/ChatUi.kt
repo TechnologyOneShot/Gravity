@@ -891,7 +891,13 @@ fun RichText(text: String) {
                 val firstLine = part.substringBefore('\n', "").trim()
                 val language = firstLine.takeIf { it.isNotEmpty() && it.length <= 20 && it.none { ch -> ch.isWhitespace() } }
                 val body = if (part.contains('\n')) part.substringAfter('\n') else part
-                CodeBlock(if (language == null && firstLine.isNotEmpty()) part.trimEnd() else body.trimEnd(), language)
+                val content = if (language == null && firstLine.isNotEmpty()) part.trimEnd() else body.trimEnd()
+                if (com.gravity.ide.core.ChatFormat.isProse(language, content)) {
+                    // Lyrics, poems or letters that a model put in a code fence read as normal text.
+                    MarkdownText(content.trim('\n'))
+                } else {
+                    CodeBlock(content, language)
+                }
             } else if (part.isNotBlank()) {
                 MarkdownText(part.trim('\n'))
             }

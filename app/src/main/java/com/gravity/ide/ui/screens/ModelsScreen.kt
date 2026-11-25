@@ -405,16 +405,20 @@ private data class Suggested(val title: String, val repo: String, val file: Stri
 
 private val suggestedModels = listOf(
     Suggested(
+        "Qwen2.5 7B (chat)", "bartowski/Qwen2.5-7B-Instruct-GGUF", "Qwen2.5-7B-Instruct-Q4_K_M.gguf", 4_680_000_000L,
+        "For chat and writing (Hindi, Hinglish, English): a general model. The Coder models below are made for code and write weak lyrics or stories. About 12 GB RAM phones.",
+    ),
+    Suggested(
         "Qwen2.5-Coder 7B", "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf", 4_680_000_000L,
         "Best phone model for apps (6 of 6 test apps worked). Needs a phone with about 12 GB RAM; slower.",
     ),
     Suggested(
         "Qwen2.5-Coder 3B", "bartowski/Qwen2.5-Coder-3B-Instruct-GGUF", "Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf", 1_930_000_000L,
-        "For 6–8 GB phones (4 of 6 test apps worked; calculators often wrong).",
+        "For apps on 6–8 GB phones (5 of 6 test apps worked).",
     ),
     Suggested(
         "Qwen2.5-Coder 1.5B", "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", 1_120_000_000L,
-        "Smallest and fastest; simple apps only (4 of 6 test apps worked).",
+        "Smallest and fastest; simple apps only (3 of 6 test apps worked).",
     ),
 )
 
