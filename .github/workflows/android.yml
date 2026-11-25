@@ -214,6 +214,11 @@ jobs:
             done
             ask /tmp/coder-q4_k_m.gguf 8 4096 max "hello" "hello\|hi\|help\|assist"
             ask /tmp/coder-q4_k_m.gguf 4 4096 cortex-a76 "What is the capital of France? Answer with one word." paris
+            # Second turn in the same conversation: the kept context must be reused and still answer right.
+            echo "=== follow-up turn (context reuse)"
+            FOLLOWUP="And the capital of Germany? Answer with one word." timeout 1500 "$QEMU" -cpu max /tmp/arm-build/gravity-cli /tmp/coder-q4_k_m.gguf 4 4096 \
+              "What is the capital of France? Answer with one word." "$SYS" 0.4 40 2>/tmp/stderr.txt | tee /tmp/answer.txt
+            if grep -qi "^ANSWER2:.*berlin" /tmp/answer.txt && grep -qE "^REUSED: [1-9]" /tmp/answer.txt; then echo "VERDICT: correct (context reused)"; else echo "VERDICT: WRONG"; tail -3 /tmp/stderr.txt; ok=1; fi
             export NO_MMAP=1  # safe mode: the model read into memory instead of mapped
             ask /tmp/coder-q4_k_m.gguf 4 4096 max "What is 12 + 30? Reply with the number only." 42
             unset NO_MMAP

@@ -21,10 +21,10 @@ enum class OperatingMode(val label: String) {
     AUTO("Auto model"),
 }
 
-enum class ThemeMode { DARK, LIGHT, SYSTEM }
+enum class ThemeMode { DARK, LIGHT, SYSTEM, NEON }
 
 data class AppSettings(
-    val theme: ThemeMode = ThemeMode.DARK,
+    val theme: ThemeMode = ThemeMode.NEON,
     val operatingMode: OperatingMode = OperatingMode.HYBRID,
     val defaultProviderId: String? = null,
     val defaultModel: String? = null,
@@ -62,6 +62,8 @@ class SettingsRepository(private val context: Context) {
 
     private object Keys {
         val theme = stringPreferencesKey("theme")
+        /** Since the Neon theme: the old key held DARK for everyone who never chose, so it is read once and moved here. */
+        val theme2 = stringPreferencesKey("theme_v2")
         val mode = stringPreferencesKey("operating_mode")
         val provider = stringPreferencesKey("default_provider")
         val model = stringPreferencesKey("default_model")
@@ -97,7 +99,9 @@ class SettingsRepository(private val context: Context) {
     private fun Preferences.toSettings(): AppSettings {
         val d = AppSettings()
         return AppSettings(
-            theme = this[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: d.theme,
+            theme = this[Keys.theme2]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
+                ?: this[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }?.takeIf { it != ThemeMode.DARK }
+                ?: d.theme,
             operatingMode = this[Keys.mode]?.let { runCatching { OperatingMode.valueOf(it) }.getOrNull() } ?: d.operatingMode,
             defaultProviderId = this[Keys.provider],
             defaultModel = this[Keys.model],
@@ -130,7 +134,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         context.gravityDataStore.edit { prefs ->
             val s = transform(prefs.toSettings())
-            prefs[Keys.theme] = s.theme.name
+            prefs[Keys.theme2] = s.theme.name
             prefs[Keys.mode] = s.operatingMode.name
             if (s.defaultProviderId != null) prefs[Keys.provider] = s.defaultProviderId else prefs.remove(Keys.provider)
             if (s.defaultModel != null) prefs[Keys.model] = s.defaultModel else prefs.remove(Keys.model)

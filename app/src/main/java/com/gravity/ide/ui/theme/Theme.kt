@@ -18,60 +18,73 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.gravity.ide.data.settings.ThemeMode
 
-/** The warm palette in its dark and light versions. */
-private object Dark {
-    val Accent = Color(0xFFD97757)
-    val Blue = Color(0xFF8AB4F8)
-    val Purple = Color(0xFFC4A7E7)
-    val Green = Color(0xFF8BC48A)
-    val Amber = Color(0xFFE5B567)
-    val Red = Color(0xFFE5736A)
-    val Bg = Color(0xFF1F1E1D)
-    val Surface = Color(0xFF262624)
-    val SurfaceHigh = Color(0xFF30302E)
-    val Outline = Color(0xFF3D3D3A)
-    val Text = Color(0xFFEDEBE4)
-    val Muted = Color(0xFFA3A097)
-}
+/** One set of app colours. */
+private class Palette(
+    val dark: Boolean,
+    val accent: Color, val onAccent: Color,
+    val blue: Color, val purple: Color, val green: Color, val amber: Color, val red: Color,
+    val bg: Color, val surface: Color, val surfaceHigh: Color, val outline: Color, val text: Color, val muted: Color,
+)
 
-/** Day mode: warm off-white like paper, dark text, accents dark enough to read on white. */
-private object Light {
-    val Accent = Color(0xFFC15F3C)
-    val Blue = Color(0xFF1F5FD1)
-    val Purple = Color(0xFF6B4FB8)
-    val Green = Color(0xFF2E7D32)
-    val Amber = Color(0xFF9A6200)
-    val Red = Color(0xFFC0392B)
-    val Bg = Color(0xFFFAF9F5)
-    val Surface = Color(0xFFFFFFFF)
-    val SurfaceHigh = Color(0xFFF0EEE6)
-    val Outline = Color(0xFFDEDBD1)
-    val Text = Color(0xFF1F1E1D)
-    val Muted = Color(0xFF6B6962)
-}
+/** Night: warm charcoal with a terracotta accent. */
+private val Dark = Palette(
+    dark = true, accent = Color(0xFFD97757), onAccent = Color.White,
+    blue = Color(0xFF8AB4F8), purple = Color(0xFFC4A7E7), green = Color(0xFF8BC48A), amber = Color(0xFFE5B567), red = Color(0xFFE5736A),
+    bg = Color(0xFF1F1E1D), surface = Color(0xFF262624), surfaceHigh = Color(0xFF30302E), outline = Color(0xFF3D3D3A),
+    text = Color(0xFFEDEBE4), muted = Color(0xFFA3A097),
+)
+
+/** Day: warm off-white like paper, dark text, accents dark enough to read on white. */
+private val Light = Palette(
+    dark = false, accent = Color(0xFFC15F3C), onAccent = Color.White,
+    blue = Color(0xFF1F5FD1), purple = Color(0xFF6B4FB8), green = Color(0xFF2E7D32), amber = Color(0xFF9A6200), red = Color(0xFFC0392B),
+    bg = Color(0xFFFAF9F5), surface = Color(0xFFFFFFFF), surfaceHigh = Color(0xFFF0EEE6), outline = Color(0xFFDEDBD1),
+    text = Color(0xFF1F1E1D), muted = Color(0xFF6B6962),
+)
+
+/** Neon black: true black with glowing neon cyan (black text on cyan buttons). */
+private val Neon = Palette(
+    dark = true, accent = Color(0xFF00E5FF), onAccent = Color.Black,
+    blue = Color(0xFF4DA3FF), purple = Color(0xFFC77DFF), green = Color(0xFF39FF88), amber = Color(0xFFFFD60A), red = Color(0xFFFF4D6D),
+    bg = Color(0xFF000000), surface = Color(0xFF0B0B10), surfaceHigh = Color(0xFF16161F), outline = Color(0xFF2A2A3A),
+    text = Color(0xFFF4F4FA), muted = Color(0xFF9C9CB4),
+)
 
 /**
- * Colours used across the app. Each follows the current day/night mode (set by [GravityTheme]),
- * so a screen that uses them reads well in both. "Cyan" is the accent everywhere (a warm
- * terracotta); the old names are kept so every screen picks up the look.
+ * Colours used across the app. Each follows the current theme (set by [GravityTheme]), so a
+ * screen that uses them reads well in all of them. "Cyan" is the accent everywhere; the old
+ * names are kept so every screen picks up the look.
  */
 object GravityColors {
-    /** Set by [GravityTheme]. A state, so screens redraw when the mode changes. */
-    internal var isDark by mutableStateOf(true)
+    /** Set by [GravityTheme]. A state, so screens redraw when the theme changes. */
+    private var palette by mutableStateOf(Neon)
 
-    val Accent: Color get() = if (isDark) Dark.Accent else Light.Accent
+    internal fun use(mode: ThemeMode, systemDark: Boolean) {
+        val next = when (mode) {
+            ThemeMode.DARK -> Dark
+            ThemeMode.LIGHT -> Light
+            ThemeMode.NEON -> Neon
+            ThemeMode.SYSTEM -> if (systemDark) Neon else Light
+        }
+        if (palette !== next) palette = next
+    }
+
+    val isDark: Boolean get() = palette.dark
+    val Accent: Color get() = palette.accent
+    /** Text and icons drawn on an [Accent] background. */
+    val OnAccent: Color get() = palette.onAccent
     val Cyan: Color get() = Accent
-    val Blue: Color get() = if (isDark) Dark.Blue else Light.Blue
-    val Purple: Color get() = if (isDark) Dark.Purple else Light.Purple
-    val Green: Color get() = if (isDark) Dark.Green else Light.Green
-    val Amber: Color get() = if (isDark) Dark.Amber else Light.Amber
-    val Red: Color get() = if (isDark) Dark.Red else Light.Red
-    val Bg: Color get() = if (isDark) Dark.Bg else Light.Bg
-    val Surface: Color get() = if (isDark) Dark.Surface else Light.Surface
-    val SurfaceHigh: Color get() = if (isDark) Dark.SurfaceHigh else Light.SurfaceHigh
-    val Outline: Color get() = if (isDark) Dark.Outline else Light.Outline
-    val Text: Color get() = if (isDark) Dark.Text else Light.Text
-    val Muted: Color get() = if (isDark) Dark.Muted else Light.Muted
+    val Blue: Color get() = palette.blue
+    val Purple: Color get() = palette.purple
+    val Green: Color get() = palette.green
+    val Amber: Color get() = palette.amber
+    val Red: Color get() = palette.red
+    val Bg: Color get() = palette.bg
+    val Surface: Color get() = palette.surface
+    val SurfaceHigh: Color get() = palette.surfaceHigh
+    val Outline: Color get() = palette.outline
+    val Text: Color get() = palette.text
+    val Muted: Color get() = palette.muted
 }
 
 /** Syntax colours used by the editor (separate from Material roles). */
@@ -111,58 +124,87 @@ val LightCode = CodeColors(
 val LocalCodeColors = staticCompositionLocalOf { DarkCode }
 
 private val DarkScheme = darkColorScheme(
-    primary = Dark.Accent,
+    primary = Dark.accent,
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFF4A2E24),
     onPrimaryContainer = Color(0xFFFFDBCF),
-    secondary = Dark.Purple,
+    secondary = Dark.purple,
     onSecondary = Color(0xFF2B2140),
     secondaryContainer = Color(0xFF3A3346),
     onSecondaryContainer = Color(0xFFEADDFF),
-    tertiary = Dark.Blue,
-    background = Dark.Bg,
-    onBackground = Dark.Text,
-    surface = Dark.Surface,
-    onSurface = Dark.Text,
-    surfaceVariant = Dark.SurfaceHigh,
-    onSurfaceVariant = Dark.Muted,
-    surfaceContainer = Dark.Surface,
-    surfaceContainerHigh = Dark.SurfaceHigh,
+    tertiary = Dark.blue,
+    background = Dark.bg,
+    onBackground = Dark.text,
+    surface = Dark.surface,
+    onSurface = Dark.text,
+    surfaceVariant = Dark.surfaceHigh,
+    onSurfaceVariant = Dark.muted,
+    surfaceContainer = Dark.surface,
+    surfaceContainerHigh = Dark.surfaceHigh,
     surfaceContainerHighest = Color(0xFF383835),
     surfaceContainerLow = Color(0xFF232221),
     surfaceContainerLowest = Color(0xFF1A1918),
-    outline = Dark.Outline,
+    outline = Dark.outline,
     outlineVariant = Color(0xFF33332F),
-    error = Dark.Red,
+    error = Dark.red,
 )
 
 private val LightScheme = lightColorScheme(
-    primary = Light.Accent,
+    primary = Light.accent,
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFF8E1D7),
     onPrimaryContainer = Color(0xFF4A1F10),
-    secondary = Light.Purple,
+    secondary = Light.purple,
     onSecondary = Color(0xFFFFFFFF),
     secondaryContainer = Color(0xFFEDE6F8),
     onSecondaryContainer = Color(0xFF2B2140),
-    tertiary = Light.Blue,
+    tertiary = Light.blue,
     onTertiary = Color(0xFFFFFFFF),
-    background = Light.Bg,
-    onBackground = Light.Text,
-    surface = Light.Bg,
-    onSurface = Light.Text,
-    surfaceVariant = Light.SurfaceHigh,
-    onSurfaceVariant = Light.Muted,
+    background = Light.bg,
+    onBackground = Light.text,
+    surface = Light.bg,
+    onSurface = Light.text,
+    surfaceVariant = Light.surfaceHigh,
+    onSurfaceVariant = Light.muted,
     surfaceTint = Color.Transparent,
     surfaceContainer = Color(0xFFF5F3EC),
-    surfaceContainerHigh = Light.SurfaceHigh,
+    surfaceContainerHigh = Light.surfaceHigh,
     surfaceContainerHighest = Color(0xFFE9E6DC),
     surfaceContainerLow = Color(0xFFF7F5EF),
-    surfaceContainerLowest = Light.Surface,
-    outline = Light.Outline,
+    surfaceContainerLowest = Light.surface,
+    outline = Light.outline,
     outlineVariant = Color(0xFFE8E5DC),
-    error = Light.Red,
+    error = Light.red,
     onError = Color(0xFFFFFFFF),
+)
+
+private val NeonScheme = darkColorScheme(
+    primary = Neon.accent,
+    onPrimary = Color.Black,
+    primaryContainer = Color(0xFF00363D),
+    onPrimaryContainer = Color(0xFF9EF4FF),
+    secondary = Neon.purple,
+    onSecondary = Color.Black,
+    secondaryContainer = Color(0xFF2A1840),
+    onSecondaryContainer = Color(0xFFEBD5FF),
+    tertiary = Neon.green,
+    onTertiary = Color.Black,
+    background = Neon.bg,
+    onBackground = Neon.text,
+    surface = Neon.bg,
+    onSurface = Neon.text,
+    surfaceVariant = Neon.surfaceHigh,
+    onSurfaceVariant = Neon.muted,
+    surfaceTint = Color.Transparent,
+    surfaceContainer = Neon.surface,
+    surfaceContainerHigh = Neon.surfaceHigh,
+    surfaceContainerHighest = Color(0xFF1E1E2A),
+    surfaceContainerLow = Color(0xFF07070A),
+    surfaceContainerLowest = Neon.bg,
+    outline = Neon.outline,
+    outlineVariant = Color(0xFF1F1F2B),
+    error = Neon.red,
+    onError = Color.Black,
 )
 
 val MonoFamily = FontFamily.Monospace
@@ -182,13 +224,15 @@ val CodeTextStyle = TextStyle(fontFamily = MonoFamily, fontSize = 13.sp, lineHei
 
 @Composable
 fun GravityTheme(mode: ThemeMode, content: @Composable () -> Unit) {
+    val systemDark = isSystemInDarkTheme()
     val dark = when (mode) {
-        ThemeMode.DARK -> true
+        ThemeMode.DARK, ThemeMode.NEON -> true
         ThemeMode.LIGHT -> false
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.SYSTEM -> systemDark
     }
-    // Before any screen reads a colour, so the first frame already uses the right mode.
-    if (GravityColors.isDark != dark) GravityColors.isDark = dark
+    val neon = mode == ThemeMode.NEON || (mode == ThemeMode.SYSTEM && systemDark)
+    // Before any screen reads a colour, so the first frame already uses the right theme.
+    GravityColors.use(mode, systemDark)
     // Status and navigation bar icons follow Gravity's own mode (dark icons in day mode), not only the system's.
     val view = androidx.compose.ui.platform.LocalView.current
     if (!view.isInEditMode) {
@@ -201,6 +245,6 @@ fun GravityTheme(mode: ThemeMode, content: @Composable () -> Unit) {
         }
     }
     androidx.compose.runtime.CompositionLocalProvider(LocalCodeColors provides if (dark) DarkCode else LightCode) {
-        MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, typography = GravityTypography, content = content)
+        MaterialTheme(colorScheme = if (neon) NeonScheme else if (dark) DarkScheme else LightScheme, typography = GravityTypography, content = content)
     }
 }

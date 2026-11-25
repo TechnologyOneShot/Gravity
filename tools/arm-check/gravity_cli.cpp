@@ -28,16 +28,36 @@ int main(int argc, char **argv) {
     std::string answer, finish;
     const std::vector<std::string> roles{"system", "user"};
     const std::vector<std::string> contents{system, question};
-    const int n = gravity::generate(
+    int n = gravity::generate(
         s, roles, contents, max_tokens, temperature, 0.95f, 0, "",
         [&](const char *piece, int len) {
             answer.append(piece, len);
             return true;
         },
         finish, error);
+    const std::string first_answer = answer;
     for (char &ch : answer) if (ch == '\n') ch = ' ';
     std::printf("ANSWER: %s\n", answer.c_str());
     std::printf("RESULT: generated=%d finish=%s error=%s\n", n, finish.c_str(), error.c_str());
+    // FOLLOWUP="second question": a second turn in the same conversation, as the app sends it;
+    // the context kept from the first turn should be reused (REUSED > 0).
+    if (const char *follow = std::getenv("FOLLOWUP"); follow != nullptr && n > 0) {
+        std::string answer2, finish2;
+        const std::vector<std::string> roles2{"system", "user", "assistant", "user"};
+        const std::vector<std::string> contents2{system, question, first_answer, follow};
+        const int n2 = gravity::generate(
+            s, roles2, contents2, max_tokens, temperature, 0.95f, 0, "",
+            [&](const char *piece, int len) {
+                answer2.append(piece, len);
+                return true;
+            },
+            finish2, error);
+        for (char &ch : answer2) if (ch == '\n') ch = ' ';
+        std::printf("REUSED: %d\n", s->last_reused);
+        std::printf("ANSWER2: %s\n", answer2.c_str());
+        std::printf("RESULT2: generated=%d finish=%s error=%s\n", n2, finish2.c_str(), error.c_str());
+        if (n2 <= 0) n = -1;
+    }
     gravity::unload(s);
     return n > 0 ? 0 : 1;
 }

@@ -271,4 +271,39 @@ class UiNavigationTest {
         Ci.screenshot("05_phone_ai_check")
         assertTrue("The check did not report correct answers:\n$report", report.contains("answers correctly"))
     }
+
+    @Test
+    fun t06_liveVoiceModeOpensReportsHonestlyAndCloses() {
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        instrumentation.uiAutomation.grantRuntimePermission(instrumentation.targetContext.packageName, Manifest.permission.RECORD_AUDIO)
+        waitForTitle("Gravity")
+        // With an empty message box the round button is the live (voice) button.
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-button").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("live-button").performClick()
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithTag("live-dialog").fetchSemanticsNodes().isNotEmpty() ||
+                compose.onAllNodesWithText("Connect AI").fetchSemanticsNodes().isNotEmpty()
+        }
+        if (compose.onAllNodesWithTag("live-dialog").fetchSemanticsNodes().isEmpty()) {
+            // No AI on this device yet: live mode first asks to set one up (no fake conversation).
+            Ci.log("live", "No AI set up: the AI setup dialog opened instead of live mode")
+            Ci.screenshot("06_live_needs_ai")
+            instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+            runCatching { compose.waitUntil(10_000) { compose.onAllNodesWithText("Connect AI").fetchSemanticsNodes().isEmpty() } }
+            return
+        }
+        Thread.sleep(3000)
+        compose.waitForIdle()
+        val status = compose.onNodeWithTag("live-status").fetchSemanticsNode().config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }.orEmpty()
+        val problem = compose.onAllNodesWithTag("live-problem").fetchSemanticsNodes().firstOrNull()
+            ?.config?.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }
+        Ci.log("live", "Status: $status; problem: ${problem ?: "none"}")
+        Ci.screenshot("06_live_mode")
+        compose.onNodeWithTag("live-lang-hindi").performClick()
+        compose.onNodeWithTag("live-lang-english").performClick()
+        // Either it is really listening, or it says why it cannot (e.g. no speech service on the emulator).
+        assertTrue("Live mode shows neither listening nor a reason: status=$status", status.startsWith("Listening") || problem != null || status.startsWith("Tap"))
+        compose.onNodeWithTag("live-end").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("live-dialog").fetchSemanticsNodes().isEmpty() }
+    }
 }

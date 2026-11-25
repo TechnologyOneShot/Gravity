@@ -417,6 +417,30 @@ class DeviceServicesTest {
         assertTrue("The model's answer is wrong or garbled: ${r.text.take(200)}", r.text.contains("Paris", ignoreCase = true))
         Ci.log("local-qwen", "Load mode on this device: ${c.localHost.loadMode(done!!.id)}")
 
+        // A second turn reuses the kept context (only the new message is read) and still answers right.
+        run {
+            val handle = bridge.load(done.filePath, 1024, 2, 0, true)
+            fun ask(roles: Array<String>, contents: Array<String>): Pair<String, Long> {
+                val out = StringBuilder()
+                val utf8 = com.gravity.ide.core.Utf8Accumulator()
+                val t0 = System.currentTimeMillis()
+                bridge.generate(handle, roles, contents, 16, 0.1f, 0.95f, 0, "") { bytes -> out.append(utf8.append(bytes)); true }
+                out.append(utf8.flush())
+                return out.toString() to (System.currentTimeMillis() - t0)
+            }
+            val sys = "You are a helpful assistant. Answer briefly."
+            val (first, ms1) = ask(arrayOf("system", "user"), arrayOf(sys, "What is the capital of France? Answer with one word."))
+            val (second, ms2) = ask(
+                arrayOf("system", "user", "assistant", "user"),
+                arrayOf(sys, "What is the capital of France? Answer with one word.", first, "And of Germany? Answer with one word."),
+            )
+            val reused = bridge.modelInfo(handle).getOrElse(5) { 0 }
+            bridge.unload(handle)
+            Ci.log("local-qwen", "Two turns: \"$first\" ($ms1 ms), then \"$second\" ($ms2 ms), reusing $reused tokens")
+            assertTrue("The second turn did not reuse the kept context", reused > 0)
+            assertTrue("The second turn's answer is wrong: $second", second.contains("Berlin", ignoreCase = true))
+        }
+
         // Every engine this device can run, file mapped and read into memory, must answer correctly.
         runBlocking { c.localHost.unload() }
         val bridge = com.gravity.ide.ai.local.LlamaBridge

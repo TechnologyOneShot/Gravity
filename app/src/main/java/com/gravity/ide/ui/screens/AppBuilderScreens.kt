@@ -490,7 +490,7 @@ fun AppScreen(projectId: String, go: (String) -> Unit) {
                 IconButton(
                     onClick = { submitChange(change) }, enabled = canSend,
                     modifier = Modifier.size(38.dp).background(if (canSend) GravityColors.Accent else GravityColors.Outline, CircleShape),
-                ) { Icon(Icons.Filled.ArrowUpward, "Send change", tint = if (canSend || GravityColors.isDark) Color.White else GravityColors.Muted, modifier = Modifier.size(20.dp)) }
+                ) { Icon(Icons.Filled.ArrowUpward, "Send change", tint = if (canSend) GravityColors.OnAccent else if (GravityColors.isDark) Color.White else GravityColors.Muted, modifier = Modifier.size(20.dp)) }
             }
         }
         Row(

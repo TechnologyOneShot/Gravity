@@ -220,7 +220,7 @@ private fun GravitySidebar(route: String?, go: (String) -> Unit) {
         Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
             Row(Modifier.padding(start = 24.dp, top = 24.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(30.dp).background(GravityColors.Accent, CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(17.dp))
+                    Icon(Icons.Filled.AutoAwesome, null, tint = GravityColors.OnAccent, modifier = Modifier.size(17.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Text("Gravity", fontFamily = DisplayFamily, fontSize = 24.sp)
@@ -230,9 +230,9 @@ private fun GravitySidebar(route: String?, go: (String) -> Unit) {
                 modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(46.dp).testTag("nav:New Chat"),
             ) {
                 Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Add, null, tint = Color.White)
+                    Icon(Icons.Filled.Add, null, tint = GravityColors.OnAccent)
                     Spacer(Modifier.width(8.dp))
-                    Text("New chat", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text("New chat", color = GravityColors.OnAccent, fontWeight = FontWeight.SemiBold)
                 }
             }
             Spacer(Modifier.height(8.dp))

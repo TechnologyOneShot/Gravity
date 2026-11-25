@@ -119,7 +119,10 @@ object LlamaBridge {
         }
     }
 
-    /** [n_ctx_train, n_layer, n_embd, n_head, n_head_kv] of a loaded model. */
+    /**
+     * [n_ctx_train, n_layer, n_embd, n_head, n_head_kv, tokens the last request reused from the
+     * kept context, kept context size] of a loaded model.
+     */
     fun modelInfo(handle: Long): IntArray = when (engineOf(handle)) {
         EngineKind.BASE -> NativeBase.modelInfo(handle)
         EngineKind.FAST -> NativeFast.modelInfo(handle)

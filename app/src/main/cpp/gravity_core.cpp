@@ -30,6 +30,7 @@ Session *load(const std::string &path, int n_ctx, int n_threads, int n_gpu_layer
 
 void unload(Session *s) {
     if (!s) return;
+    if (s->ctx) llama_free(s->ctx);
     if (s->model) llama_model_free(s->model);
     delete s;
 }
@@ -65,7 +66,7 @@ int generate(Session *s, const std::vector<std::string> &roles, const std::vecto
     // Optional start of the assistant's reply (e.g. "```html"), so the model continues from it.
     prompt += prefix;
     // Context for this request: the size the model was loaded with, or a larger one asked for
-    // by the caller (contexts are created per request, so this costs memory only while generating).
+    // by the caller (e.g. to write a whole app).
     const int n_ctx = n_ctx_req > s->n_ctx ? n_ctx_req : s->n_ctx;
 
     // 2. Tokenize with the model's tokenizer.
@@ -80,17 +81,37 @@ int generate(Session *s, const std::vector<std::string> &roles, const std::vecto
         return -1;
     }
 
-    // 3. Fresh context per request (simple and robust across llama.cpp versions).
-    llama_context_params cparams = llama_context_default_params();
-    cparams.n_ctx = n_ctx;
-    cparams.n_batch = n_ctx;
-    cparams.n_threads = s->n_threads;
-    cparams.n_threads_batch = s->n_threads;
-    llama_context *ctx = llama_init_from_model(s->model, cparams);
-    if (!ctx) {
-        error = "llama_init_from_model failed (out of memory?)";
-        return -1;
+    // 3. One context per loaded model, kept between requests; a request for another size gets
+    //    a new one (a big context is not kept around for ordinary chats).
+    if (!s->ctx || s->ctx_size != n_ctx) {
+        if (s->ctx) llama_free(s->ctx);
+        s->ctx = nullptr;
+        s->cached.clear();
+        llama_context_params cparams = llama_context_default_params();
+        cparams.n_ctx = n_ctx;
+        cparams.n_batch = n_ctx;
+        cparams.n_threads = s->n_threads;
+        cparams.n_threads_batch = s->n_threads;
+        s->ctx = llama_init_from_model(s->model, cparams);
+        if (!s->ctx) {
+            s->ctx_size = 0;
+            error = "llama_init_from_model failed (out of memory?)";
+            return -1;
+        }
+        s->ctx_size = n_ctx;
     }
+    llama_context *ctx = s->ctx;
+    llama_memory_t mem = llama_get_memory(ctx);
+
+    // Reuse the tokens this context already read (same start of the conversation); at least the
+    // last prompt token is read again so there are fresh logits to sample from.
+    size_t reuse = 0;
+    while (reuse < s->cached.size() && reuse < tokens.size() && s->cached[reuse] == tokens[reuse]) reuse++;
+    if (reuse >= tokens.size()) reuse = tokens.size() - 1;
+    if (reuse > 0 && !llama_memory_seq_rm(mem, 0, (llama_pos) reuse, -1)) reuse = 0;
+    if (reuse == 0) llama_memory_clear(mem, true);
+    s->cached.resize(reuse);
+    s->last_reused = (int) reuse;
 
     // Mild repetition penalty and min-p keep small models from looping on one token.
     llama_sampler *smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
@@ -103,15 +124,26 @@ int generate(Session *s, const std::vector<std::string> &roles, const std::vecto
 
     int generated = 0;
     finish = "max";
-    llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
+    llama_batch batch = llama_batch_get_one(tokens.data() + reuse, n_tokens - (int32_t) reuse);
     llama_token next = 0;
     int n_past = n_tokens;
+    bool first = true;
     while (generated < max_tokens) {
         if (llama_decode(ctx, batch) != 0) {
             error = "llama_decode failed";
             generated = generated > 0 ? generated : -1;
             finish = "error";
+            // The context's state is unknown now: start clean next time.
+            llama_memory_clear(mem, true);
+            s->cached.clear();
             break;
+        }
+        // Remember what the context holds now.
+        if (first) {
+            s->cached.insert(s->cached.end(), tokens.begin() + (long) reuse, tokens.end());
+            first = false;
+        } else {
+            s->cached.push_back(next);
         }
         next = llama_sampler_sample(smpl, ctx, -1);
         if (llama_vocab_is_eog(vocab, next)) {
@@ -134,7 +166,6 @@ int generate(Session *s, const std::vector<std::string> &roles, const std::vecto
     }
 
     llama_sampler_free(smpl);
-    llama_free(ctx);
     return generated;
 }
 

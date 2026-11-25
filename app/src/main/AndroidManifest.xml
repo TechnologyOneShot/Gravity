@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Cloud AI providers, web search, model and dependency downloads -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Progress notifications for downloads, agent tasks and screen capture -->
@@ -29,6 +30,13 @@
     <queries>
         <package android:name="com.termux" />
         <package android:name="moe.shizuku.privileged.api" />
+        <!-- Live voice mode: the phone's speech recognition and text-to-speech services. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <!-- usesCleartextTraffic: needed only for self-hosted OpenAI-compatible servers on the

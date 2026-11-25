@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderZip
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Mic
@@ -141,7 +142,7 @@ private val CodeHeaderBg = Color(0xFF242322)
 @Composable
 internal fun GravityAvatar(size: Dp = 30.dp) {
     Box(Modifier.size(size).clip(CircleShape).background(GravityColors.Accent), contentAlignment = Alignment.Center) {
-        Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(size * 0.55f))
+        Icon(Icons.Filled.AutoAwesome, null, tint = GravityColors.OnAccent, modifier = Modifier.size(size * 0.55f))
     }
 }
 
@@ -393,7 +394,7 @@ private fun AppTaskCard(projectId: String, taskId: String, isChange: Boolean, on
             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (status == "COMPLETED") {
                     Surface(onClick = { onOpenApp(projectId) }, shape = RoundedCornerShape(50), color = GravityColors.Accent, modifier = Modifier.testTag("open-app")) {
-                        Text("Open app", color = Color.White, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp))
+                        Text("Open app", color = GravityColors.OnAccent, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp))
                     }
                 } else {
                     TextButton(onClick = { onOpenApp(projectId) }, modifier = Modifier.testTag("open-app")) { Text("Open app") }
@@ -477,6 +478,8 @@ internal fun ChatComposer(
     onModeChange: (Boolean) -> Unit = {},
     modelLabel: ModelLabel? = null,
     onPickModel: () -> Unit = {},
+    /** Live voice mode; when set, the round button starts it while the message box is empty. */
+    onLive: (() -> Unit)? = null,
 ) {
     Surface(
         shape = RoundedCornerShape(24.dp), color = GravityColors.SurfaceHigh, border = BorderStroke(1.dp, GravityColors.Outline),
@@ -537,17 +540,29 @@ internal fun ChatComposer(
                     Icon(Icons.Filled.Mic, "Voice input", tint = GravityColors.Muted)
                 }
                 val canSend = value.isNotBlank() || attachments.isNotEmpty()
+                // Empty box: the round button starts live voice mode (like a call); with text it sends.
+                val liveInstead = !busy && !canSend && onLive != null
                 val brush = when {
                     busy -> SolidColor(GravityColors.Red)
-                    canSend -> SolidColor(GravityColors.Accent)
+                    canSend || liveInstead -> SolidColor(GravityColors.Accent)
                     else -> SolidColor(GravityColors.Outline)
                 }
-                IconButton(
-                    onClick = { if (busy) onStop() else onSend() },
-                    modifier = Modifier.padding(start = 2.dp).size(38.dp).clip(CircleShape).background(brush, CircleShape),
+                // A little smaller than a standard icon button (40dp circle), like Claude's send button.
+                Box(
+                    Modifier.padding(start = 4.dp).size(40.dp).clip(CircleShape).background(brush, CircleShape)
+                        .clickable(onClickLabel = if (busy) "Stop" else if (liveInstead) "Live voice mode" else "Send") {
+                            if (busy) onStop() else if (liveInstead) onLive?.invoke() else onSend()
+                        }
+                        .testTag(if (liveInstead) "live-button" else "send-button"),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    if (busy) Icon(Icons.Filled.Stop, "Stop", tint = Color.White, modifier = Modifier.size(20.dp))
-                    else Icon(Icons.Filled.ArrowUpward, "Send", tint = if (canSend || GravityColors.isDark) Color.White else GravityColors.Muted, modifier = Modifier.size(20.dp))
+                    if (busy) Icon(Icons.Filled.Stop, "Stop", tint = Color.White, modifier = Modifier.size(18.dp))
+                    else if (liveInstead) Icon(Icons.Filled.GraphicEq, "Live voice mode", tint = GravityColors.OnAccent, modifier = Modifier.size(20.dp))
+                    else Icon(
+                        Icons.Filled.ArrowUpward, "Send",
+                        tint = if (canSend) GravityColors.OnAccent else if (GravityColors.isDark) Color.White else GravityColors.Muted,
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
             }
         }

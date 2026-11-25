@@ -110,16 +110,19 @@ GRAVITY_JNI(generate)(JNIEnv *env, jobject, jlong handle, jobjectArray jroles,
 extern "C" JNIEXPORT jintArray JNICALL
 GRAVITY_JNI(modelInfo)(JNIEnv *env, jobject, jlong handle) {
     auto *s = reinterpret_cast<gravity::Session *>(handle);
-    jint values[5] = {0, 0, 0, 0, 0};
+    // [n_ctx_train, n_layer, n_embd, n_head, n_head_kv, tokens reused by the last request, kept context size]
+    jint values[7] = {0, 0, 0, 0, 0, 0, 0};
     if (s && s->model) {
         values[0] = llama_model_n_ctx_train(s->model);
         values[1] = llama_model_n_layer(s->model);
         values[2] = llama_model_n_embd(s->model);
         values[3] = llama_model_n_head(s->model);
         values[4] = llama_model_n_head_kv(s->model);
+        values[5] = s->last_reused;
+        values[6] = s->ctx_size;
     }
-    jintArray out = env->NewIntArray(5);
-    env->SetIntArrayRegion(out, 0, 5, values);
+    jintArray out = env->NewIntArray(7);
+    env->SetIntArrayRegion(out, 0, 7, values);
     return out;
 }
 

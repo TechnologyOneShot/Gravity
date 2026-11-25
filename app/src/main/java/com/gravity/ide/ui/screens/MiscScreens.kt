@@ -144,8 +144,8 @@ private val settingItems: List<SettingItem> = listOf(
         else ctx.startActivity(Intent(Settings.ACTION_LOCALE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }),
     // Display
-    SettingItem(SettingsPage.DISPLAY, "Theme", "Night (dark), day (light) or the same as the phone", Control.Choice(
-        listOf(ThemeMode.DARK.name to "Night (dark)", ThemeMode.LIGHT.name to "Day (light)", ThemeMode.SYSTEM.name to "Same as phone"),
+    SettingItem(SettingsPage.DISPLAY, "Theme", "Neon black, warm night, day, or the same as the phone", Control.Choice(
+        listOf(ThemeMode.NEON.name to "Neon black", ThemeMode.DARK.name to "Night (warm dark)", ThemeMode.LIGHT.name to "Day (light)", ThemeMode.SYSTEM.name to "Same as phone (neon / day)"),
         { it.theme.name }, { s, v -> s.copy(theme = ThemeMode.valueOf(v)) },
     )),
     SettingItem(SettingsPage.DISPLAY, "Code editor text size", "Size of code in the editor", Control.Num({ it.editorFontSize }, { s, v -> s.copy(editorFontSize = v) }, 8..28)),
