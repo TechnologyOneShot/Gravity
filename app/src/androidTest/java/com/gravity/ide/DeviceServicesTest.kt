@@ -419,6 +419,7 @@ class DeviceServicesTest {
 
         // A second turn reuses the kept context (only the new message is read) and still answers right.
         run {
+            val bridge = com.gravity.ide.ai.local.LlamaBridge
             val handle = bridge.load(done.filePath, 1024, 2, 0, true)
             fun ask(roles: Array<String>, contents: Array<String>): Pair<String, Long> {
                 val out = StringBuilder()
