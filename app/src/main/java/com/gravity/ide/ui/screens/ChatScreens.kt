@@ -350,7 +350,9 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         if (busy.value || (text.isBlank() && attachments.value.isEmpty())) return
         val atts = attachments.value
         attachments.value = emptyList()
+        busy.value = true // at once: a second tap must not start a second reply
         run.job = c.appScope.launch(Dispatchers.Main.immediate) {
+          try {
             val meta = JSONArray().apply { atts.forEach { put(JSONObject().put("name", it.name).put("mime", it.mime).put("size", it.size).put("kind", it.kind)) } }
             c.db.chats().insertMessage(MessageEntity(chatId = chatId, role = "user", content = text, attachments = meta.toString(), createdAt = System.currentTimeMillis()))
             val chat = c.db.chats().get(chatId)
@@ -360,6 +362,9 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             pendingMake = com.gravity.ide.core.MakeFiles.detect(text)
             pendingMakeRequest = text
             generate(atts)
+          } finally {
+            busy.value = false
+          }
         }
     }
 
@@ -369,7 +374,9 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
      */
     fun sendLive(text: String, onReply: (reply: String, error: String?) -> Unit): Boolean {
         if (busy.value || text.isBlank()) return false
+        busy.value = true
         run.job = c.appScope.launch(Dispatchers.Main.immediate) {
+          try {
             c.db.chats().insertMessage(MessageEntity(chatId = chatId, role = "user", content = text, createdAt = System.currentTimeMillis()))
             val chat = c.db.chats().get(chatId)
             if (chat != null && (chat.title == "New chat" || chat.title.isBlank())) {
@@ -383,13 +390,18 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             }
             val last = c.db.chats().messages(chatId).lastOrNull()
             if (last != null && last.role == "assistant") onReply(last.content, last.error) else onReply("", "No reply was saved")
+          } finally {
+            busy.value = false
+          }
         }
         return true
     }
 
     fun regenerate() {
         if (busy.value) return
+        busy.value = true
         run.job = c.appScope.launch(Dispatchers.Main.immediate) {
+          try {
             val msgs = c.db.chats().messages(chatId)
             val last = msgs.lastOrNull()
             if (last != null && last.role == "assistant") c.db.chats().deleteMessage(last.id)
@@ -399,6 +411,9 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 pendingMakeRequest = req
             }
             generate(emptyList())
+          } finally {
+            busy.value = false
+          }
         }
     }
 
