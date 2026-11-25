@@ -26,6 +26,8 @@ data class DeviceInfo(
     val sdkInt: Int,
     val abis: List<String>,
     val cpuCores: Int,
+    /** Fast ("big") CPU cores, from their maximum frequencies; 0 if unknown. */
+    val fastCores: Int = 0,
     val totalRamBytes: Long,
     val availRamBytes: Long,
     val lowRam: Boolean,
@@ -72,6 +74,11 @@ class DeviceInspector(private val context: Context) {
             sdkInt = Build.VERSION.SDK_INT,
             abis = Build.SUPPORTED_ABIS.toList(),
             cpuCores = Runtime.getRuntime().availableProcessors(),
+            fastCores = PerformanceManager.fastCores(
+                (0 until Runtime.getRuntime().availableProcessors()).map { i ->
+                    runCatching { java.io.File("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq").readText().trim().toLong() }.getOrDefault(0L)
+                }
+            ),
             totalRamBytes = mem.totalMem,
             availRamBytes = mem.availMem,
             lowRam = am.isLowRamDevice,

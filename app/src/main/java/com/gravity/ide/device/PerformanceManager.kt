@@ -8,10 +8,25 @@ import com.gravity.ide.data.settings.AppSettings
  */
 object PerformanceManager {
 
+    /**
+     * The phone's fast cores, from each core's maximum frequency: those within 80% of the fastest
+     * (1+3+4 → 4, 2+6 → 2, 4+4 → 4). llama.cpp splits work evenly between its threads, so a thread
+     * on a slow "little" core holds the fast ones back: fast cores only is quickest.
+     */
+    fun fastCores(maxFreqsKhz: List<Long>): Int {
+        val known = maxFreqsKhz.filter { it > 0 }
+        if (known.isEmpty()) return 0
+        val top = known.max()
+        return known.count { it * 10 >= top * 8 }.coerceAtLeast(1)
+    }
+
     fun threads(settings: AppSettings, info: DeviceInfo): Int {
         val cores = info.cpuCores.coerceAtLeast(1)
+        // Fast cores, at least 2 (a phone with one prime core still gains from a second thread), else 4.
+        val fast = info.fastCores.takeIf { it > 0 }?.let { maxOf(it, 2) } ?: minOf(4, cores)
         val base = when (settings.performanceMode) {
-            "HIGH" -> cores
+            "AUTO" -> fast
+            "HIGH" -> fast
             "LOW" -> 2
             else -> settings.localThreads
         }

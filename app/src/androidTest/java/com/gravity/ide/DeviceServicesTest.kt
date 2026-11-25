@@ -393,8 +393,27 @@ class DeviceServicesTest {
         val model = runBlocking { c.db.models().all() }.firstOrNull { it.status == ModelStatus.READY.name && it.filePath.contains("0.5b-instruct", ignoreCase = true) }
         Assume.assumeTrue("Needs the instruct model downloaded by t12d", model != null)
         val loaded = runBlocking { c.localHost.load(model!!, 2048, 2) }
-        val system = LlmMessage(Role.SYSTEM, com.gravity.ide.core.ChatPrompt.system())
         val earlier = listOf(LlmMessage(Role.USER, "Hi, my name is Asha."), LlmMessage(Role.ASSISTANT, "Hello Asha! How can I help you today?"))
+        // Cold first word (nothing read yet) with the long cloud prompt and with the short phone one.
+        fun coldFirstWord(prompt: String): Long {
+            val t = System.currentTimeMillis()
+            var first = -1L
+            runBlocking {
+                c.providers.local.stream(LlmRequest(loaded.name, listOf(LlmMessage(Role.SYSTEM, prompt)) + earlier + LlmMessage(Role.USER, "What is my name?"), maxOutputTokens = 2, temperature = 0.1)) { ev ->
+                    if (ev is com.gravity.ide.ai.LlmEvent.TextDelta && first < 0) first = System.currentTimeMillis() - t
+                }
+            }
+            return first
+        }
+        val coldLong = coldFirstWord(com.gravity.ide.core.ChatPrompt.system())
+        val coldShort = coldFirstWord(com.gravity.ide.core.ChatPrompt.phone())
+        val longChars = com.gravity.ide.core.ChatPrompt.system().length
+        val shortChars = com.gravity.ide.core.ChatPrompt.phone().length
+        Ci.log("local-prompt", "Cold first word: long prompt ($longChars chars) $coldLong ms, phone prompt ($shortChars chars) $coldShort ms")
+        // Phone models get the short prompt (as the chat screen sends it).
+        val system = LlmMessage(Role.SYSTEM, com.gravity.ide.core.ChatPrompt.system(compact = true))
+        // Something else first, so the warm-up below really reads the prompt again.
+        runBlocking { c.providers.local.stream(LlmRequest(loaded.name, listOf(LlmMessage(Role.USER, "Count to three.")), maxOutputTokens = 1)) { } }
         val t0 = System.currentTimeMillis()
         runBlocking { c.providers.local.stream(LlmRequest(loaded.name, listOf(system) + earlier, maxOutputTokens = 1)) { } }
         val warmMs = System.currentTimeMillis() - t0
@@ -408,7 +427,7 @@ class DeviceServicesTest {
         }
         val reused = com.gravity.ide.ai.local.LlamaBridge.modelInfo(loaded.handle).getOrElse(5) { 0 }
         Ci.log("local-warm", "Warm-up read the prompt in $warmMs ms; the reply then reused $reused tokens, first word after $firstMs ms: \"${reply.toString().trim()}\"")
-        assertTrue("The reply did not reuse the warmed-up prompt (reused $reused tokens)", reused > 300)
+        assertTrue("The reply did not reuse the warmed-up prompt (reused $reused tokens)", reused > 150)
         assertTrue("The model forgot the chat: ${reply}", reply.contains("Asha", ignoreCase = true))
     }
 

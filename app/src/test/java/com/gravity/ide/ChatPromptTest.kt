@@ -18,12 +18,17 @@ class ChatPromptTest {
         assertTrue(p.contains("What Gravity can do:") && p.contains("What Gravity cannot do:"))
         assertTrue(ChatPrompt.canDo.size >= 5 && ChatPrompt.cannotDo.size >= 5)
         assertTrue(p.contains("Answer the user's latest message only"))
-        assertTrue("prompt too long for a phone model: ${p.length}", p.length < 3500)
+        assertTrue("prompt too long: ${p.length}", p.length < 3500)
+        // Phone models read the prompt before their first word: keep theirs short (≈130 tokens).
+        val phone = ChatPrompt.phone()
+        assertTrue("phone prompt too long: ${phone.length}", phone.length < 1200)
+        assertTrue(phone.contains("latest message only") && phone.contains("You cannot") && phone.contains("both parts"))
     }
 
     @Test fun exportPromptAndQuestionsForThePhoneModelCheck() {
         val dir = File("build/chat-prompts").apply { mkdirs() }
-        File(dir, "system.txt").writeText(ChatPrompt.system())
+        // The phone-model check asks phone models, so it gets what they get: the short prompt.
+        File(dir, "system.txt").writeText(ChatPrompt.phone())
         fun turn(role: String, text: String) = JSONObject().put("role", role).put("content", text)
         val capability = "Tum Aisa pura Baat batao ki tum mere liye kya-kya kar sakte ho aur kya-kya Nahin kar sakte ho sab ek-ek line bye line Karke batao"
         val cases = JSONArray()

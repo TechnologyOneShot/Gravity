@@ -92,6 +92,9 @@ int generate(Session *s, const std::vector<std::string> &roles, const std::vecto
         cparams.n_batch = n_ctx;
         cparams.n_threads = s->n_threads;
         cparams.n_threads_batch = s->n_threads;
+        // Flash attention: faster attention and a smaller cache on the CPU (llama.cpp turns it on
+        // by default where supported in later versions).
+        cparams.flash_attn = true;
         s->ctx = llama_init_from_model(s->model, cparams);
         if (!s->ctx) {
             s->ctx_size = 0;

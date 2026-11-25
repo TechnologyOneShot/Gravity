@@ -43,7 +43,8 @@ data class AppSettings(
     val localThreads: Int = 4,
     val localContextSize: Int = 4096,
     val lowMemoryMode: Boolean = false,
-    val performanceMode: String = "ADAPTIVE",
+    /** AUTO: the phone's fast cores (default); ADAPTIVE: [localThreads]; HIGH: fast cores; LOW: 2. */
+    val performanceMode: String = "AUTO",
     val redactSecrets: Boolean = true,
     val confirmCloudUpload: Boolean = true,
     val notifications: Boolean = true,
@@ -84,6 +85,8 @@ class SettingsRepository(private val context: Context) {
         val ctx = intPreferencesKey("local_ctx")
         val lowMem = booleanPreferencesKey("low_memory")
         val perf = stringPreferencesKey("performance_mode")
+        /** Since the fast-cores default: the old key held "ADAPTIVE" (4 threads) for every install that saved settings. */
+        val perf2 = stringPreferencesKey("performance_mode2")
         val redact = booleanPreferencesKey("redact_secrets")
         val confirmUpload = booleanPreferencesKey("confirm_cloud_upload")
         val notifications = booleanPreferencesKey("notifications")
@@ -122,7 +125,10 @@ class SettingsRepository(private val context: Context) {
             localThreads = this[Keys.threads] ?: d.localThreads,
             localContextSize = this[Keys.ctx] ?: d.localContextSize,
             lowMemoryMode = this[Keys.lowMem] ?: d.lowMemoryMode,
-            performanceMode = this[Keys.perf] ?: d.performanceMode,
+            // A saved choice, else an old one that was not just the old default (Adaptive, 4 threads).
+            performanceMode = this[Keys.perf2]
+                ?: this[Keys.perf]?.takeIf { it != "ADAPTIVE" || (this[Keys.threads] ?: 4) != 4 }
+                ?: d.performanceMode,
             redactSecrets = this[Keys.redact] ?: d.redactSecrets,
             confirmCloudUpload = this[Keys.confirmUpload] ?: d.confirmCloudUpload,
             notifications = this[Keys.notifications] ?: d.notifications,
@@ -156,7 +162,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.threads] = s.localThreads.coerceIn(1, 16)
             prefs[Keys.ctx] = s.localContextSize.coerceIn(512, 32768)
             prefs[Keys.lowMem] = s.lowMemoryMode
-            prefs[Keys.perf] = s.performanceMode
+            prefs[Keys.perf2] = s.performanceMode
             prefs[Keys.redact] = s.redactSecrets
             prefs[Keys.confirmUpload] = s.confirmCloudUpload
             prefs[Keys.notifications] = s.notifications

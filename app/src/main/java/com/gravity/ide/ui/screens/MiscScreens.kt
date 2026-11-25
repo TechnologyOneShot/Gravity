@@ -191,8 +191,12 @@ private val settingItems: List<SettingItem> = listOf(
         },
         { it.localContextSize.toString() }, { s, v -> s.copy(localContextSize = v.toInt()) },
     )),
-    SettingItem(SettingsPage.PHONE_AI, "Speed", "How many CPU cores the phone model uses (the phone's temperature still limits it)", Control.Choice(listOf("ADAPTIVE" to "Adaptive", "HIGH" to "Fastest", "LOW" to "Battery saver"), { it.performanceMode }, { s, v -> s.copy(performanceMode = v) })),
-    SettingItem(SettingsPage.PHONE_AI, "CPU threads", "Used by Adaptive speed", Control.Num({ it.localThreads }, { s, v -> s.copy(localThreads = v) }, 1..16)),
+    SettingItem(
+        SettingsPage.PHONE_AI, "Speed",
+        "Automatic uses the phone's fast CPU cores only (quickest: slow cores hold the fast ones back); the phone's temperature still limits it",
+        Control.Choice(listOf("AUTO" to "Automatic (fast cores)", "ADAPTIVE" to "My thread count", "LOW" to "Battery saver"), { if (it.performanceMode == "HIGH") "AUTO" else it.performanceMode }, { s, v -> s.copy(performanceMode = v) }),
+    ),
+    SettingItem(SettingsPage.PHONE_AI, "CPU threads", "Used by \"My thread count\"", Control.Num({ it.localThreads }, { s, v -> s.copy(localThreads = v) }, 1..16)),
     SettingItem(SettingsPage.PHONE_AI, "Low memory mode", "2k context, 2 threads, one task at a time", Control.Toggle({ it.lowMemoryMode }, { s, v -> s.copy(lowMemoryMode = v) })),
     // Agent & apps
     SettingItem(SettingsPage.APPS, "Ask before every command", "Otherwise only risky commands need your OK", Control.Toggle({ it.approveAllCommands }, { s, v -> s.copy(approveAllCommands = v) })),

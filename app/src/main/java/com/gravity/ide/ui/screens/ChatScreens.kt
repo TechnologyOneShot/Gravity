@@ -243,7 +243,8 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         project: com.gravity.ide.data.db.ProjectEntity?, extra: String, out: (String) -> String,
     ): Pair<String, ArrayList<LlmMessage>> {
         val system = buildString {
-            append(com.gravity.ide.core.ChatPrompt.system())
+            // Phone models get the short prompt: they read it before their first word.
+            append(com.gravity.ide.core.ChatPrompt.system(compact = resolved.provider.isLocal))
             if (project != null) {
                 val root = File(project.rootPath)
                 append("\n\nThe user is working on project '${project.name}' (${project.type}). Files:\n")
