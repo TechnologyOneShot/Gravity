@@ -598,7 +598,7 @@ class DeviceServicesTest {
         Ci.log("make", "PDF ${pdf.length()} bytes, ${back.pages} page(s), read back via ${back.method}: ${back.text.replace('\n', ' ').take(200)} [${back.layerInfo}]")
         // Read back from its text layer or (if Android's PDF writer left none PDFBox can use) with OCR,
         // which can misread a digit: check whole words.
-        assertTrue("The PDF does not contain the text: ${back.text}", back.text.contains("School Rules") && back.text.contains("Arrive by") && back.text.contains("विद्यालय"))
+        assertTrue("The PDF does not contain the text: ${back.text}", back.text.contains("School Rules") && back.text.contains("Arrive by 8 AM") && back.text.contains("विद्यालय"))
 
         val zip = com.gravity.ide.files.FileMaker.zip(ctx, "site", com.gravity.ide.core.MakeFiles.codeFiles(reply).map { it.first to it.second.toByteArray() })
         val names = java.util.zip.ZipFile(zip).use { z -> z.entries().toList().map { it.name } }

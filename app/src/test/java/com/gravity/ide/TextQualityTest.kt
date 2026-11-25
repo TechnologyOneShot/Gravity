@@ -20,6 +20,8 @@ class TextQualityTest {
 
     @Test fun ocrLookalikeDigitsAreFixedOnHindiAndEnglishPages() {
         org.junit.Assert.assertEquals("Arrive by 8 AM, room 10", com.gravity.ide.core.TextQuality.fixOcrDigits("Arrive by \u09EA AM, room 1\u09E6"))
+        // Stray misread Bengali letters on an English / Hindi page do not stop the fix.
+        org.junit.Assert.assertEquals("School Rules. Arrive by 8 AM. File: \u0995\u09BEtml", com.gravity.ide.core.TextQuality.fixOcrDigits("School Rules. Arrive by \u09EA AM. File: \u0995\u09BEtml"))
         // A real Bengali page keeps its digits.
         val bengali = "\u0986\u09AE\u09BE\u09B0 \u09EA"
         org.junit.Assert.assertEquals(bengali, com.gravity.ide.core.TextQuality.fixOcrDigits(bengali))
