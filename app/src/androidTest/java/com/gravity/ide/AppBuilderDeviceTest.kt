@@ -116,7 +116,8 @@ class AppBuilderDeviceTest {
         Ci.log("builder", "Design build → ${done?.status}; saved $saved; image sent: ${lastBody.contains("\"image_url\"")}; log: ${log.take(8)}")
         assertEquals("COMPLETED", done?.status)
         assertEquals(1, saved.size)
-        assertTrue("The design picture was not sent to the AI", lastBody.contains("\"image_url\"") && lastBody.contains("data:image/jpeg;base64,"))
+        val sent = lastBody.replace("\\/", "/") // JSON may write "/" as "\/"
+        assertTrue("The design picture was not sent to the AI", sent.contains("\"image_url\"") && sent.contains("data:image/jpeg;base64,"))
         assertTrue("The AI was not asked to copy the design", lastBody.contains("design picture"))
         assertTrue("The build log does not say it read the design", log.any { it.startsWith("Reading your design picture") })
     }
