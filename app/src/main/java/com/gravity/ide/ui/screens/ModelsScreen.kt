@@ -434,7 +434,8 @@ private fun RecommendedModels(installed: List<LocalModelEntity>) {
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             for (m in suggestedModels) {
-                val have = installed.firstOrNull { it.name.equals(m.file, ignoreCase = true) || (it.repoId == m.repo && it.filePath.endsWith(m.file)) }
+                // Only a copy from this repo counts (checked with its SHA-256); an imported file with the same name may differ.
+                val have = installed.firstOrNull { it.repoId == m.repo && it.filePath.endsWith(m.file) }
                 val fits = m.approxBytes <= maxBytes
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

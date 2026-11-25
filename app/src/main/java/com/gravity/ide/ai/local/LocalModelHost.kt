@@ -156,8 +156,14 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         }
         val msg = "${model.name} gives broken answers on this phone in every way Gravity can run it " +
             "(${LlamaBridge.engines.joinToString(" and ") { it.label }}; file mapped, read into memory, 1 thread) " +
-            "(asked \"What is the capital of France?\", it answered \"${lastAnswer.take(80)}\"). Use Gemini, or try another model or quantization " +
-            "(Phone Models → Check the phone AI shows the details)."
+            "(asked \"What is the capital of France?\", it answered \"${lastAnswer.take(80)}\"). " +
+            if (model.sha256Expected == null) {
+                // Random words in every mode usually mean damaged weights; this copy was never checked against Hugging Face.
+                "This file was never checked against Hugging Face's checksum (imported, or downloaded by link), so it is probably damaged. " +
+                    "Delete it and download the model again from Phone Models → Recommended (checked with Hugging Face's SHA-256)."
+            } else {
+                "Use Gemini, or try another model or quantization (Phone Models → Check the phone AI shows the details)."
+            }
         _state.value = State.Failed(msg)
         events.log(EventCategory.MODEL, "Not using ${model.name}: wrong answers in every mode", msg, EventLevel.ERROR)
         throw ModelUnhealthyException(msg)
