@@ -266,6 +266,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         val text = streamed ?: return@LaunchedEffect
         if (phase != LivePhase.THINKING && phase != LivePhase.SPEAKING) return@LaunchedEffect
         reply = text
+        if (spokenUpTo > text.length) spokenUpTo = text.length
         val end = SpeechText.speakableEnd(text, spokenUpTo)
         if (end > spokenUpTo) {
             val piece = text.substring(spokenUpTo, end)

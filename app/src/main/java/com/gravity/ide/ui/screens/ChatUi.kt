@@ -531,7 +531,7 @@ internal fun ChatComposer(
             if (!appMode && !hideCoderHint && modelLabel != null && modelLabel.isLocal && modelLabel.text.contains("coder", ignoreCase = true)) {
                 Row(Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp).testTag("coder-hint"), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Coder models are made for code and apps; their Hindi chat is weak. For Hindi / Hinglish talk, tap here and pick Gemma 3 4B or Llama 3.2 3B.",
+                        "Coder models are made for code and apps; their Hindi chat is weak. For Hindi / Hinglish talk, tap here and pick Gemma 3 4B (Phone Models → Recommended) or Gemini.",
                         style = MaterialTheme.typography.labelSmall, color = GravityColors.Amber,
                         modifier = Modifier.weight(1f).clickable(onClick = onPickModel),
                     )

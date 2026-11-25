@@ -420,6 +420,10 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                             outTok = maxOf(outTok, ev.outputTokens)
                         }
                         is LlmEvent.Sources -> sources += ev.sources
+                        is LlmEvent.Retract -> {
+                            text.setLength(maxOf(0, text.length - ev.chars))
+                            streaming.value = text.toString()
+                        }
                         is LlmEvent.ModelSwitched -> {
                             resolvedModel = ev.to
                             notice.value = when {

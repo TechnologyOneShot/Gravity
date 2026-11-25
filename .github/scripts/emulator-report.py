@@ -64,6 +64,22 @@ if full.exists():
         print("\n".join(lines[i:i + 40]))
         print("-----")
 
+# When the test run stops early (the test process died), say why: the instrumentation result from
+# gradle and the process deaths / native crashes / low-memory kills in logcat.
+g = out / "gradle-connected.txt"
+if g.exists():
+    why = [l for l in g.read_text(errors="replace").splitlines()
+           if any(k in l for k in ("Instrumentation run failed", "Process crashed", "INSTRUMENTATION_", "Test run failed", "shortMsg", "longMsg", "What went wrong", "> There were failing tests", "Tests on "))]
+    if why:
+        print("\n== Instrumentation (gradle) ==")
+        print("\n".join(why[:30]))
+full = out / "logcat-full.txt"
+if full.exists():
+    keys = ("Fatal signal", "F DEBUG", "lowmemorykiller", "am_proc_died", "has died", "Killing ", "ANR in", "Force finishing", "am_kill", "died: ")
+    deaths = [l for l in full.read_text(errors="replace").splitlines() if any(k in l for k in keys) and ("gravity" in l.lower() or "Fatal signal" in l or "F DEBUG" in l or "lowmemorykiller" in l)]
+    print(f"\n== Process deaths, native crashes, low-memory kills: {len(deaths)} ==")
+    print("\n".join(deaths[:40]))
+
 shots = sorted(p.name for p in (out / "screenshots").rglob("*.png")) if (out / "screenshots").exists() else []
 print(f"\n== Screenshots captured: {len(shots)} ==")
 print("\n".join(shots))

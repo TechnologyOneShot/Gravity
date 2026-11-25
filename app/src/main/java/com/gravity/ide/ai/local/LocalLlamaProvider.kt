@@ -49,6 +49,10 @@ class LocalLlamaProvider(
         val stops = request.stop.filter { it.isNotEmpty() }
         val longestStop = stops.maxOfOrNull { it.length } ?: 0
         var stopped = false
+        // Chat replies (not App Builder pages or tool calls): stop when the model repeats itself.
+        val guardLoops = prefix.isEmpty() && request.tools.isEmpty()
+        var sinceCheck = 0
+        var loopCut = -1
         val (generated, nativeFinish) = host.generationMutex.withLock {
             withContext(Dispatchers.Default) {
                 val count = LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
@@ -60,6 +64,15 @@ class LocalLlamaProvider(
                             val tail = full.substring(maxOf(0, full.length - piece.length - longestStop))
                             if (stops.any { it in tail }) stopped = true
                         }
+                        sinceCheck += piece.length
+                        if (guardLoops && !stopped && (piece.contains('\n') || sinceCheck >= 120)) {
+                            sinceCheck = 0
+                            val cut = com.gravity.ide.core.LoopGuard.loopStart(full)
+                            if (cut >= 0) {
+                                loopCut = cut
+                                stopped = true
+                            }
+                        }
                     }
                     ctx.isActive && !stopped
                 }
@@ -70,6 +83,11 @@ class LocalLlamaProvider(
         if (tail.isNotEmpty()) {
             full.append(tail)
             onEvent(LlmEvent.TextDelta(tail))
+        }
+        if (loopCut in 0 until full.length) {
+            // Keep the first copy, drop the repeats.
+            onEvent(LlmEvent.Retract(full.length - loopCut))
+            full.setLength(loopCut)
         }
         if (generated < 0) throw LlmException("Local generation failed: ${LlamaBridge.lastError()}")
         if (request.tools.isNotEmpty()) {

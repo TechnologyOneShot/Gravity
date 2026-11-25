@@ -43,6 +43,8 @@ sealed interface LlmEvent {
     data class Usage(val inputTokens: Int, val outputTokens: Int) : LlmEvent
     data class Sources(val sources: List<WebSource>) : LlmEvent
     data class Done(val finishReason: String?) : LlmEvent
+    /** Take back the last [chars] characters already sent (a phone model started repeating itself). */
+    data class Retract(val chars: Int) : LlmEvent
     /** The request was retried with [to] instead of [from] (retired model, or its free quota is used up); [reason] says why. */
     data class ModelSwitched(val from: String, val to: String, val reason: String = "") : LlmEvent
 }
@@ -96,6 +98,10 @@ suspend fun LlmProvider.complete(request: LlmRequest, onText: (String) -> Unit =
             is LlmEvent.Sources -> sources += ev.sources
             is LlmEvent.Done -> finish = ev.finishReason
             is LlmEvent.ModelSwitched -> Unit
+            is LlmEvent.Retract -> {
+                text.setLength(maxOf(0, text.length - ev.chars))
+                onText(text.toString())
+            }
         }
     }
     return LlmResult(text.toString(), calls, inTok, outTok, finish, sources.distinctBy { it.url })

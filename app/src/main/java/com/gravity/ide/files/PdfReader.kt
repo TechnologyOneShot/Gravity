@@ -32,6 +32,8 @@ object PdfReader {
         val method: String,
         val pagesRead: Int,
         val previews: List<Bitmap>,
+        /** What the text layer gave (characters, or why it could not be read): for diagnostics. */
+        val layerInfo: String = "",
     )
 
     /** Pages read with OCR at most (each takes about a second on a phone). */
@@ -46,7 +48,7 @@ object PdfReader {
                 ?: throw IllegalArgumentException("Cannot open the PDF")
             var pages = 0
             var layerText = ""
-            runCatching {
+            val layer = runCatching {
                 PDFBoxResourceLoader.init(context.applicationContext)
                 PDDocument.load(tmp).use { doc ->
                     pages = doc.numberOfPages
@@ -57,13 +59,15 @@ object PdfReader {
                     layerText = stripper.getText(doc)
                 }
             }
+            val layerInfo = layer.exceptionOrNull()?.let { "text layer unreadable: ${it.javaClass.simpleName}: ${it.message}" }
+                ?: "text layer: ${layerText.trim().length} characters: ${layerText.trim().replace('\n', ' ').take(120)}"
             val previews = ArrayList<Bitmap>()
             ParcelFileDescriptor.open(tmp, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
                 PdfRenderer(pfd).use { renderer ->
                     if (pages == 0) pages = renderer.pageCount
                     for (i in 0 until minOf(previewPages, renderer.pageCount)) previews += render(renderer, i, 1600)
                     if (!TextQuality.pdfTextLooksBroken(layerText, pages)) {
-                        return Result(layerText.trim(), pages, "text layer", minOf(pages, MAX_TEXT_PAGES), previews)
+                        return Result(layerText.trim(), pages, "text layer", minOf(pages, MAX_TEXT_PAGES), previews, layerInfo)
                     }
                     // No usable text layer: read the pages with on-device OCR.
                     val recognizer = TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
@@ -76,7 +80,7 @@ object PdfReader {
                             if (i >= previews.size) bmp.recycle()
                             if (text.isNotBlank()) sb.append("--- Page ").append(i + 1).append(" ---\n").append(text.trim()).append("\n\n")
                         }
-                        return Result(sb.toString().trim(), pages, "on-device OCR", count, previews)
+                        return Result(sb.toString().trim(), pages, "on-device OCR", count, previews, layerInfo)
                     } finally {
                         recognizer.close()
                     }

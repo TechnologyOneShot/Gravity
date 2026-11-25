@@ -574,7 +574,7 @@ class DeviceServicesTest {
         val scanPdf = java.io.File(ctx.cacheDir, "rules-scan.pdf").also { makePdf(it, asPicture = true) }
 
         val a = com.gravity.ide.files.PdfReader.read(ctx, Uri.fromFile(textPdf))
-        Ci.log("pdf", "Text PDF via ${a.method}: ${a.text.replace('\n', ' ').take(300)}")
+        Ci.log("pdf", "Text PDF via ${a.method}: ${a.text.replace('\n', ' ').take(300)} [${a.layerInfo}]")
         val b = com.gravity.ide.files.PdfReader.read(ctx, Uri.fromFile(scanPdf))
         Ci.log("pdf", "Scanned PDF via ${b.method}: ${b.text.replace('\n', ' ').take(300)}")
         textPdf.delete(); scanPdf.delete()
@@ -595,8 +595,10 @@ class DeviceServicesTest {
             "<rect width=\"100\" height=\"50\" fill=\"#00e5ff\"/><circle cx=\"25\" cy=\"25\" r=\"20\" fill=\"#ff4d6d\"/></svg>\n```"
         val pdf = com.gravity.ide.files.FileMaker.pdf(ctx, "rules", reply)
         val back = com.gravity.ide.files.PdfReader.read(ctx, Uri.fromFile(pdf), previewPages = 0)
-        Ci.log("make", "PDF ${pdf.length()} bytes, ${back.pages} page(s), read back via ${back.method}: ${back.text.replace('\n', ' ').take(200)}")
-        assertTrue("The PDF does not contain the text", back.text.contains("Arrive by 8 AM"))
+        Ci.log("make", "PDF ${pdf.length()} bytes, ${back.pages} page(s), read back via ${back.method}: ${back.text.replace('\n', ' ').take(200)} [${back.layerInfo}]")
+        // Read back from its text layer or (if Android's PDF writer left none PDFBox can use) with OCR,
+        // which can misread a digit: check whole words.
+        assertTrue("The PDF does not contain the text: ${back.text}", back.text.contains("School Rules") && back.text.contains("Arrive by") && back.text.contains("विद्यालय"))
 
         val zip = com.gravity.ide.files.FileMaker.zip(ctx, "site", com.gravity.ide.core.MakeFiles.codeFiles(reply).map { it.first to it.second.toByteArray() })
         val names = java.util.zip.ZipFile(zip).use { z -> z.entries().toList().map { it.name } }
