@@ -275,6 +275,15 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
      */
     fun warmUp() = viewModelScope.launch {
         val chat = c.db.chats().get(chatId) ?: return@launch
+        val settings = c.settings.current()
+        if ((chat.providerId ?: settings.defaultProviderId) == LocalLlamaProvider.ID) {
+            // Never load a phone model just because a chat was opened unless it surely fits: a big
+            // model (7B ≈ 5 GB) loaded on top of everything else can make Android close Gravity.
+            val loaded = c.localHost.loadedOrNull()
+            val wanted = chat.model?.let { c.db.models().get(it) }
+            if (wanted == null && loaded == null) return@launch
+            if (wanted != null && loaded?.modelId != wanted.id && c.localHost.memoryWarning(wanted, settings.localContextSize) != null) return@launch
+        }
         val resolved = runCatching { c.providers.resolve(chat.providerId, chat.model) }.getOrNull() ?: return@launch
         if (busy.value) return@launch
         if (resolved.provider.isLocal) {

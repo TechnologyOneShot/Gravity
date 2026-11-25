@@ -36,6 +36,9 @@ import kotlinx.coroutines.SupervisorJob
 class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
 
+    /** Why Gravity closed unexpectedly last time (shown on start, shareable). Set up before anything else. */
+    val crashReports = com.gravity.ide.CrashReports(appContext).also { it.install(); runCatching { it.check() } }
+
     val appScope = CoroutineScope(
         SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e -> android.util.Log.e("Gravity", "Uncaught in appScope", e) }
     )

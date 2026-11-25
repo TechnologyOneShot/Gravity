@@ -742,6 +742,22 @@ class DeviceServicesTest {
         assertTrue("The picture is one flat colour", colours.size > 3)
     }
 
+    /** After a crash, the next start says what happened, with the saved stack trace to share. */
+    @Test
+    fun t17_crashReportIsShownAfterACrash() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = java.io.File(ctx.filesDir, "crash/last.txt").apply { parentFile?.mkdirs() }
+        file.writeText("Time: test\nThread: main\njava.lang.IllegalStateException: test crash\n\tat com.gravity.ide.Example.run(Example.kt:1)")
+        val reports = com.gravity.ide.CrashReports(ctx)
+        reports.check()
+        val r = reports.pending.value
+        Ci.log("crash-report", "Report after a saved crash: ${r?.title} | ${r?.details?.take(120)}")
+        assertNotNull("No report after a crash", r)
+        assertEquals("Gravity crashed last time", r!!.title)
+        assertTrue(r.details.contains("IllegalStateException: test crash"))
+        assertFalse("The saved crash was not cleared", file.exists())
+    }
+
     @Test
     fun t16_filesAreMadeOnThePhone() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext

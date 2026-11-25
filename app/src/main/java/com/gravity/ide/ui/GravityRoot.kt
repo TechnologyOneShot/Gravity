@@ -188,6 +188,32 @@ fun GravityRoot() {
                     }
                 }
                 Box(Modifier.weight(1f)) { GravityNavHost(nav, ::go) }
+                // Gravity closed unexpectedly last time: say why, with a report the user can share.
+                val crash by LocalAppContainer.current.crashReports.pending.collectAsState()
+                val crashCtx = androidx.compose.ui.platform.LocalContext.current
+                val reports = LocalAppContainer.current.crashReports
+                crash?.let { r ->
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { reports.pending.value = null },
+                        title = { Text(r.title) },
+                        text = {
+                            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                                Text(r.explanation)
+                                Spacer(Modifier.height(8.dp))
+                                Text(r.details.take(4000), style = MaterialTheme.typography.labelSmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            }
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                                    .putExtra(android.content.Intent.EXTRA_SUBJECT, r.title).putExtra(android.content.Intent.EXTRA_TEXT, r.title + "\n\n" + r.details)
+                                runCatching { crashCtx.startActivity(android.content.Intent.createChooser(send, "Share report").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                            }, modifier = Modifier.testTag("crash-share")) { Text("Share report") }
+                        },
+                        dismissButton = { androidx.compose.material3.TextButton(onClick = { reports.pending.value = null }) { Text("OK") } },
+                        modifier = Modifier.testTag("crash-report"),
+                    )
+                }
                 // A "reply ready" notification was tapped: open that chat.
                 val openChat by com.gravity.ide.agent.ChatRuns.openChat.collectAsState()
                 LaunchedEffect(openChat) {
