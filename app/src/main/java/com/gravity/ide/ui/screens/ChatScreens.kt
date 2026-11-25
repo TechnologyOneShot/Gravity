@@ -240,7 +240,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
      */
     private suspend fun conversationStart(
         resolved: com.gravity.ide.ai.ResolvedModel, settings: com.gravity.ide.data.settings.AppSettings,
-        project: com.gravity.ide.data.db.ProjectEntity?, extra: String, out: (String) -> String,
+        project: com.gravity.ide.data.db.ProjectEntity?, extra: String, live: Boolean, out: (String) -> String,
     ): Pair<String, ArrayList<LlmMessage>> {
         val system = buildString {
             // Phone models get the short prompt: they read it before their first word.
@@ -265,8 +265,17 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         val from = com.gravity.ide.core.HistoryWindow.start(
             history.map { com.gravity.ide.core.HistoryWindow.tokens(it.content) }, history.map { it.role == "user" }, budget, step,
         )
+        // Phone models: each user message carries the language to reply in, found by the app (they
+        // follow a plain instruction far better than "the user's language"). Every message gets it
+        // the same way each time, so the chat the model already read still matches next time.
+        // Not in live voice, which names the language itself.
+        val hint = resolved.provider.isLocal && !live
         val recent = ArrayList<LlmMessage>()
-        for (m in history.drop(from)) recent += LlmMessage(if (m.role == "user") Role.USER else Role.ASSISTANT, out(m.content))
+        for (m in history.drop(from)) {
+            val user = m.role == "user"
+            val text = out(m.content)
+            recent += LlmMessage(if (user) Role.USER else Role.ASSISTANT, if (user && hint) com.gravity.ide.core.LanguageHint.withHint(text) else text)
+        }
         return out(system) to recent
     }
 
@@ -290,7 +299,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         if (busy.value) return@launch
         if (resolved.provider.isLocal) {
             val project = chat.projectId?.let { c.db.projects().get(it) }
-            val (system, recent) = conversationStart(resolved, c.settings.current(), project, "") { it }
+            val (system, recent) = conversationStart(resolved, c.settings.current(), project, "", liveLanguage.value != null) { it }
             if (busy.value) return@launch
             runCatching {
                 resolved.provider.stream(LlmRequest(resolved.model, listOf(LlmMessage(Role.SYSTEM, system)) + recent, maxOutputTokens = 1)) { }
@@ -475,7 +484,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                     }
                 }
                 // The same start as the warm-up built (see warmUp), so a phone model reuses what it already read.
-                val (system, recent) = conversationStart(resolved, settings, project, extra, ::out)
+                val (system, recent) = conversationStart(resolved, settings, project, extra, liveLanguage.value != null, ::out)
                 llm += LlmMessage(Role.SYSTEM, system)
                 var contextSize: Int? = null
                 if (atts.isNotEmpty() && recent.isNotEmpty() && recent.last().role == Role.USER) {
