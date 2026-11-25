@@ -631,11 +631,11 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                         val hindi = text.count { it in '\u0900'..'\u097F' } * 10 > text.count { it.isLetter() }.coerceAtLeast(1) * 3
                         val locale = java.util.Locale.forLanguageTag(if (hindi) "hi-IN" else "en-IN")
                         val made = if (described.isNotEmpty()) {
-                            // Each scene's picture from the online image AI (about 15 s each on the free service).
+                            // Each scene's picture from the online image AI (one per 45 s on the free service).
                             val pictures = ArrayList<android.graphics.Bitmap>()
                             try {
                                 described.forEachIndexed { i, (_, desc) ->
-                                    notice.value = "Making picture ${i + 1} of ${described.size} with the free online image AI…"
+                                    notice.value = "Making picture ${i + 1} of ${described.size} with the free online image AI (one per 45 s on the free service)…"
                                     pictures += com.gravity.ide.files.OnlineImages.bitmap("$desc, vertical portrait composition", com.gravity.ide.files.VideoMaker.W, com.gravity.ide.files.VideoMaker.H)
                                 }
                             } catch (e: Exception) {
@@ -955,7 +955,7 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
             text = {
                 Text(
                     "Gravity can make real AI pictures with Pollinations.ai, a free online image AI (no account needed). Only the picture's " +
-                        "description is sent there. Without an account it makes about one picture every 15 seconds and may add a small watermark.\n\n" +
+                        "description is sent there. Without an account it makes one picture at a time, at least 45 seconds apart (a video with 5 scenes takes about 4 minutes), and may add a small watermark.\n\n" +
                         "Or the chat's AI draws it on this phone: works offline, but the drawings are simple (especially with phone models).\n\n" +
                         "You can change this any time in Settings → AI → Pictures and videos."
                 )

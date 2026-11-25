@@ -331,4 +331,25 @@ class UiNavigationTest {
         prefs.edit().remove("style").commit()
         org.junit.Assert.assertEquals("romantic", saved)
     }
+
+    /** The first picture request asks where pictures come from; the answer is remembered and the message is sent. */
+    @Test
+    fun t08_firstPictureRequestAsksOnceThenSends() {
+        runBlocking { Ci.container.settings.update { it.copy(pictureMaker = "ask") } }
+        waitForTitle("Gravity")
+        openDrawerEntry("New Chat")
+        waitForTitle("Chat")
+        val request = "ek bandar ki image banao ${System.currentTimeMillis() % 100000}"
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput(request)
+        compose.onNodeWithContentDescription("Send").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("pictures-draw").fetchSemanticsNodes().isNotEmpty() }
+        Ci.screenshot("08_pictures_question")
+        compose.onNodeWithTag("pictures-draw").performClick()
+        val sent = poll(15_000) { Ci.container.db.chats().all().firstOrNull { it.title == request } }
+        val setting = runBlocking { Ci.container.settings.current().pictureMaker }
+        Ci.log("pictures", "Answer saved: $setting; message sent: ${sent != null}")
+        runBlocking { Ci.container.settings.update { it.copy(pictureMaker = "ask") } }
+        assertTrue("The choice was not saved: $setting", setting == "draw")
+        assertNotNull("The message was not sent after the choice", sent)
+    }
 }

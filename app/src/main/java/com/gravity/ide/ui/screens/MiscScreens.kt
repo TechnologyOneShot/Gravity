@@ -177,7 +177,7 @@ private val settingItems: List<SettingItem> = listOf(
     SettingItem(SettingsPage.AI, "Brave Search API key", "Needed for Brave Search; stored encrypted", Control.Secret(SecretStore.BRAVE_KEY)),
     SettingItem(
         SettingsPage.AI, "Pictures and videos",
-        "Online: real AI pictures from Pollinations.ai (free, no account; your picture description is sent there; 1 picture per 15 s, may carry a small watermark). Draw: the chat's AI draws it on this phone (works offline, simpler pictures)",
+        "Online: real AI pictures from Pollinations.ai (free, no account; your picture description is sent there; one picture at a time, at least 45 s apart, may carry a small watermark). Draw: the chat's AI draws it on this phone (works offline, simpler pictures)",
         Control.Choice(listOf("ask" to "Ask me the first time", "online" to "Free online image AI", "draw" to "Draw on this phone"), { it.pictureMaker }, { s, v -> s.copy(pictureMaker = v) }),
     ),
     SettingItem(SettingsPage.AI, "AI teams", "Architect, developer and reviewer working together", Control.Link(Routes.TEAMS)),
