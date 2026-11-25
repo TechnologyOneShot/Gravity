@@ -40,12 +40,16 @@ def main():
     for v in sorted(vdir.glob("*.txt")):
         system = v.read_text(encoding="utf-8")
         cases = hinted if "hint" in v.stem else plain
+        if "__" in v.stem:
+            cases = json.loads(cases_path.with_name("cases_" + v.stem.split("__")[1] + ".json").read_text(encoding="utf-8"))
         report = [f"# {model} / {v.stem}\n"]
         ok_count, prompt_tokens = 0, None
         for case in cases:
             text, took, pn, pms = ask(url, [{"role": "system", "content": system}] + case["messages"])
             if prompt_tokens is None and len(case["messages"]) == 1: prompt_tokens = pn
-            problems = score(case, text)
+            # An answer that repeats the question must not pass on the question's own words.
+            q = case["messages"][-1]["content"].split("\n\n(")[0].strip()
+            problems = score(case, text.replace(q, " ") if len(q) > 12 else text)
             ok_count += not problems
             head = f"## {case['name']}  [{'OK' if not problems else '; '.join(problems)}]  ({took:.0f} s, prompt {pn} tokens)"
             print(f"[{v.stem}] {head}", flush=True)
