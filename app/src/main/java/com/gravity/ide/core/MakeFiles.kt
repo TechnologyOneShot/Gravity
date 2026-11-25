@@ -52,6 +52,13 @@ object MakeFiles {
     }
 
     /**
+     * Words a phone model may write for a drawing in a context of [contextTokens]: a picture up to
+     * 2500, a video's scenes up to 4000, always leaving a third of the context for the prompt.
+     */
+    fun drawTokens(kind: Kind, contextTokens: Int): Int =
+        minOf(if (kind == Kind.VIDEO) 4000 else 2500, contextTokens * 2 / 3).coerceAtLeast(256)
+
+    /**
      * Extra instruction for the AI for this one message, so its reply can be turned into the file.
      * With [onlinePictures], pictures come from an online image AI: the AI only describes them.
      */

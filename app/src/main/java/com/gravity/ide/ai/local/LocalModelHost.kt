@@ -83,8 +83,9 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
     }
 
     /** Runs native engine work, noting it first so a crash inside it is recognised at the next start. */
-    fun <T> nativeWork(engine: EngineKind, modelId: String, block: () -> T): T {
-        prefs.edit().putString(KEY_NATIVE_BUSY, "${engine.name}|$modelId|${System.currentTimeMillis()}").commit()
+    fun <T> nativeWork(engine: EngineKind, modelId: String, doing: String = "", block: () -> T): T {
+        // [doing] (e.g. "writing, context 4096, up to 2500 tokens") goes into the crash report.
+        prefs.edit().putString(KEY_NATIVE_BUSY, "${engine.name}|$modelId|${System.currentTimeMillis()}|${doing.replace('|', '/')}").commit()
         try {
             return block()
         } finally {
@@ -97,7 +98,8 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
     var abortRequested = false
         private set
 
-    data class Loaded(val modelId: String, val name: String, val handle: Long, val contextSize: Int, val loadedAt: Long)
+    /** [fileBytes]: the model file's size; its pages sit in memory while it runs (memory planning). */
+    data class Loaded(val modelId: String, val name: String, val handle: Long, val contextSize: Int, val loadedAt: Long, val fileBytes: Long = 0)
 
     sealed interface State {
         data object Idle : State
@@ -176,7 +178,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         for (cfg in ladder) {
             val t = if (cfg.threads > 0) cfg.threads else threads
             val handle = try {
-                withContext(Dispatchers.Default) { nativeWork(cfg.engine, model.id) { LlamaBridge.load(file.absolutePath, contextSize, t, 0, cfg.mmap, cfg.engine) } }
+                withContext(Dispatchers.Default) { nativeWork(cfg.engine, model.id, "loading ${model.name}, context $contextSize, ${t} threads") { LlamaBridge.load(file.absolutePath, contextSize, t, 0, cfg.mmap, cfg.engine) } }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -197,7 +199,10 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
                 events.log(EventCategory.MODEL, "Failed to load ${model.name}", err, EventLevel.ERROR)
                 throw IllegalStateException(err)
             }
-            val loaded = Loaded(model.id, model.name, handle, contextSize, System.currentTimeMillis())
+            val loaded = Loaded(
+                model.id, model.name, handle, contextSize, System.currentTimeMillis(),
+                fileBytes = model.sizeBytes.takeIf { it > 0 } ?: runCatching { java.io.File(model.filePath).length() }.getOrDefault(0L),
+            )
             val verified = prefs.getString("ok_${model.id}", null) == cfg.toString()
             if (checkable && !verified) {
                 _state.value = State.Loading("${model.name} (checking it answers correctly)")
@@ -376,6 +381,9 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         val info = runCatching { LlamaBridge.modelInfo(loaded.handle) }.getOrNull() ?: return loaded.contextSize
         if (info.size < 5) return loaded.contextSize
         val perToken = com.gravity.ide.core.ContextPlanner.bytesPerToken(info[1], info[2], info[3], info[4])
-        return com.gravity.ide.core.ContextPlanner.choose(loaded.contextSize, wanted, info[0], perToken, availableRamBytes())
+        // Android counts the model file's pages as "available" (they are file cache), but taking
+        // them back makes the model read from storage again, or gets Gravity closed for memory.
+        val free = com.gravity.ide.core.ContextPlanner.reallyFree(availableRamBytes(), loaded.fileBytes)
+        return com.gravity.ide.core.ContextPlanner.choose(loaded.contextSize, wanted, info[0], perToken, free)
     }
 }

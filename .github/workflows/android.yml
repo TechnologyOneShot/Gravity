@@ -208,6 +208,73 @@ jobs:
           name: phone-model-chat-${{ matrix.model }}
           path: chat-answers/
 
+  arm64-real-model-check:
+    # A user's report: "monkey image banao" on a phone model, then the app closed. The app's engine
+    # code (gravity_core.cpp: flash attention, context rebuilt for a new size) and llama.cpp b6000,
+    # built like the phone engines and run natively on an Arm machine with real phone models: the
+    # warm-up, then the drawing as the app sends it, at the context the app uses now (the loaded
+    # 4096) and at the bigger one it asked for before (6596). Shows crashes, time and peak memory.
+    needs: debug-apk
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: Gemma-3-4B-it-Q4_K_M
+            url: https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf
+            engine: fast
+            arch: "armv8.2-a+dotprod+fp16"
+          - model: Gemma-3-4B-it-Q4_K_M
+            url: https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf
+            engine: standard
+            arch: ""
+          - model: Qwen2.5-7B-Instruct-Q4_K_M
+            url: https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf
+            engine: fast
+            arch: "armv8.2-a+dotprod+fp16"
+    name: arm64-real-model-check (${{ matrix.model }}, ${{ matrix.engine }} engine)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: chat-prompts
+          path: chat-prompts
+      - name: Build gravity-cli for Arm (the app's engine code, llama.cpp b6000)
+        run: |
+          lscpu | grep -E "Model name|^CPU\(s\)|Flags" | cut -c1-200
+          git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
+          cmake -S tools/arm-check -B /tmp/b -DCMAKE_BUILD_TYPE=Release -DLLAMA_DIR=/tmp/llama.cpp \
+            -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH="${{ matrix.arch }}" > /tmp/cmake.log
+          cmake --build /tmp/b --target gravity-cli -j"$(nproc)"
+      - name: Download ${{ matrix.model }}
+        run: curl -fL --retry 3 -o /tmp/model.gguf "${{ matrix.url }}"
+      - name: Draw the monkey as the app does
+        run: |
+          set +e
+          Q="$(cat chat-prompts/draw-question.txt)"
+          MAX=$(cat chat-prompts/draw-tokens.txt)
+          echo "Question as the app sends it: $Q (up to $MAX tokens)"
+          failed=0
+          for C in 0 6596; do
+            echo "=== Drawing context $C (0 = the loaded 4096, as the app does now; 6596 = what it asked for before)"
+            DRAW_SYSTEM=chat-prompts/draw-system.txt WARM_SYSTEM=chat-prompts/warm-system.txt DRAW_CTX=$C DRAW_MAX=$MAX DRAW_OUT=/tmp/draw-$C.txt \
+              /usr/bin/time -v /tmp/b/gravity-cli /tmp/model.gguf 4 4096 "$Q" unused 0.4 > /tmp/out-$C.txt 2> /tmp/err-$C.txt
+            code=$?
+            grep -E "^(STEP|SYSTEM_INFO)" /tmp/out-$C.txt
+            echo "EXIT: $code $(grep -E 'Command terminated by signal' /tmp/err-$C.txt)"
+            echo "PEAK MEMORY: $(grep 'Maximum resident' /tmp/err-$C.txt | awk '{print int($NF/1024)}') MB"
+            [ "$code" = 0 ] || tail -5 /tmp/err-$C.txt
+            python3 -I .github/scripts/svg-check.py /tmp/draw-$C.txt
+            if [ "$C" = 0 ] && [ "$code" != 0 ]; then failed=1; fi
+          done
+          exit $failed
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-drawing-${{ matrix.model }}-${{ matrix.engine }}
+          path: /tmp/draw-*.txt
+
   arm64-native-check:
     # The app's inference core (gravity_core.cpp), built for arm64 phones with the same NDK, API
     # level and llama.cpp settings as the APK, run under ARM emulation (qemu) with a real small

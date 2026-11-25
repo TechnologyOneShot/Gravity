@@ -14,6 +14,12 @@ object ContextPlanner {
     }
 
     /**
+     * Memory that is really free for a bigger context: Android's "available" memory includes the
+     * cached pages of the running model's own file ([modelFileBytes]), which are not spare.
+     */
+    fun reallyFree(availableBytes: Long, modelFileBytes: Long): Long = (availableBytes - modelFileBytes.coerceAtLeast(0)).coerceAtLeast(0)
+
+    /**
      * The largest of [wanted] and a few smaller steps that is above [loaded], within the model's
      * training context [trainCtx] (0 = unknown) and whose estimated memory (with a 30% margin) is
      * at most half of [availableBytes]. Falls back to [loaded].

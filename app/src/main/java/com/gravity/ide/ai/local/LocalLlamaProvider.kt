@@ -69,7 +69,10 @@ class LocalLlamaProvider(
                 val loaded = host.loadedOrNull() ?: throw LlmException("The phone model was unloaded. Load one in Phone Models, then send again.")
                 if (!host.matches(loaded, wanted)) return@withLock null // switched while waiting: go round again
                 withContext(Dispatchers.Default) {
-                val count = host.nativeWork(LlamaBridge.engineOf(loaded.handle), loaded.modelId) { LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
+                val count = host.nativeWork(
+                    LlamaBridge.engineOf(loaded.handle), loaded.modelId,
+                    "${loaded.name} writing, context ${request.contextSize ?: loaded.contextSize}, up to $maxTokens tokens",
+                ) { LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
                     val piece = utf8.append(bytes)
                     if (piece.isNotEmpty()) {
                         full.append(piece)

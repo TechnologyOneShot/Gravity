@@ -395,4 +395,20 @@ class ContextPlannerTest {
         assertEquals(4096, com.gravity.ide.core.ContextPlanner.choose(4096, 8192, 2048, perToken, 3000 * mb))
         assertEquals(8192, com.gravity.ide.core.ContextPlanner.choose(8192, 4096, 32768, perToken, 3000 * mb))
     }
+
+    @Test fun theModelsOwnFileIsNotFreeMemory() {
+        // Android said 3 GB available, but 2.5 GB of it is the running Gemma 3 4B file: 0.5 GB is spare.
+        assertEquals(512 * mb, com.gravity.ide.core.ContextPlanner.reallyFree(3072 * mb, 2560 * mb))
+        assertEquals(0L, com.gravity.ide.core.ContextPlanner.reallyFree(1024 * mb, 4700 * mb))
+        val perToken = com.gravity.ide.core.ContextPlanner.bytesPerToken(28, 1536, 12, 2)
+        // With the model counted, a bigger context is no longer chosen on such a phone.
+        assertEquals(4096, com.gravity.ide.core.ContextPlanner.choose(4096, 8192, 32768, perToken, com.gravity.ide.core.ContextPlanner.reallyFree(1200 * mb, 1000 * mb)))
+    }
+
+    @Test fun aDrawingFitsTheContextTheModelHas() {
+        assertEquals(2500, com.gravity.ide.core.MakeFiles.drawTokens(com.gravity.ide.core.MakeFiles.Kind.IMAGE, 4096))
+        assertEquals(1365, com.gravity.ide.core.MakeFiles.drawTokens(com.gravity.ide.core.MakeFiles.Kind.IMAGE, 2048))
+        assertEquals(2730, com.gravity.ide.core.MakeFiles.drawTokens(com.gravity.ide.core.MakeFiles.Kind.VIDEO, 4096))
+        assertEquals(4000, com.gravity.ide.core.MakeFiles.drawTokens(com.gravity.ide.core.MakeFiles.Kind.VIDEO, 8192))
+    }
 }

@@ -468,6 +468,76 @@ class DeviceServicesTest {
     }
 
     /**
+     * "ek bandar ki image banao" in a chat with a phone model, drawn on the phone, as a user does it:
+     * the reply must finish and end in a picture or a clear message, the model must draw in the
+     * context it already has (a bigger one cost memory and phones closed Gravity for it), and the
+     * work is noted for the crash report while it runs and cleared after.
+     */
+    @Test
+    fun t12f_pictureRequestOnPhoneModelFinishes() {
+        Assume.assumeTrue("llama.cpp runtime is not bundled in this build", c.localHost.runtimeAvailable)
+        val model = runBlocking { c.db.models().all() }.firstOrNull { it.status == ModelStatus.READY.name && it.filePath.contains("0.5b-instruct", ignoreCase = true) }
+        Assume.assumeTrue("Needs the instruct model downloaded by t12d", model != null)
+        val inst = InstrumentationRegistry.getInstrumentation()
+        val work = inst.targetContext.getSharedPreferences("crash_reports", android.content.Context.MODE_PRIVATE)
+        val loaded = runBlocking { c.localHost.unload(); c.localHost.load(model!!, 4096, 2) }
+        runBlocking { c.settings.update { it.copy(pictureMaker = "draw") } }
+        val store = androidx.lifecycle.ViewModelStore()
+        try {
+            val chatId = runBlocking {
+                val id = com.gravity.ide.ui.screens.freshChatId(c)
+                c.db.chats().upsert(c.db.chats().get(id)!!.copy(providerId = com.gravity.ide.ai.local.LocalLlamaProvider.ID, model = model!!.id))
+                id
+            }
+            val vm = androidx.lifecycle.ViewModelProvider(store, object : androidx.lifecycle.ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = com.gravity.ide.ui.screens.ChatViewModel(c, chatId) as T
+            })[com.gravity.ide.ui.screens.ChatViewModel::class.java]
+            val started = System.currentTimeMillis()
+            inst.runOnMainSync { vm.send("ek bandar ki image banao") }
+            // While it draws, the work is noted for the crash report.
+            var noted: String? = null
+            var reply: com.gravity.ide.data.db.MessageEntity? = null
+            val until = started + 10 * 60_000L
+            while (reply == null && System.currentTimeMillis() < until) {
+                if (noted == null) noted = work.getStringSet("work", emptySet()).orEmpty().firstOrNull()?.substringAfter('|')
+                reply = runBlocking { c.db.chats().messages(chatId) }.firstOrNull { it.role == "assistant" && (it.content.isNotBlank() || it.error != null) }
+                if (reply == null) Thread.sleep(500)
+            }
+            assertNotNull("The picture reply did not finish in 10 minutes", reply)
+            val replyMs = System.currentTimeMillis() - started
+            // Then the picture is made from the drawing (or a clear message says why not).
+            var made: String? = null
+            val makeUntil = System.currentTimeMillis() + 60_000
+            while (made == null && System.currentTimeMillis() < makeUntil) {
+                val m = runBlocking { c.db.chats().messages(chatId) }.first { it.id == reply!!.id }
+                made = when {
+                    m.attachments.contains("image/png") -> "PNG " + org.json.JSONArray(m.attachments).let { a -> (0 until a.length()).map { a.getJSONObject(it) }.first { it.optString("mime") == "image/png" }.optLong("size") } + " bytes"
+                    vm.error.value?.startsWith("Could not make the image") == true -> "message: ${vm.error.value}"
+                    else -> null
+                }
+                if (made == null) Thread.sleep(300)
+            }
+            val kept = com.gravity.ide.ai.local.LlamaBridge.modelInfo(loaded.handle).getOrNull(6)
+            val left = work.getStringSet("work", emptySet()).orEmpty()
+            Ci.log(
+                "picture-local",
+                "Reply in $replyMs ms, ${reply!!.content.length} chars, svg=${com.gravity.ide.core.MakeFiles.svg(reply.content) != null}, error=${reply.error}; " +
+                    "result: $made; context kept ${kept} (loaded ${loaded.contextSize}); noted while working: \"$noted\"; left noted after: ${left.size}",
+            )
+            assertTrue("Neither a picture nor a message after the reply", made != null || reply.error != null)
+            assertEquals("The drawing made the model's context bigger", loaded.contextSize, kept)
+            assertTrue("The drawing was not noted for the crash report: $noted", noted?.contains("drawing the image") == true)
+            val clearBy = System.currentTimeMillis() + 5_000
+            while (work.getStringSet("work", emptySet()).orEmpty().isNotEmpty() && System.currentTimeMillis() < clearBy) Thread.sleep(100)
+            assertTrue("Work still noted after it finished", work.getStringSet("work", emptySet()).orEmpty().isEmpty())
+        } finally {
+            inst.runOnMainSync { store.clear() }
+            runBlocking { c.settings.update { it.copy(pictureMaker = "ask") } }
+        }
+    }
+
+    /**
      * App Builder on the real on-device model (llama.cpp, the tiny CI model): whatever the model
      * writes, Gravity must never report an app as built unless a real page was written. A tiny
      * story model cannot write HTML, so the expected result is an honest failure with the
@@ -775,6 +845,26 @@ class DeviceServicesTest {
         assertEquals("Gravity crashed last time", r!!.title)
         assertTrue(r.details.contains("IllegalStateException: test crash"))
         assertFalse("The saved crash was not cleared", file.exists())
+    }
+
+    /** Gravity closed in the middle of work with no crash (a phone killing it for memory): the next start says so. */
+    @Test
+    fun t17b_closingDuringWorkIsReported() {
+        val doing = listOf("writing a reply with Gemma 3 4B on the phone, context 4096, drawing the image (up to 2500 tokens)")
+        val killed = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_SIGNALED, null, 9, doing, "details")
+        val lowMem = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_LOW_MEMORY, null, 0, doing, "details")
+        val noRecord = com.gravity.ide.CrashReports.reportFor(-1, null, 0, doing, "details")
+        val idleKill = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_SIGNALED, null, 9, emptyList(), "details")
+        val swiped = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_USER_REQUESTED, null, 0, doing, "details")
+        val cleaner = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_USER_REQUESTED, "stop by powerkeeper", 0, doing, "details")
+        Ci.log("crash-report", "Killed while drawing: ${killed?.title} | ${killed?.explanation}")
+        assertEquals("The phone closed Gravity while it was working", killed?.title)
+        assertTrue(killed!!.explanation.contains("kill signal") && killed.explanation.contains("It was writing a reply with Gemma 3 4B"))
+        assertTrue(lowMem!!.title.contains("memory") && lowMem.explanation.contains("It was writing"))
+        assertNotNull("No report when Android kept no exit record", noRecord)
+        assertEquals("An idle kill (e.g. by the system) is not reported", null, idleKill)
+        assertEquals("Swiping Gravity away is not reported", null, swiped)
+        assertNotNull("The phone's cleaner during work is reported", cleaner)
     }
 
     @Test

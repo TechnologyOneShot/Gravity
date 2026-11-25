@@ -31,7 +31,7 @@ class ChatPromptTest {
     @Test fun exportPromptAndQuestionsForThePhoneModelCheck() {
         val dir = File("build/chat-prompts").apply { mkdirs() }
         // The phone-model check asks phone models, so it gets what they get: the short prompt.
-        File(dir, "system.txt").writeText(ChatPrompt.phone())
+        File(dir, "system.txt").writeText(ChatPrompt.forChat(compact = true))
         // As the app sends it to a phone model: each user message carries its reply language.
         fun turn(role: String, text: String) =
             JSONObject().put("role", role).put("content", if (role == "user") com.gravity.ide.core.LanguageHint.withHint(text) else text)
@@ -65,6 +65,14 @@ class ChatPromptTest {
         case("Hinglish problem", listOf(), turn("user", "Mera phone bahut slow chal raha hai, kya karu?"), script = "latin", hinglish = true)
         case("English short", listOf("Mars", "Jupiter", "Venus", "Saturn", "Mercury", "Neptune", "Uranus"), turn("user", "Name three planets."), script = "latin")
         File(dir, "cases.json").writeText(cases.toString(2))
+        // What the app sends a phone model for "ek bandar ki image banao" drawn on the phone (the
+        // arm64 real-model check runs it), and what its warm-up sent before (a new chat).
+        File(dir, "warm-system.txt").writeText(ChatPrompt.forChat(compact = true))
+        File(dir, "draw-system.txt").writeText(
+            ChatPrompt.forChat(compact = true, extra = "\n\n" + com.gravity.ide.core.MakeFiles.instruction(com.gravity.ide.core.MakeFiles.Kind.IMAGE, onlinePictures = false))
+        )
+        File(dir, "draw-question.txt").writeText(com.gravity.ide.core.LanguageHint.withHint("ek bandar ki image banao"))
+        File(dir, "draw-tokens.txt").writeText(com.gravity.ide.core.MakeFiles.drawTokens(com.gravity.ide.core.MakeFiles.Kind.IMAGE, 4096).toString())
         assertTrue(File(dir, "cases.json").length() > 100)
     }
 }

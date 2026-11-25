@@ -1,5 +1,7 @@
 // gravity-cli <model.gguf> <threads> <ctx> <question> [system prompt] [temperature] [max tokens]
 // One chat turn through Gravity's inference core (the code the phone runs).
+#include <sys/resource.h>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -25,6 +27,58 @@ int main(int argc, char **argv) {
         return 1;
     }
     std::printf("SYSTEM_INFO: %s\n", llama_print_system_info());
+    // DRAW_SYSTEM=file: the app's picture request on a phone model, step by step as the app does
+    // it: the warm-up (WARM_SYSTEM, one token), then the drawing (DRAW_SYSTEM + the question, up to
+    // DRAW_MAX tokens, context DRAW_CTX, 0 = the loaded one). Writes the drawing to DRAW_OUT.
+    if (const char *draw_system = std::getenv("DRAW_SYSTEM"); draw_system != nullptr) {
+        auto read = [](const char *path) {
+            std::string out;
+            if (FILE *f = std::fopen(path, "rb")) {
+                char buf[4096];
+                size_t n;
+                while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
+                std::fclose(f);
+            }
+            return out;
+        };
+        auto peak_mb = [] {
+            struct rusage u {};
+            getrusage(RUSAGE_SELF, &u);
+            return (long) u.ru_maxrss / 1024;
+        };
+        auto now = [] { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); };
+        std::printf("STEP loaded: context %d, peak memory %ld MB\n", ctx, peak_mb());
+        if (const char *warm = std::getenv("WARM_SYSTEM"); warm != nullptr) {
+            std::string ignored, fin;
+            const double t = now();
+            const int w = gravity::generate(s, {"system"}, {read(warm)}, 1, temperature, 0.95f, 0, "", [](const char *, int) { return true; }, fin, error);
+            std::printf("STEP warm-up: %d token(s) in %.1f s, peak memory %ld MB, error=%s\n", w, now() - t, peak_mb(), error.c_str());
+        }
+        const int draw_ctx = std::getenv("DRAW_CTX") ? std::atoi(std::getenv("DRAW_CTX")) : 0;
+        const int draw_max = std::getenv("DRAW_MAX") ? std::atoi(std::getenv("DRAW_MAX")) : 2500;
+        std::string drawing, fin;
+        const double t = now();
+        double first = -1;
+        const int n = gravity::generate(
+            s, {"system", "user"}, {read(draw_system), question}, draw_max, temperature, 0.95f, draw_ctx, "",
+            [&](const char *piece, int len) {
+                if (first < 0) first = now() - t;
+                drawing.append(piece, len);
+                return true;
+            },
+            fin, error);
+        const double took = now() - t;
+        std::printf("STEP drawing: context %d, %d tokens in %.1f s (first word after %.1f s, %.1f tokens/s), finish=%s, reused %d, peak memory %ld MB, error=%s\n",
+            s->ctx_size, n, took, first, n > 0 ? n / took : 0.0, fin.c_str(), s->last_reused, peak_mb(), error.c_str());
+        if (const char *out = std::getenv("DRAW_OUT"); out != nullptr) {
+            if (FILE *f = std::fopen(out, "wb")) {
+                std::fwrite(drawing.data(), 1, drawing.size(), f);
+                std::fclose(f);
+            }
+        }
+        gravity::unload(s);
+        return n > 0 ? 0 : 1;
+    }
     std::string answer, finish;
     const std::vector<std::string> roles{"system", "user"};
     const std::vector<std::string> contents{system, question};
