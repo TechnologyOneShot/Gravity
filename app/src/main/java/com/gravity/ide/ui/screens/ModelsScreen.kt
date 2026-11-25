@@ -405,6 +405,10 @@ private data class Suggested(val title: String, val repo: String, val file: Stri
 
 private val suggestedModels = listOf(
     Suggested(
+        "Gemma 3 4B (Hindi chat)", "bartowski/google_gemma-3-4b-it-GGUF", "google_gemma-3-4b-it-Q4_K_M.gguf", 2_490_000_000L,
+        "Google's Gemma 3, made for 140+ languages: the most natural Hindi and Hinglish of these phone models. About 6 GB RAM phones.",
+    ),
+    Suggested(
         "Llama 3.2 3B (chat, fast)", "bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf", 2_020_000_000L,
         "Best for Hindi/English chat and live voice on the phone: Hindi is one of its official languages, and it answers about twice as fast as 7B models.",
     ),

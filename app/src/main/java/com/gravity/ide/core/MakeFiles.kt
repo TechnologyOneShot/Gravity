@@ -8,14 +8,19 @@ package com.gravity.ide.core
 object MakeFiles {
     enum class Kind(val label: String) { PDF("PDF"), ZIP("ZIP"), IMAGE("image"), AUDIO("audio") }
 
+    // A word boundary that also works for Hindi letters, on Android (ICU) and on the JVM alike.
+    // (Android's regex does not accept the (?U) flag, and \b there is not the same as on the JVM.)
+    private const val L = "[\\p{L}\\p{M}\\p{N}]"
+    private const val B = "(?:(?<!$L)(?=$L)|(?<=$L)(?!$L))"
+
     private val make = "(bana|banao|banaa|bana\\s*do|bana\\s*de|bana\\s*ke|banake|banaiye|banaye|बना|create|make|generate|export|convert|save|" +
         "chahiye|chaiye|dedo|de\\s*do|do\\s*na|bhejo|dikhao|draw|design|record|likh\\s*ke\\s*do)"
-    private val pdf = Regex("(?iU)\\bpdf\\b.*\\b$make|\\b$make.*\\bpdf\\b|\\bas\\s+(a\\s+)?pdf\\b|\\bpdf\\s+(me|mein|में|file)\\b")
-    private val zip = Regex("(?iU)\\bzip\\b.*\\b$make|\\b$make.*\\bzip\\b|\\bas\\s+(a\\s+)?zip\\b|\\bzip\\s+(me|mein|में|file)\\b")
+    private val pdf = Regex("(?i)${B}pdf${B}.*${B}$make|${B}$make.*${B}pdf${B}|${B}as\\s+(a\\s+)?pdf${B}|${B}pdf\\s+(me|mein|में|file)${B}")
+    private val zip = Regex("(?i)${B}zip${B}.*${B}$make|${B}$make.*${B}zip${B}|${B}as\\s+(a\\s+)?zip${B}|${B}zip\\s+(me|mein|में|file)${B}")
     private val imageWord = "(image|images|photo|picture|pic|tasveer|tasvir|chitra|poster|logo|drawing|wallpaper|icon|banner|sticker|illustration|तस्वीर|फोटो|चित्र|पोस्टर|लोगो)"
-    private val image = Regex("(?iU)\\b$imageWord\\b.*\\b$make|\\b$make.*\\b$imageWord\\b")
+    private val image = Regex("(?i)${B}$imageWord${B}.*${B}$make|${B}$make.*${B}$imageWord${B}")
     private val audioWord = "(audio|mp3|wav|voice\\s*file|awaaz|awaz|aawaz|आवाज़|आवाज|sound\\s*file|recording|voice\\s*note)"
-    private val audio = Regex("(?iU)\\b$audioWord\\b.*\\b$make|\\b$make.*\\b$audioWord\\b|\\b$audioWord\\s+(me|mein|में)\\b")
+    private val audio = Regex("(?i)${B}$audioWord${B}.*${B}$make|${B}$make.*${B}$audioWord${B}|${B}$audioWord\\s+(me|mein|में)${B}")
 
     /** The file a message asks for, or null. Checked in this order: ZIP, PDF, audio, image. */
     fun detect(message: String): Kind? {

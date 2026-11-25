@@ -578,7 +578,10 @@ class DeviceServicesTest {
         val b = com.gravity.ide.files.PdfReader.read(ctx, Uri.fromFile(scanPdf))
         Ci.log("pdf", "Scanned PDF via ${b.method}: ${b.text.replace('\n', ' ').take(300)}")
         textPdf.delete(); scanPdf.delete()
-        assertTrue("A short text page is read with OCR or from its text: ${a.text}", a.text.contains("Students must arrive", ignoreCase = true))
+        // Android's own PDF writer may not leave a text layer PDFBox can use; then OCR reads the page
+        // (OCR can miss a letter, so only whole, easy words are checked).
+        assertTrue("A short text page is read with OCR or from its text: ${a.text}",
+            a.text.contains("School Rules", ignoreCase = true) && a.text.contains("Students must", ignoreCase = true) && a.text.contains("विद्यालय"))
         assertEquals("on-device OCR", b.method)
         assertTrue("OCR did not read the English line: ${b.text}", b.text.contains("arrive", ignoreCase = true))
         assertTrue("OCR did not read the Hindi line: ${b.text}", b.text.contains("नियम") || b.text.contains("छात्र"))

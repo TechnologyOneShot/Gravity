@@ -526,6 +526,20 @@ internal fun ChatComposer(
         modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 10.dp),
     ) {
         Column(Modifier.padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 6.dp)) {
+            // A Coder model chosen for normal chat: say so once, with a way to switch.
+            var hideCoderHint by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+            if (!appMode && !hideCoderHint && modelLabel != null && modelLabel.isLocal && modelLabel.text.contains("coder", ignoreCase = true)) {
+                Row(Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp).testTag("coder-hint"), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Coder models are made for code and apps; their Hindi chat is weak. For Hindi / Hinglish talk, tap here and pick Gemma 3 4B or Llama 3.2 3B.",
+                        style = MaterialTheme.typography.labelSmall, color = GravityColors.Amber,
+                        modifier = Modifier.weight(1f).clickable(onClick = onPickModel),
+                    )
+                    IconButton(onClick = { hideCoderHint = true }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.Close, "Hide", modifier = Modifier.size(14.dp), tint = GravityColors.Muted)
+                    }
+                }
+            }
             if (attachments.isNotEmpty()) {
                 LazyRow(Modifier.padding(start = 6.dp, top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(attachments) { a ->
