@@ -108,6 +108,14 @@ int generate(Session *s, const std::vector<std::string> &roles, const std::vecto
     size_t reuse = 0;
     while (reuse < s->cached.size() && reuse < tokens.size() && s->cached[reuse] == tokens[reuse]) reuse++;
     if (reuse >= tokens.size()) reuse = tokens.size() - 1;
+    if (reuse > 0) {
+        // Sliding-window models (e.g. Gemma 3) drop old tokens from part of their cache: reuse only
+        // if the cache still holds everything the next tokens look back at (as llama-server does).
+        const llama_pos pos_min = llama_memory_seq_pos_min(mem, 0);
+        const int n_swa = llama_model_n_swa(s->model);
+        const int keep_from = (int) reuse - n_swa > 0 ? (int) reuse - n_swa : 0;
+        if (pos_min < 0 || (n_swa > 0 && pos_min > keep_from) || (n_swa <= 0 && pos_min > 0)) reuse = 0;
+    }
     if (reuse > 0 && !llama_memory_seq_rm(mem, 0, (llama_pos) reuse, -1)) reuse = 0;
     if (reuse == 0) llama_memory_clear(mem, true);
     s->cached.resize(reuse);

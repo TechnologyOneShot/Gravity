@@ -30,7 +30,7 @@ class LocalLlamaProvider(
 
     override suspend fun stream(request: LlmRequest, onEvent: (LlmEvent) -> Unit) {
         if (!host.runtimeAvailable) throw LlmException(host.runtimeError ?: "Local runtime not available")
-        val loaded = host.loadedOrNull() ?: throw LlmException("No local model is loaded. Load one in Model Manager.")
+        if (host.loadedOrNull() == null) throw LlmException("No local model is loaded. Load one in Model Manager.")
 
         val messages = flatten(request)
         val roles = messages.map { it.first }.toTypedArray()
@@ -54,8 +54,11 @@ class LocalLlamaProvider(
         var sinceCheck = 0
         var loopCut = -1
         val (generated, nativeFinish) = host.generationMutex.withLock {
+            // The model is looked up once this reply holds the engine: it may have been changed or
+            // unloaded while waiting, and a freed model must never be used.
+            val loaded = host.loadedOrNull() ?: throw LlmException("The phone model was unloaded. Load one in Phone Models, then send again.")
             withContext(Dispatchers.Default) {
-                val count = LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
+                val count = host.nativeWork(LlamaBridge.engineOf(loaded.handle), loaded.modelId) { LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
                     val piece = utf8.append(bytes)
                     if (piece.isNotEmpty()) {
                         full.append(piece)
@@ -74,8 +77,8 @@ class LocalLlamaProvider(
                             }
                         }
                     }
-                    ctx.isActive && !stopped
-                }
+                    ctx.isActive && !stopped && !host.abortRequested
+                } }
                 count to runCatching { LlamaBridge.lastFinish() }.getOrDefault("")
             }
         }

@@ -72,10 +72,18 @@ object LlamaBridge {
         }
     }
 
+    /** Set when the fast engine crashed Gravity on this phone (see LocalModelHost.checkLastExit). */
+    @Volatile
+    var fastTurnedOff: String? = null
+        private set
+
+    fun turnOffFast(reason: String) { fastTurnedOff = reason }
+
     /** Engines this phone can run, the faster first. */
-    val engines: List<EngineKind> by lazy {
-        if (!isAvailable) emptyList() else if (fastUnavailableReason == null) listOf(EngineKind.FAST, EngineKind.BASE) else listOf(EngineKind.BASE)
-    }
+    val engines: List<EngineKind>
+        get() = if (!isAvailable) emptyList()
+        else if (fastUnavailableReason == null && fastTurnedOff == null) listOf(EngineKind.FAST, EngineKind.BASE)
+        else listOf(EngineKind.BASE)
 
     /** Which engine a loaded model runs on. */
     fun engineOf(handle: Long): EngineKind = engineOfHandle[handle] ?: EngineKind.BASE
@@ -87,6 +95,7 @@ object LlamaBridge {
             EngineKind.BASE -> NativeBase.load(path, contextSize, threads, gpuLayers, useMmap)
             EngineKind.FAST -> {
                 fastUnavailableReason?.let { throw IllegalStateException("The fast engine cannot run here: $it") }
+                fastTurnedOff?.let { throw IllegalStateException("The fast engine is off on this phone: $it") }
                 NativeFast.load(path, contextSize, threads, gpuLayers, useMmap)
             }
         }

@@ -340,6 +340,50 @@ class DeviceServicesTest {
     }
 
     /**
+     * The crash a user hit: the model was unloaded (or another one loaded) while it was still
+     * writing a reply, and the engine's threads read freed memory. Now unloading stops the reply,
+     * waits for it, then frees the model; the app must still be alive and the reply must end.
+     */
+    @Test
+    fun t12bb_unloadWhileWritingDoesNotCrash() {
+        if (!c.localHost.runtimeAvailable) {
+            Ci.log("local-ai", "Skipped: ${c.localHost.runtimeError}")
+            Assume.assumeTrue("llama.cpp runtime is not bundled in this build", false)
+        }
+        val model = runBlocking { c.db.models().all().firstOrNull { it.status == ModelStatus.READY.name } }
+        assertNotNull("No verified model to load (the download test must pass first)", model)
+        val loaded = runBlocking { c.localHost.load(model!!, 512, 2) }
+        val pieces = java.util.concurrent.atomic.AtomicInteger(0)
+        val result = java.util.concurrent.atomic.AtomicReference<String>("running")
+        val writer = Thread {
+            val r = runCatching {
+                runBlocking {
+                    c.providers.local.stream(LlmRequest(loaded.name, listOf(LlmMessage(Role.USER, "Write a very long story about a cat.")), maxOutputTokens = 400)) { ev ->
+                        if (ev is com.gravity.ide.ai.LlmEvent.TextDelta) pieces.incrementAndGet()
+                    }
+                }
+            }
+            result.set(r.exceptionOrNull()?.let { "error: ${it.message}" } ?: "ended")
+        }
+        writer.start()
+        // Unload as soon as the reply has started.
+        val started = System.currentTimeMillis()
+        while (pieces.get() < 3 && System.currentTimeMillis() - started < 60_000) Thread.sleep(20)
+        val before = pieces.get()
+        runBlocking { c.localHost.unload() }
+        writer.join(60_000)
+        Ci.log("local-ai", "Unloaded while writing: ${before} pieces before unload, ${pieces.get()} in total, reply ${result.get()}, state ${c.localHost.state.value}")
+        assertTrue("The reply had not started before the unload", before >= 3)
+        assertTrue("The reply did not end after the unload", !writer.isAlive)
+        assertTrue("The model is still loaded", c.localHost.loadedOrNull() == null)
+        assertTrue("The reply kept going after the unload (${pieces.get()} pieces)", pieces.get() < 400)
+        // A new reply after loading again works.
+        val again = runBlocking { c.localHost.load(model!!, 512, 2) }
+        val r = runBlocking { c.providers.local.complete(LlmRequest(again.name, listOf(LlmMessage(Role.USER, "Once upon a time")), maxOutputTokens = 8)) }
+        assertTrue("No reply after loading again", r.outputTokens > 0)
+    }
+
+    /**
      * App Builder on the real on-device model (llama.cpp, the tiny CI model): whatever the model
      * writes, Gravity must never report an app as built unless a real page was written. A tiny
      * story model cannot write HTML, so the expected result is an honest failure with the

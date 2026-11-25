@@ -25,7 +25,77 @@ class ModelUnhealthyException(message: String) : IllegalStateException(message)
 class LocalModelHost(private val context: Context, private val events: EventLog) {
     private companion object {
         const val KEY_LAST_MODEL = "last_model"
+        /** "engine|modelId|start time" while native code runs; still set at the next start = Gravity died in it. */
+        const val KEY_NATIVE_BUSY = "native_busy"
+        /** "versionCode|reason": the fast engine crashed with this app version, so it is not used. */
+        const val KEY_FAST_OFF = "fast_off"
+        /** A model that crashed Gravity (standard engine): not loaded automatically until loaded by hand. */
+        const val KEY_CRASHED_MODEL = "crashed_model"
     }
+
+    private val prefs by lazy { context.getSharedPreferences("local_model_host", Context.MODE_PRIVATE) }
+
+    /** Why the phone-model engine changed after a crash, for Phone Models (null if nothing happened). */
+    @Volatile
+    var crashNotice: String? = null
+        private set
+
+    init {
+        prefs.getString(KEY_FAST_OFF, null)?.split('|', limit = 2)?.let { (version, reason) ->
+            if (version == com.gravity.ide.BuildConfig.VERSION_CODE.toString()) LlamaBridge.turnOffFast(reason)
+            else prefs.edit().remove(KEY_FAST_OFF).apply() // a new version may have fixed it: try again
+        }
+        runCatching { checkLastExit() }
+    }
+
+    /**
+     * If Gravity was closed by a crash inside the phone-model engine last time (Android's exit
+     * record says "native crash" while a model was running), avoid a crash loop: the fast engine
+     * is switched off for this app version, or a model that crashed the standard engine is not
+     * loaded automatically again.
+     */
+    private fun checkLastExit() {
+        val busy = prefs.getString(KEY_NATIVE_BUSY, null) ?: return
+        prefs.edit().remove(KEY_NATIVE_BUSY).commit()
+        val parts = busy.split('|')
+        val engine = runCatching { EngineKind.valueOf(parts[0]) }.getOrNull() ?: return
+        val modelId = parts.getOrNull(1).orEmpty()
+        val since = parts.getOrNull(2)?.toLongOrNull() ?: 0L
+        val crashed = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val am = context.getSystemService(ActivityManager::class.java)
+            am.getHistoricalProcessExitReasons(context.packageName, 0, 5)
+                .firstOrNull { it.timestamp >= since }?.reason == android.app.ApplicationExitInfo.REASON_CRASH_NATIVE
+        } else {
+            true // no exit records before Android 11: the engine was running when Gravity died
+        }
+        if (!crashed) return
+        if (engine == EngineKind.FAST) {
+            val reason = "it crashed Gravity on this phone"
+            prefs.edit().putString(KEY_FAST_OFF, "${com.gravity.ide.BuildConfig.VERSION_CODE}|$reason").commit()
+            LlamaBridge.turnOffFast(reason)
+            crashNotice = "Gravity closed because the fast phone-model engine crashed. It now uses the standard engine (a little slower)."
+        } else {
+            prefs.edit().putString(KEY_CRASHED_MODEL, modelId).commit()
+            crashNotice = "Gravity closed while running a phone model. It will not load that model by itself again; load it from Phone Models to retry " +
+                "(close other apps first if memory is low), or use Gemini."
+        }
+        events.log(EventCategory.MODEL, "Phone-model engine crashed last time", crashNotice.orEmpty(), EventLevel.WARN)
+    }
+
+    /** Runs native engine work, noting it first so a crash inside it is recognised at the next start. */
+    fun <T> nativeWork(engine: EngineKind, modelId: String, block: () -> T): T {
+        prefs.edit().putString(KEY_NATIVE_BUSY, "${engine.name}|$modelId|${System.currentTimeMillis()}").commit()
+        try {
+            return block()
+        } finally {
+            prefs.edit().remove(KEY_NATIVE_BUSY).commit()
+        }
+    }
+
+    /** Set while a model is being unloaded: a reply still being written stops at its next word. */
+    @Volatile
+    var abortRequested = false
+        private set
 
     data class Loaded(val modelId: String, val name: String, val handle: Long, val contextSize: Int, val loadedAt: Long)
 
@@ -88,6 +158,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         if (!LlamaBridge.isAvailable) throw IllegalStateException(LlamaBridge.loadError ?: "Local runtime unavailable")
         val file = File(model.filePath)
         if (!file.isFile) throw IllegalStateException("Model file missing: ${model.filePath}")
+        if (prefs.getString(KEY_CRASHED_MODEL, null) == model.id) prefs.edit().remove(KEY_CRASHED_MODEL).apply() // loaded on purpose: try again
         (state.value as? State.Ready)?.let { current ->
             if (current.loaded.modelId == model.id) return@withLock current.loaded
             unloadLocked()
@@ -104,7 +175,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         for (cfg in ladder) {
             val t = if (cfg.threads > 0) cfg.threads else threads
             val handle = try {
-                withContext(Dispatchers.Default) { LlamaBridge.load(file.absolutePath, contextSize, t, 0, cfg.mmap, cfg.engine) }
+                withContext(Dispatchers.Default) { nativeWork(cfg.engine, model.id) { LlamaBridge.load(file.absolutePath, contextSize, t, 0, cfg.mmap, cfg.engine) } }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -129,7 +200,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
             val verified = prefs.getString("ok_${model.id}", null) == cfg.toString()
             if (checkable && !verified) {
                 _state.value = State.Loading("${model.name} (checking it answers correctly)")
-                val answer = quickCheck(handle)
+                val answer = quickCheck(handle, cfg.engine, model.id)
                 if (answer == null) {
                     attempts += "${cfg.describe(t)}: correct"
                     prefs.edit().putString("ok_${model.id}", cfg.toString()).apply()
@@ -175,16 +246,18 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         private set
 
     /** Asks two easy questions; returns null if either answer is right, else what the model said. */
-    private suspend fun quickCheck(handle: Long): String? = generationMutex.withLock {
+    private suspend fun quickCheck(handle: Long, engine: EngineKind, modelId: String): String? = generationMutex.withLock {
         withContext(Dispatchers.Default) {
             val answers = ArrayList<String>()
             for ((question, expect) in listOf("What is the capital of France? Answer with one word." to "paris", "What is 12 + 30? Reply with the number only." to "42")) {
                 val out = StringBuilder()
                 val utf8 = com.gravity.ide.core.Utf8Accumulator()
-                LlamaBridge.generate(
-                    handle, arrayOf("system", "user"), arrayOf("You are a helpful assistant. Answer briefly.", question),
-                    12, 0.1f, 0.95f, 0, "",
-                ) { bytes -> out.append(utf8.append(bytes)); true }
+                nativeWork(engine, modelId) {
+                    LlamaBridge.generate(
+                        handle, arrayOf("system", "user"), arrayOf("You are a helpful assistant. Answer briefly.", question),
+                        12, 0.1f, 0.95f, 0, "",
+                    ) { bytes -> out.append(utf8.append(bytes)); true }
+                }
                 out.append(utf8.flush())
                 val answer = out.toString().trim()
                 if (answer.contains(expect, ignoreCase = true)) return@withContext null
@@ -196,10 +269,21 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
 
     suspend fun unload() = mutex.withLock { unloadLocked() }
 
-    private fun unloadLocked() {
+    /**
+     * Frees the loaded model. A reply still being written with it is stopped first and waited for:
+     * freeing the model under a running reply crashed Gravity (the engine's threads read freed memory).
+     */
+    private suspend fun unloadLocked() {
         val current = state.value as? State.Ready ?: return
-        LlamaBridge.unload(current.loaded.handle)
-        _state.value = State.Idle
+        abortRequested = true
+        try {
+            generationMutex.withLock {
+                _state.value = State.Idle
+                LlamaBridge.unload(current.loaded.handle)
+            }
+        } finally {
+            abortRequested = false
+        }
         events.log(EventCategory.MODEL, "Unloaded ${current.loaded.name}")
     }
 
@@ -208,7 +292,6 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
 
     fun loadedOrNull(): Loaded? = (state.value as? State.Ready)?.loaded
 
-    private val prefs by lazy { context.getSharedPreferences("local_model_host", Context.MODE_PRIVATE) }
 
     /** How [modelId] is loaded on this phone, for diagnostics ("file mapped" / "read into memory, 1 thread"). */
     fun loadMode(modelId: String): String {
@@ -235,6 +318,12 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         val pick = ready.firstOrNull { it.id == last } ?: ready.firstOrNull { it.isDefault }
             ?: ready.filter { it.sizeBytes in 1..inspector.recommendedMaxModelBytes() }.maxByOrNull { it.sizeBytes }
             ?: return null
+        if (prefs.getString(KEY_CRASHED_MODEL, null) == pick.id) {
+            throw ModelUnhealthyException(
+                "Gravity closed while running ${pick.name} last time, so it is not loaded by itself. Load it from Phone Models to try again " +
+                    "(close other apps first), or use Gemini."
+            )
+        }
         val ctx = com.gravity.ide.device.PerformanceManager.contextSize(settings, info)
         // A model the user loaded before is trusted; any other one only if it clearly fits in free memory.
         if (pick.id != last && memoryWarning(pick, ctx) != null) return null

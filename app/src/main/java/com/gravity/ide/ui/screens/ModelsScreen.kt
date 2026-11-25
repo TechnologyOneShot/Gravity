@@ -98,6 +98,8 @@ private const val RELEASE_URL = "https://github.com/TechnologyOneShot/Gravity/re
 @Composable
 private fun RuntimeBanner() {
     val c = LocalAppContainer.current
+    // After a crash inside the engine: say what Gravity changed (never silently).
+    c.localHost.crashNotice?.let { MessageBanner(it, isError = true) }
     if (!c.localHost.runtimeAvailable) {
         val context = androidx.compose.ui.platform.LocalContext.current
         Column {

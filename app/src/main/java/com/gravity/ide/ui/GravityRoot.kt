@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -208,14 +209,15 @@ private fun GravitySidebar(route: String?, go: (String) -> Unit) {
         modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null,
     ) {
         Row(
-            modifier.padding(horizontal = 12.dp).fillMaxWidth().height(38.dp).clip(RoundedCornerShape(50))
+            // Compact like Claude's sidebar: 32dp rows (taller only if the phone's font is very large).
+            modifier.padding(horizontal = 12.dp).fillMaxWidth().heightIn(min = 32.dp).clip(RoundedCornerShape(50))
                 .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
-                .clickable(onClick = onClick).padding(horizontal = 14.dp),
+                .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) {
-                Icon(icon, null, modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(14.dp))
+                Icon(icon, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(12.dp))
             }
             Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             trailing?.invoke()
@@ -230,12 +232,12 @@ private fun GravitySidebar(route: String?, go: (String) -> Unit) {
 
     @Composable
     fun Header(text: String) {
-        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 26.dp, top = 12.dp, bottom = 2.dp))
+        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 26.dp, top = 10.dp, bottom = 0.dp))
     }
 
     ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow, drawerShape = RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp)) {
         Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
-            Row(Modifier.padding(start = 24.dp, top = 24.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(start = 24.dp, top = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(30.dp).background(GravityColors.Accent, CircleShape), contentAlignment = Alignment.Center) {
                     Icon(Icons.Filled.AutoAwesome, null, tint = GravityColors.OnAccent, modifier = Modifier.size(17.dp))
                 }
@@ -244,7 +246,7 @@ private fun GravitySidebar(route: String?, go: (String) -> Unit) {
             }
             Surface(
                 onClick = { go(Routes.NEW_CHAT) }, shape = RoundedCornerShape(50), color = GravityColors.Accent,
-                modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(46.dp).testTag("nav:New Chat"),
+                modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(42.dp).testTag("nav:New Chat"),
             ) {
                 Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Add, null, tint = GravityColors.OnAccent)
@@ -262,8 +264,8 @@ private fun GravitySidebar(route: String?, go: (String) -> Unit) {
                 Header("Recents")
                 recents.forEach { ch -> Row1(ch.title, null, route?.contains(ch.id) == true, { go(Routes.chat(ch.id)) }) }
             }
-            Spacer(Modifier.height(12.dp))
-            HorizontalDivider(Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
             mainItems.filter { it.route == Routes.SETTINGS }.forEach { Entry(it) }
             Row1(
                 "Developer tools", Icons.Filled.Code, false, { devOpen = !devOpen }, Modifier.testTag("nav:Developer tools"),
