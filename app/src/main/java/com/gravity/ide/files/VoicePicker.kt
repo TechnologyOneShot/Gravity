@@ -30,15 +30,21 @@ object VoicePicker {
         return list.firstOrNull { it.name == preferred } ?: list.firstOrNull()
     }
 
-    /** A short label for a voice: "Voice 2 · offline · very high quality". */
-    fun label(v: Voice, index: Int): String {
+    /** "female", "male" or null (see VoiceStyles.gender). */
+    fun gender(v: Voice): String? = com.gravity.ide.core.VoiceStyles.gender(v.name)
+
+    /** A short label: "Female voice 2 · offline · very high quality" (numbered within its gender). */
+    fun label(v: Voice, all: List<Voice>): String {
         val quality = when {
             v.quality >= Voice.QUALITY_VERY_HIGH -> "very high quality"
             v.quality >= Voice.QUALITY_HIGH -> "high quality"
             else -> "normal quality"
         }
         val where = if (v.isNetworkConnectionRequired) "online" else "offline"
-        val gender = v.name.lowercase().let { n -> if ("female" in n) " · female" else if ("male" in n) " · male" else "" }
-        return "Voice ${index + 1}$gender · $where · $quality"
+        val g = gender(v)
+        val same = all.filter { gender(it) == g }
+        val n = same.indexOf(v) + 1
+        val who = when (g) { "female" -> "Female voice $n"; "male" -> "Male voice $n"; else -> "Voice $n" }
+        return "$who · $where · $quality"
     }
 }

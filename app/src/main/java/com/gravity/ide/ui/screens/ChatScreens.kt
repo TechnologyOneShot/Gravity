@@ -224,6 +224,16 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
 
     /** While live voice mode is on: the language the reply is spoken in (see LiveVoiceDialog). */
     val liveLanguage = MutableStateFlow<String?>(null)
+    /** Live mode's speaking style (the AI's mood), see VoiceStyles. */
+    val livePersona = MutableStateFlow<String?>(null)
+    /** Live mode: answer with the cloud AI (about a second) instead of a slow phone model, when online. */
+    val liveFastest = MutableStateFlow(false)
+
+    /** Loads this chat's AI ahead of time (e.g. the phone model), so the first live reply does not wait for it. */
+    fun warmUp() = viewModelScope.launch {
+        val chat = c.db.chats().get(chatId) ?: return@launch
+        runCatching { c.providers.resolve(chat.providerId, chat.model) }
+    }
     val error = MutableStateFlow<String?>(null)
     /** One-off information for the user, e.g. that a retired model was replaced. */
     val notice = MutableStateFlow<String?>(null)
@@ -359,9 +369,10 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                     pendingMake?.let { append("\n\n").append(com.gravity.ide.core.MakeFiles.instruction(it)) }
                     liveLanguage.value?.let { lang ->
                         append(
-                            "\n\nThis is a live voice conversation: the user speaks and your reply is read aloud. Talk like a warm, " +
-                                "friendly and lively Indian friend: natural, clear and to the point, in 1 to 3 short spoken sentences, " +
-                                "in $lang. Use simple words that sound good when spoken. No Markdown, lists, emojis, links or code."
+                            "\n\nThis is a live voice conversation, like a phone call: the user speaks and your reply is read aloud at once. " +
+                                (livePersona.value ?: "Talk like a warm, friendly Indian friend.") + " Reply in $lang, in 1 to 3 short spoken " +
+                                "sentences; make the first sentence very short so the voice can start at once. Use simple words that sound good " +
+                                "when spoken. No Markdown, lists, emojis, links or code."
                         )
                     }
                 }
@@ -402,7 +413,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 resolved.provider.stream(
                     LlmRequest(
                         resolved.model, llm, reasoning = if (live) ReasoningMode.FAST else mode, webGrounding = chat.webGrounding,
-                        contextSize = contextSize, maxOutputTokens = if (live) 220 else null,
+                        contextSize = contextSize, maxOutputTokens = if (live) (if (resolved.provider.isLocal) 160 else 260) else null,
                     )
                 ) { ev ->
                     when (ev) {
@@ -429,7 +440,16 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 c.providers.recordUsage(resolved.entity, inTok, outTok)
             }
             try {
-                answerWith(c.providers.resolve(chat.providerId, chat.model))
+                // Live mode "fastest": the first enabled cloud AI, when online; otherwise this chat's AI.
+                // (A chat that already uses a cloud AI keeps its own AI and model.)
+                val fastCloud = if (liveLanguage.value != null && liveFastest.value && c.network.isOnline) {
+                    val cloud = c.db.providers().all().filter { it.enabled && it.kind != com.gravity.ide.ai.ProviderKind.LOCAL.name }
+                    if (cloud.any { it.id == chat.providerId }) null else cloud.firstOrNull()
+                } else null
+                answerWith(
+                    if (fastCloud != null) runCatching { c.providers.resolve(fastCloud.id, null) }.getOrElse { c.providers.resolve(chat.providerId, chat.model) }
+                    else c.providers.resolve(chat.providerId, chat.model)
+                )
             } catch (e: Exception) {
                 // The cloud key's free quota is used up (all its models): answer with the phone model if there is one.
                 if (text.isNotEmpty() || !com.gravity.ide.core.ModelPicker.isTemporarilyUnavailable(e)) throw e

@@ -176,9 +176,11 @@ object FileMaker {
         try {
             val status = withTimeout(15_000) { ready.await() }
             if (status != TextToSpeech.SUCCESS) throw IllegalStateException("This phone has no working text-to-speech engine (Android Settings → Text-to-speech).")
-            tts.setLanguage(locale)
-            VoicePicker.choose(tts, locale, voiceName)?.let { tts.setVoice(it) }
-            tts.setSpeechRate(rate)
+            // The user's voice settings (Settings → Voice & speech): voice, speed, pitch, style.
+            val hindi = locale.language == "hi"
+            VoicePrefs.apply(context, tts, hindi)
+            if (voiceName != null) VoicePicker.choose(tts, locale, voiceName)?.let { tts.setVoice(it) }
+            if (rate != 1f) tts.setSpeechRate(rate)
             val parts = SpeechText.chunks(clean, minOf(3500, TextToSpeech.getMaxSpeechInputLength() - 100))
             val tmp = parts.indices.map { File.createTempFile("tts-$it-", ".wav", context.cacheDir) }
             try {

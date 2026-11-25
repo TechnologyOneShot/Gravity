@@ -5,7 +5,6 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.gravity.ide.core.SpeechText
 import kotlinx.coroutines.flow.MutableStateFlow
-import java.util.Locale
 
 /**
  * Reads a chat reply aloud (the speaker button under each reply): Hindi replies with a Hindi
@@ -64,22 +63,16 @@ object ReplySpeaker {
 
     private fun speak(t: TextToSpeech, id: Long, text: String) {
         val clean = SpeechText.clean(text)
-        if (clean.isBlank()) {
+        val ctx = appContext
+        if (clean.isBlank() || ctx == null) {
             speakingId.value = null
             return
         }
-        val devanagari = clean.count { it in 'ऀ'..'ॿ' }
-        val letters = clean.count { it.isLetter() }.coerceAtLeast(1)
-        val hindi = devanagari * 10 > letters * 3
-        val locale = Locale.forLanguageTag(if (hindi) "hi-IN" else "en-IN")
-        val prefs = appContext?.getSharedPreferences("live_voice", Context.MODE_PRIVATE)
-        t.setLanguage(locale)
-        VoicePicker.choose(t, locale, prefs?.getString(if (hindi) "voice_HINDI" else "voice_ENGLISH", null))?.let { t.setVoice(it) }
-        t.setSpeechRate(prefs?.getFloat("rate", 1.0f) ?: 1.0f)
-        val parts = SpeechText.chunks(clean, 3500)
-        parts.forEachIndexed { i, part ->
-            t.speak(part, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, if (i == parts.lastIndex) "reply-end-$id" else "reply-$id-$i")
-        }
+        // The user's voice, speed, pitch and speaking style (Settings → Voice & speech).
+        val hindi = VoicePrefs.isHindi(clean)
+        val style = VoicePrefs.style(ctx)
+        VoicePrefs.apply(ctx, t, hindi, style)
+        VoicePrefs.speak(t, clean, style, "reply-$id", "reply-end-$id", flush = true)
     }
 
     fun stop() {

@@ -66,6 +66,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.gravity.ide.core.SpeechText
+import com.gravity.ide.core.VoiceStyles
+import com.gravity.ide.files.VoicePrefs
 import com.gravity.ide.ui.theme.GravityColors
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -83,8 +85,7 @@ internal enum class LiveLanguage(val label: String, val recognizeTag: String, va
     ENGLISH("English", "en-IN", Locale.forLanguageTag("en-IN"), "clear, simple English"),
 }
 
-/** Speaking speeds offered in live mode. */
-private val speeds = listOf("Slow" to 0.85f, "Normal" to 1.0f, "Fast" to 1.2f)
+
 
 private enum class LivePhase { IDLE, LISTENING, THINKING, SPEAKING }
 
@@ -111,14 +112,22 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
     val listenNow = remember { mutableStateOf<() -> Unit>({}) }
 
     val tts = remember { TextToSpeech(context.applicationContext) { status -> main.post { ttsReady = status == TextToSpeech.SUCCESS } } }
-    val prefs = remember { context.getSharedPreferences("live_voice", android.content.Context.MODE_PRIVATE) }
-    var rate by remember { mutableStateOf(prefs.getFloat("rate", 1.0f)) }
-    // The voice chosen for each language (null = the clearest installed one, see VoicePicker).
-    var voiceName by remember(language) { mutableStateOf(prefs.getString("voice_${language.name}", null)) }
+    // Hinglish and Hindi use the Hindi voice; English the English (India) voice.
+    val hindiVoice = language != LiveLanguage.ENGLISH
+    // Speaking style (Settings → Voice & speech): the AI's mood and the voice's speed, pitch and pauses.
+    var styleId by remember { mutableStateOf(VoicePrefs.style(context).id) }
+    val style = VoiceStyles.byId(styleId)
+    var voiceName by remember(language) { mutableStateOf(VoicePrefs.voiceName(context, hindiVoice)) }
     val voices = remember(ttsReady, language) {
-        if (ttsReady == true) com.gravity.ide.files.VoicePicker.voices(tts, language.voice) else emptyList()
+        if (ttsReady == true) com.gravity.ide.files.VoicePicker.voices(tts, VoicePrefs.locale(hindiVoice)) else emptyList()
     }
     var voiceMenu by remember { mutableStateOf(false) }
+    var styleMenu by remember { mutableStateOf(false) }
+    // "Fastest AI": live talk uses the cloud AI (answers in about a second) when there is one and the phone is online.
+    val providers by vm.providers.collectAsState(initial = emptyList())
+    val hasCloud = providers.any { it.enabled && it.kind != com.gravity.ide.ai.ProviderKind.LOCAL.name }
+    // Off until the user turns it on: while on, what they say goes to the cloud AI even in a phone-model chat.
+    var fastest by remember { mutableStateOf(VoicePrefs.fastest(context)) }
     // Recreated when the phone's speech service gets stuck (errors 5, 8, 11), so live mode keeps working.
     var recognizer by remember { mutableStateOf(createRecognizer(context)) }
     var retries by remember { mutableStateOf(0) }
@@ -126,6 +135,9 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         runCatching { recognizer?.destroy() }
         recognizer = createRecognizer(context)
     }
+    // End of speech: when the words stop changing for a moment, stop listening at once (the
+    // speech service on its own waits 1-2 s of silence before it answers).
+    val endpoint = remember { Runnable { if (open.get() && phase == LivePhase.LISTENING && heard.isNotBlank()) recognizer?.stopListening() } }
     // Live replies are spoken while they are still being written: what has been queued so far.
     var spokenUpTo by remember { mutableStateOf(0) }
     var partNo by remember { mutableStateOf(0) }
@@ -140,6 +152,10 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         }
     }
     LaunchedEffect(language) { vm.liveLanguage.value = language.forModel }
+    LaunchedEffect(styleId) { vm.livePersona.value = style.persona }
+    LaunchedEffect(fastest, hasCloud) { vm.liveFastest.value = fastest && hasCloud }
+    // Load the AI now (e.g. the phone model), not after the user's first sentence.
+    LaunchedEffect(Unit) { vm.warmUp() }
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -181,18 +197,15 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
     }
     listenNow.value = { listen() }
     /** Listen again a moment later: the speech service refuses a new start right after the last one ended. */
-    fun listenSoon(delayMs: Long = 250) = main.postDelayed({ if (open.get()) listenNow.value() }, delayMs)
+    fun listenSoon(delayMs: Long = 150) = main.postDelayed({ if (open.get()) listenNow.value() }, delayMs)
 
     /** Voice and speed for this turn (set once, before the first piece is queued). */
     fun prepareVoice() {
         if (voiceReady) return
-        val result = tts.setLanguage(language.voice)
+        val result = VoicePrefs.apply(context, tts, hindiVoice, style)
         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
             problem = "This phone has no ${language.label} voice installed, so another voice reads the reply. Add one in Android Settings → Text-to-speech."
         }
-        com.gravity.ide.files.VoicePicker.choose(tts, language.voice, voiceName)?.let { tts.setVoice(it) }
-        tts.setSpeechRate(rate)
-        tts.setPitch(1.0f)
         voiceReady = true
     }
 
@@ -201,7 +214,8 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         val clean = SpeechText.clean(piece)
         if (clean.isBlank() || ttsReady != true) return
         prepareVoice()
-        tts.speak(clean, TextToSpeech.QUEUE_ADD, null, "live-part-${partNo++}")
+        val n = partNo++
+        VoicePrefs.speak(tts, clean, style, "live-p$n", "live-p$n-end", flush = false)
         phase = LivePhase.SPEAKING
     }
 
@@ -214,18 +228,36 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
             return
         }
         prepareVoice()
-        val parts = SpeechText.chunks(SpeechText.clean(rest), 3500).filter { it.isNotBlank() }
-        if (parts.isEmpty()) {
-            if (phase != LivePhase.SPEAKING) {
-                phase = LivePhase.IDLE
-                listenSoon()
-                return
-            }
-            tts.playSilentUtterance(10, TextToSpeech.QUEUE_ADD, "live-end")
-        } else {
-            parts.forEachIndexed { i, part -> tts.speak(part, TextToSpeech.QUEUE_ADD, null, if (i == parts.lastIndex) "live-end" else "live-rest-$i") }
+        val clean = SpeechText.clean(rest)
+        if (clean.isBlank() && phase != LivePhase.SPEAKING) {
+            phase = LivePhase.IDLE
+            listenSoon()
+            return
         }
+        VoicePrefs.speak(tts, clean, style, "live-rest", "live-end", flush = false)
         phase = LivePhase.SPEAKING
+    }
+
+    /** Plays a sample of a style or voice. Pauses listening (so the mic does not hear it); never cuts a reply. */
+    fun previewSample(st: VoiceStyles.Style, v: android.speech.tts.Voice? = null) {
+        if (ttsReady != true || phase == LivePhase.THINKING || phase == LivePhase.SPEAKING) return
+        if (phase == LivePhase.LISTENING) {
+            main.removeCallbacks(endpoint)
+            runCatching { recognizer?.cancel() }
+            phase = LivePhase.IDLE
+        }
+        VoicePrefs.apply(context, tts, hindiVoice, st, v)
+        VoicePrefs.speak(tts, VoicePrefs.sample(st, hindiVoice), st, "sample", "sample-end", flush = true)
+        voiceReady = false
+    }
+
+    // Load the voice before the first reply (the first use of a voice can take a moment).
+    LaunchedEffect(ttsReady, language, styleId, voiceName) {
+        if (ttsReady == true) {
+            voiceReady = false
+            prepareVoice()
+            tts.playSilentUtterance(1, TextToSpeech.QUEUE_ADD, "warm-up")
+        }
     }
 
     // Speak each finished sentence as soon as the AI has written it.
@@ -233,6 +265,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
     LaunchedEffect(streamed) {
         val text = streamed ?: return@LaunchedEffect
         if (phase != LivePhase.THINKING && phase != LivePhase.SPEAKING) return@LaunchedEffect
+        reply = text
         val end = SpeechText.speakableEnd(text, spokenUpTo)
         if (end > spokenUpTo) {
             val piece = text.substring(spokenUpTo, end)
@@ -245,10 +278,12 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
             override fun onDone(utteranceId: String?) {
+                // After a sample, go back to listening.
+                if (utteranceId == "sample-end") main.post { if (open.get() && phase == LivePhase.IDLE) listenSoon() }
                 if (utteranceId == "live-end") main.post {
                     if (open.get() && phase == LivePhase.SPEAKING) {
                         phase = LivePhase.IDLE
-                        main.postDelayed({ if (open.get()) listenNow.value() }, 250)
+                        main.postDelayed({ if (open.get()) listenNow.value() }, 150)
                     }
                 }
             }
@@ -275,10 +310,17 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
             override fun onEvent(eventType: Int, params: Bundle?) {}
 
             override fun onPartialResults(partialResults: Bundle?) {
-                partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { if (it.isNotBlank()) heard = it }
+                partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let {
+                    if (it.isNotBlank() && it != heard) {
+                        heard = it
+                        main.removeCallbacks(endpoint)
+                        main.postDelayed(endpoint, 650)
+                    }
+                }
             }
 
             override fun onError(error: Int) {
+                main.removeCallbacks(endpoint)
                 if (!open.get()) return
                 phase = LivePhase.IDLE
                 when (error) {
@@ -308,6 +350,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
             }
 
             override fun onResults(results: Bundle?) {
+                main.removeCallbacks(endpoint)
                 if (!open.get()) return
                 val said = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().trim()
                 if (said.isEmpty()) {
@@ -356,7 +399,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                         Text(modelName, style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (Regex("(?i)\\b(7|8|13|14)b\\b").containsMatchIn(modelName)) {
                             Text(
-                                "Big phone models answer slowly. For quicker live talk use Gemini, or Llama 3.2 3B from Phone Models.",
+                                "Big phone models answer slowly. Turn on ⚡ Fastest AI (cloud), or use Llama 3.2 3B from Phone Models.",
                                 style = MaterialTheme.typography.labelSmall, color = GravityColors.Amber,
                             )
                         }
@@ -380,38 +423,58 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Box {
-                        val current = voices.indexOfFirst { it.name == voiceName }.let { if (it < 0) 0 else it }
-                        androidx.compose.material3.TextButton(onClick = { voiceMenu = true }, enabled = voices.isNotEmpty(), modifier = Modifier.testTag("live-voice")) {
-                            Text(if (voices.isEmpty()) "No ${language.label} voice installed" else "Voice ${current + 1} ▾")
+                        androidx.compose.material3.TextButton(onClick = { styleMenu = true }, modifier = Modifier.testTag("live-style")) {
+                            Text("Style: ${style.title} ▾")
                         }
-                        androidx.compose.material3.DropdownMenu(expanded = voiceMenu, onDismissRequest = { voiceMenu = false }) {
-                            voices.forEachIndexed { i, v ->
+                        androidx.compose.material3.DropdownMenu(expanded = styleMenu, onDismissRequest = { styleMenu = false }) {
+                            VoiceStyles.all.forEach { st ->
                                 androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(com.gravity.ide.files.VoicePicker.label(v, i)) },
+                                    text = { Text("${st.title} · ${st.hindi}") },
                                     onClick = {
-                                        voiceMenu = false
-                                        voiceName = v.name
-                                        prefs.edit().putString("voice_${language.name}", v.name).apply()
-                                        // Say a few words so the voice can be heard right away.
-                                        if (phase != LivePhase.LISTENING) {
-                                            tts.setLanguage(language.voice)
-                                            tts.setVoice(v)
-                                            tts.setSpeechRate(rate)
-                                            tts.speak(if (language == LiveLanguage.ENGLISH) "Hello! This is my voice." else "नमस्ते! मेरी आवाज़ ऐसी है।", TextToSpeech.QUEUE_FLUSH, null, "voice-sample")
-                                        }
+                                        styleMenu = false
+                                        styleId = st.id
+                                        VoicePrefs.setStyle(context, st.id)
+                                        previewSample(st)
                                     },
                                 )
                             }
                         }
                     }
-                    speeds.forEach { (label, value) ->
-                        FilterChip(
-                            selected = rate == value,
-                            onClick = { rate = value; prefs.edit().putFloat("rate", value).apply() },
-                            label = { Text(label) },
+                    Box {
+                        val currentVoice = voices.firstOrNull { it.name == voiceName } ?: voices.firstOrNull()
+                        androidx.compose.material3.TextButton(onClick = { voiceMenu = true }, enabled = voices.isNotEmpty(), modifier = Modifier.testTag("live-voice")) {
+                            Text(
+                                if (currentVoice == null) "No ${language.label} voice" else com.gravity.ide.files.VoicePicker.label(currentVoice, voices).substringBefore(" ·") + " ▾",
+                            )
+                        }
+                        androidx.compose.material3.DropdownMenu(expanded = voiceMenu, onDismissRequest = { voiceMenu = false }) {
+                            voices.forEach { v ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(com.gravity.ide.files.VoicePicker.label(v, voices)) },
+                                    onClick = {
+                                        voiceMenu = false
+                                        voiceName = v.name
+                                        VoicePrefs.setVoice(context, hindiVoice, v.name)
+                                        previewSample(style, v)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                if (hasCloud) {
+                    FilterChip(
+                        selected = fastest, onClick = { fastest = !fastest; VoicePrefs.setFastest(context, fastest) },
+                        label = { Text(if (fastest) "⚡ Fastest AI: on (cloud)" else "⚡ Fastest AI: off") },
+                        modifier = Modifier.testTag("live-fastest"),
+                    )
+                    if (fastest) {
+                        Text(
+                            "What you say goes to your cloud AI (e.g. Gemini) for quick answers, even in a phone-model chat.",
+                            style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, textAlign = TextAlign.Center,
                         )
                     }
                 }

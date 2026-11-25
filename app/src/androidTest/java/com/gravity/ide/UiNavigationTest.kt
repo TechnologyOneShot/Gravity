@@ -306,4 +306,24 @@ class UiNavigationTest {
         compose.onNodeWithTag("live-end").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("live-dialog").fetchSemanticsNodes().isEmpty() }
     }
+
+    @Test
+    fun t07_voiceSettingsShowStylesAndVoices() {
+        waitForTitle("Gravity")
+        openDrawerEntry("Settings")
+        waitForTitle("Settings")
+        compose.onNodeWithTag("settings-page-voice").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("voice-settings").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(androidx.compose.ui.test.hasScrollToNodeAction()).performScrollToNode(androidx.compose.ui.test.hasTestTag("voice-style-romantic"))
+        compose.onNodeWithTag("voice-style-romantic").performClick()
+        Thread.sleep(2000)
+        compose.waitForIdle()
+        Ci.log("voice", "Voice settings: ${visibleText().take(1500)}")
+        Ci.screenshot("07_voice_settings")
+        val prefs = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+            .getSharedPreferences("live_voice", android.content.Context.MODE_PRIVATE)
+        val saved = prefs.getString("style", null)
+        prefs.edit().remove("style").commit()
+        org.junit.Assert.assertEquals("romantic", saved)
+    }
 }
