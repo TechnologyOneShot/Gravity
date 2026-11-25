@@ -141,6 +141,20 @@ private val settingItems: List<SettingItem> = listOf(
     SettingItem(SettingsPage.GENERAL, "Notification settings", "Android's settings for Gravity's notifications", Control.Action("Open") { ctx ->
         ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }),
+    SettingItem(
+        SettingsPage.GENERAL, "Keep running in the background",
+        "So replies and app builds go on when you leave or swipe Gravity away. Some phones (Xiaomi, POCO, Redmi, Vivo, Oppo) close apps to save battery; Android asks you to allow Gravity",
+        Control.Action("Allow") { ctx ->
+            val pm = ctx.getSystemService(android.os.PowerManager::class.java)
+            val intent = if (pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true) {
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS) // already allowed: show the list
+            } else {
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}"))
+            }
+            runCatching { ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                .onFailure { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        },
+    ),
     SettingItem(SettingsPage.GENERAL, "App language", "Android's language setting for Gravity", Control.Action("Open") { ctx ->
         if (Build.VERSION.SDK_INT >= 33) ctx.startActivity(Intent(Settings.ACTION_APP_LOCALE_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         else ctx.startActivity(Intent(Settings.ACTION_LOCALE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

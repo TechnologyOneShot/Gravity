@@ -4,6 +4,8 @@
 
     <!-- Cloud AI providers, web search, model and dependency downloads -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Lets Gravity ask (Android's own dialog) to keep running in the background: Settings → General. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Progress notifications for downloads, agent tasks and screen capture -->

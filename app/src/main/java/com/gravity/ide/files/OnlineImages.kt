@@ -26,24 +26,28 @@ object OnlineImages {
     suspend fun generate(prompt: String, width: Int, height: Int, seed: Int = (Math.random() * 1_000_000).toInt()): ByteArray = lock.withLock {
         val p = prompt.trim().replace(Regex("\\s+"), " ").take(900)
         require(p.isNotEmpty()) { "No picture description" }
-        val url = "https://image.pollinations.ai/prompt/" + URLEncoder.encode(p, "UTF-8").replace("+", "%20") +
-            "?width=$width&height=$height&model=flux&nologo=true&seed=$seed"
+        fun url(noLogo: Boolean) = "https://image.pollinations.ai/prompt/" + URLEncoder.encode(p, "UTF-8").replace("+", "%20") +
+            "?width=$width&height=$height&model=flux&seed=$seed" + if (noLogo) "&nologo=true" else ""
+        var noLogo = true
         var attempt = 0
         while (true) {
             val wait = lastCall + GAP_MS - System.currentTimeMillis()
             if (wait > 0) delay(wait)
             lastCall = System.currentTimeMillis()
             val (code, type, bytes) = withContext(Dispatchers.IO) {
-                com.gravity.ide.ai.Http.client(150).newCall(Request.Builder().url(url).header("User-Agent", "Gravity-Android").build()).execute().use { r ->
+                com.gravity.ide.ai.Http.client(150).newCall(Request.Builder().url(url(noLogo)).header("User-Agent", "Gravity-Android").build()).execute().use { r ->
                     Triple(r.code, r.header("Content-Type").orEmpty(), r.body?.bytes() ?: ByteArray(0))
                 }
             }
+            // "Payment required" (402): the free tier may refuse the no-watermark option; ask again with it.
+            if (code == 402 && noLogo) { noLogo = false; continue }
             // Busy (429) or temporarily down (5xx): the free service often recovers in seconds; try twice more.
             if ((code == 429 || code in 500..599) && attempt < 2) { attempt++; delay(4_000L * attempt); continue }
             if (code != 200 || !type.startsWith("image/")) {
                 throw IllegalStateException(
                     "the online image AI answered HTTP $code" + when {
                         code == 429 -> " (too many pictures; wait a minute)"
+                        code == 402 -> " (its free use is limited right now; try again later, or choose \"Draw on this phone\" in Settings → AI → Pictures and videos)"
                         code in 500..599 -> " (the free service is busy or down right now; try again in a few minutes)"
                         else -> ""
                     }
