@@ -547,7 +547,7 @@ internal fun ChatComposer(
                     modifier = Modifier.padding(start = 2.dp).size(38.dp).clip(CircleShape).background(brush, CircleShape),
                 ) {
                     if (busy) Icon(Icons.Filled.Stop, "Stop", tint = Color.White, modifier = Modifier.size(20.dp))
-                    else Icon(Icons.Filled.ArrowUpward, "Send", tint = Color.White, modifier = Modifier.size(20.dp))
+                    else Icon(Icons.Filled.ArrowUpward, "Send", tint = if (canSend || GravityColors.isDark) Color.White else GravityColors.Muted, modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -944,10 +944,11 @@ private fun inlineMarkdown(s: String): AnnotatedString = buildAnnotatedString {
 fun CodeBlock(code: String, language: String?) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
-    Surface(shape = RoundedCornerShape(12.dp), color = CodeBg, border = BorderStroke(1.dp, GravityColors.Outline), modifier = Modifier.fillMaxWidth()) {
+    // Code stays dark in day mode too (light code text on a dark block reads well in both).
+    Surface(shape = RoundedCornerShape(12.dp), color = CodeBg, border = BorderStroke(1.dp, Color(0xFF3D3D3A)), modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(Modifier.fillMaxWidth().background(CodeHeaderBg).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(language ?: "code", style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted, modifier = Modifier.weight(1f))
+                Text(language ?: "code", style = MaterialTheme.typography.labelMedium, color = Color(0xFFA3A097), modifier = Modifier.weight(1f))
                 TextButton(onClick = { clipboard.setText(AnnotatedString(code)); toast(context, "Code copied") }) {
                     Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))

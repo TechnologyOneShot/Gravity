@@ -7,6 +7,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -15,13 +18,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.gravity.ide.data.settings.ThemeMode
 
-/**
- * Warm, calm palette (dark). "Cyan" is the accent everywhere in the app (a warm terracotta);
- * the old names are kept so every screen picks up the new look.
- */
-object GravityColors {
+/** The warm palette in its dark and light versions. */
+private object Dark {
     val Accent = Color(0xFFD97757)
-    val Cyan = Accent
     val Blue = Color(0xFF8AB4F8)
     val Purple = Color(0xFFC4A7E7)
     val Green = Color(0xFF8BC48A)
@@ -33,6 +32,46 @@ object GravityColors {
     val Outline = Color(0xFF3D3D3A)
     val Text = Color(0xFFEDEBE4)
     val Muted = Color(0xFFA3A097)
+}
+
+/** Day mode: warm off-white like paper, dark text, accents dark enough to read on white. */
+private object Light {
+    val Accent = Color(0xFFC15F3C)
+    val Blue = Color(0xFF1F5FD1)
+    val Purple = Color(0xFF6B4FB8)
+    val Green = Color(0xFF2E7D32)
+    val Amber = Color(0xFF9A6200)
+    val Red = Color(0xFFC0392B)
+    val Bg = Color(0xFFFAF9F5)
+    val Surface = Color(0xFFFFFFFF)
+    val SurfaceHigh = Color(0xFFF0EEE6)
+    val Outline = Color(0xFFDEDBD1)
+    val Text = Color(0xFF1F1E1D)
+    val Muted = Color(0xFF6B6962)
+}
+
+/**
+ * Colours used across the app. Each follows the current day/night mode (set by [GravityTheme]),
+ * so a screen that uses them reads well in both. "Cyan" is the accent everywhere (a warm
+ * terracotta); the old names are kept so every screen picks up the look.
+ */
+object GravityColors {
+    /** Set by [GravityTheme]. A state, so screens redraw when the mode changes. */
+    internal var isDark by mutableStateOf(true)
+
+    val Accent: Color get() = if (isDark) Dark.Accent else Light.Accent
+    val Cyan: Color get() = Accent
+    val Blue: Color get() = if (isDark) Dark.Blue else Light.Blue
+    val Purple: Color get() = if (isDark) Dark.Purple else Light.Purple
+    val Green: Color get() = if (isDark) Dark.Green else Light.Green
+    val Amber: Color get() = if (isDark) Dark.Amber else Light.Amber
+    val Red: Color get() = if (isDark) Dark.Red else Light.Red
+    val Bg: Color get() = if (isDark) Dark.Bg else Light.Bg
+    val Surface: Color get() = if (isDark) Dark.Surface else Light.Surface
+    val SurfaceHigh: Color get() = if (isDark) Dark.SurfaceHigh else Light.SurfaceHigh
+    val Outline: Color get() = if (isDark) Dark.Outline else Light.Outline
+    val Text: Color get() = if (isDark) Dark.Text else Light.Text
+    val Muted: Color get() = if (isDark) Dark.Muted else Light.Muted
 }
 
 /** Syntax colours used by the editor (separate from Material roles). */
@@ -72,37 +111,58 @@ val LightCode = CodeColors(
 val LocalCodeColors = staticCompositionLocalOf { DarkCode }
 
 private val DarkScheme = darkColorScheme(
-    primary = GravityColors.Accent,
+    primary = Dark.Accent,
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFF4A2E24),
     onPrimaryContainer = Color(0xFFFFDBCF),
-    secondary = GravityColors.Purple,
+    secondary = Dark.Purple,
     onSecondary = Color(0xFF2B2140),
     secondaryContainer = Color(0xFF3A3346),
     onSecondaryContainer = Color(0xFFEADDFF),
-    tertiary = GravityColors.Blue,
-    background = GravityColors.Bg,
-    onBackground = GravityColors.Text,
-    surface = GravityColors.Surface,
-    onSurface = GravityColors.Text,
-    surfaceVariant = GravityColors.SurfaceHigh,
-    onSurfaceVariant = GravityColors.Muted,
-    surfaceContainer = GravityColors.Surface,
-    surfaceContainerHigh = GravityColors.SurfaceHigh,
+    tertiary = Dark.Blue,
+    background = Dark.Bg,
+    onBackground = Dark.Text,
+    surface = Dark.Surface,
+    onSurface = Dark.Text,
+    surfaceVariant = Dark.SurfaceHigh,
+    onSurfaceVariant = Dark.Muted,
+    surfaceContainer = Dark.Surface,
+    surfaceContainerHigh = Dark.SurfaceHigh,
     surfaceContainerHighest = Color(0xFF383835),
     surfaceContainerLow = Color(0xFF232221),
-    outline = GravityColors.Outline,
+    surfaceContainerLowest = Color(0xFF1A1918),
+    outline = Dark.Outline,
     outlineVariant = Color(0xFF33332F),
-    error = GravityColors.Red,
+    error = Dark.Red,
 )
 
 private val LightScheme = lightColorScheme(
-    primary = Color(0xFFC96442),
-    secondary = Color(0xFF7C5CC4),
-    tertiary = Color(0xFF2563EB),
-    background = Color(0xFFFAF9F5),
-    surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFF0EEE6),
+    primary = Light.Accent,
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFF8E1D7),
+    onPrimaryContainer = Color(0xFF4A1F10),
+    secondary = Light.Purple,
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFEDE6F8),
+    onSecondaryContainer = Color(0xFF2B2140),
+    tertiary = Light.Blue,
+    onTertiary = Color(0xFFFFFFFF),
+    background = Light.Bg,
+    onBackground = Light.Text,
+    surface = Light.Bg,
+    onSurface = Light.Text,
+    surfaceVariant = Light.SurfaceHigh,
+    onSurfaceVariant = Light.Muted,
+    surfaceTint = Color.Transparent,
+    surfaceContainer = Color(0xFFF5F3EC),
+    surfaceContainerHigh = Light.SurfaceHigh,
+    surfaceContainerHighest = Color(0xFFE9E6DC),
+    surfaceContainerLow = Color(0xFFF7F5EF),
+    surfaceContainerLowest = Light.Surface,
+    outline = Light.Outline,
+    outlineVariant = Color(0xFFE8E5DC),
+    error = Light.Red,
+    onError = Color(0xFFFFFFFF),
 )
 
 val MonoFamily = FontFamily.Monospace
@@ -126,6 +186,19 @@ fun GravityTheme(mode: ThemeMode, content: @Composable () -> Unit) {
         ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    // Before any screen reads a colour, so the first frame already uses the right mode.
+    if (GravityColors.isDark != dark) GravityColors.isDark = dark
+    // Status and navigation bar icons follow Gravity's own mode (dark icons in day mode), not only the system's.
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) {
+        androidx.compose.runtime.SideEffect {
+            val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+            androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
     }
     androidx.compose.runtime.CompositionLocalProvider(LocalCodeColors provides if (dark) DarkCode else LightCode) {
         MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, typography = GravityTypography, content = content)
