@@ -1,4 +1,4 @@
-"""Makes app/src/main/assets/hinglish-words.txt.gz: casual Roman (Hinglish) spellings -> Devanagari,
+"""Makes app/src/main/assets/hinglish-words.bin (gzip; not named .gz, which the Android build treats specially): casual Roman (Hinglish) spellings -> Devanagari,
 so Hindi voices read Hinglish replies as Hindi ("main aapke liye" -> "मैं आपके लिए").
 
 Spellings come from the 12,000 most common Hindi words (wordfreq, data CC BY-SA 4.0) spelled the
@@ -23,7 +23,7 @@ for line in open(os.path.join(here, 'curated.txt'), encoding='utf-8'):
     p = line.split()
     if len(p) == 2:
         words[p[0]] = p[1]
-out = os.path.join(here, '..', '..', 'app', 'src', 'main', 'assets', 'hinglish-words.txt.gz')
+out = os.path.join(here, '..', '..', 'app', 'src', 'main', 'assets', 'hinglish-words.bin')
 with gzip.open(out, 'wt', encoding='utf-8') as f:
     f.write("# Hinglish spelling<TAB>Devanagari. Made by tools/hinglish/make-words.py from wordfreq's Hindi list (CC BY-SA 4.0).\n")
     for k in sorted(words):

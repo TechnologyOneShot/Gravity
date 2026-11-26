@@ -9,7 +9,7 @@ import java.io.File
 
 class HinglishReaderTest {
     private val words by lazy {
-        val f = listOf(File("src/main/assets/hinglish-words.txt.gz"), File("app/src/main/assets/hinglish-words.txt.gz")).first { it.isFile }
+        val f = listOf(File("src/main/assets/hinglish-words.bin"), File("app/src/main/assets/hinglish-words.bin")).first { it.isFile }
         f.inputStream().use(HinglishReader::parse)
     }
 

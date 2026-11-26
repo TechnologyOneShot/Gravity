@@ -190,11 +190,11 @@ object NeuralVoices {
         val p = pitch.coerceIn(0.7f, 1.4f)
         val shift = kotlin.math.abs(p - 1f) > 0.02f
         val makeSpeed = (if (shift) speed / p else speed).coerceIn(0.5f, 2.5f)
-        tts.generateWithCallback(text, 0, makeSpeed) { samples ->
-            if (stopped()) return@generateWithCallback 0
-            chunk(pcm16(if (shift) resample(samples, p) else samples))
-            1
-        }
+        // Whole phrase at once (a phrase takes about 0.1 s). Not generateWithCallback: its native
+        // side looks the callback up as invoke([F)Ljava/lang/Integer;, which Kotlin 2's lambdas do
+        // not have, and the lookup error left pending crashed the app.
+        val audio = tts.generate(text, 0, makeSpeed)
+        if (!stopped() && audio.samples.isNotEmpty()) chunk(pcm16(if (shift) resample(audio.samples, p) else audio.samples))
         return tts.sampleRate()
     }
 
