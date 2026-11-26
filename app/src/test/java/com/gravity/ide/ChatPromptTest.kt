@@ -15,16 +15,16 @@ import java.io.File
 class ChatPromptTest {
     @Test fun promptSaysWhatGravityCanAndCannotDo() {
         val p = ChatPrompt.system()
-        assertTrue(p.contains("What Yamini can do:") && p.contains("What Yamini cannot do:"))
+        assertTrue(p.contains("What you can do:") && p.contains("What you cannot do:"))
         assertTrue(ChatPrompt.canDo.size >= 5 && ChatPrompt.cannotDo.size >= 5)
         assertTrue(p.contains("Answer the user's latest message only"))
         assertTrue("prompt too long: ${p.length}", p.length < 3500)
         // Phone models read the prompt before their first word: keep theirs short (≈130 tokens).
         val phone = ChatPrompt.phone()
         assertTrue("phone prompt too long: ${phone.length}", phone.length < 1800)
-        assertTrue(phone.contains("latest message only") && phone.contains("What Yamini cannot do") && phone.contains("both parts"))
+        assertTrue(phone.contains("latest message only") && phone.contains("What you cannot do") && phone.contains("both parts"))
         // The phone prompt keeps the cloud prompt's tested opening and closing rules word for word.
-        assertTrue(p.startsWith(phone.substringBefore("\n\nWhat Yamini can do:")))
+        assertTrue(p.startsWith(phone.substringBefore("\n\nWhat you can do:")))
         assertTrue(p.endsWith(phone.substringAfterLast("\n")))
     }
 

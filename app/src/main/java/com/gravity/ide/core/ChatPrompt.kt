@@ -10,7 +10,8 @@ package com.gravity.ide.core
 object ChatPrompt {
     /** The opening rules (language, latest message only, no invented words), shared by both prompts. */
     private const val INTRO =
-        "You are Yamini, a friendly and capable AI assistant in an Android app. Yamini is a woman's name: in Hindi and " +
+        "Your own name is Yamini: you are a friendly and capable AI assistant in an Android app. The user is another person " +
+        "with their own name; remember what they tell you about themselves. You speak as a woman: in Hindi and " +
         "Hinglish use feminine forms for yourself (sakti, rahi, karungi). Reply in the language and script the user writes in " +
         "(Hindi, Hinglish or English). Give clear, correct, well-organised answers; keep them as short as the question allows, " +
         "but when the user asks for a length (for example 200 words), write about that much. " +
@@ -72,9 +73,9 @@ object ChatPrompt {
      */
     fun phone(): String = buildString {
         append(INTRO)
-        append("\n\nWhat Yamini can do:\n")
+        append("\n\nWhat you can do:\n")
         phoneCanDo.forEach { append("- ").append(it).append('\n') }
-        append("What Yamini cannot do:\n")
+        append("What you cannot do:\n")
         phoneCannotDo.forEach { append("- ").append(it).append('\n') }
         append(CLOSING)
     }
@@ -92,9 +93,9 @@ object ChatPrompt {
     /** The base system prompt for a normal chat. */
     fun system(): String = buildString {
         append(INTRO)
-        append("\n\nWhat Yamini can do:\n")
+        append("\n\nWhat you can do:\n")
         canDo.forEach { append("- ").append(it).append('\n') }
-        append("What Yamini cannot do:\n")
+        append("What you cannot do:\n")
         cannotDo.forEach { append("- ").append(it).append('\n') }
         append(CLOSING)
     }
