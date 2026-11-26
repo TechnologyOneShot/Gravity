@@ -86,9 +86,18 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
     fun <T> nativeWork(engine: EngineKind, modelId: String, doing: String = "", block: () -> T): T {
         // [doing] (e.g. "writing, context 4096, up to 2500 tokens") goes into the crash report.
         prefs.edit().putString(KEY_NATIVE_BUSY, "${engine.name}|$modelId|${System.currentTimeMillis()}|${doing.replace('|', '/')}").commit()
+        // Keeps the CPU awake while the model loads or writes: with the screen off the phone may
+        // otherwise sleep and a reply crawls (a user waited 5–15 minutes for a drawing). Released
+        // as soon as it is done; at most 30 minutes in any case.
+        val wake = runCatching {
+            (context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
+                .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Gravity:phone-model")
+                .apply { setReferenceCounted(false); acquire(30 * 60_000L) }
+        }.getOrNull()
         try {
             return block()
         } finally {
+            runCatching { if (wake?.isHeld == true) wake.release() }
             prefs.edit().remove(KEY_NATIVE_BUSY).commit()
         }
     }

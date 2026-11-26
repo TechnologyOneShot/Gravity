@@ -277,6 +277,8 @@ internal fun ChatBubble(
     onOpenApp: (String) -> Unit = {},
     onRetryApp: (projectId: String, taskId: String) -> Unit = { _, _ -> },
     onMake: (com.gravity.ide.core.MakeFiles.Kind) -> Unit = {},
+    /** The phone model's speed for this reply (see ReplySpeed), shown under it. */
+    speed: String? = null,
 ) {
     val atts = remember(m.attachments) {
         runCatching { JSONArray(m.attachments) }.getOrNull()?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: emptyList()
@@ -394,6 +396,8 @@ internal fun ChatBubble(
                     Text("${shortModelName(it)} · ${relativeTime(m.createdAt)}", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, maxLines = 1)
                 }
             }
+            // How fast the phone model was (reading the prompt, writing, threads, engine).
+            speed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, modifier = Modifier.padding(horizontal = 4.dp)) }
         }
     }
 }

@@ -266,6 +266,7 @@ jobs:
             echo "PEAK MEMORY: $(grep 'Maximum resident' /tmp/err-$C.txt | awk '{print int($NF/1024)}') MB"
             [ "$code" = 0 ] || tail -5 /tmp/err-$C.txt
             python3 -I .github/scripts/svg-check.py /tmp/draw-$C.txt
+            if [ "$C" = 0 ]; then echo "=====DRAWING REPLY"; cat /tmp/draw-$C.txt; echo; echo "=====END DRAWING REPLY"; fi
             if [ "$C" = 0 ] && [ "$code" != 0 ]; then failed=1; fi
             # The warm-up must have read the prompt: the drawing reuses it (Gemma's format once read nothing).
             reused=$(grep -oE "reused [0-9]+" /tmp/out-$C.txt | tail -1 | awk '{print $2}')

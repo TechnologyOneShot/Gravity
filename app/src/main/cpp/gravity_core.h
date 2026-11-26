@@ -21,6 +21,8 @@ struct Session {
     std::vector<llama_token> cached;
     // Tokens reused from the previous request in the last generate() call (for logs and tests).
     int last_reused = 0;
+    // Tokens the last request read in all (its prompt), for the reply's speed line.
+    int last_prompt = 0;
 };
 
 /**

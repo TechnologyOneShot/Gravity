@@ -55,6 +55,8 @@ class AppContainer(context: Context) {
 
     /** Chat replies being written, per chat, for the whole app (they go on when the screen closes). */
     val chatRuns = com.gravity.ide.agent.ChatRuns(appContext)
+    /** Speed lines of phone-model replies (shown under them). */
+    val replySpeeds = com.gravity.ide.files.ReplySpeeds(appContext.filesDir)
     val localHost = LocalModelHost(appContext, events).apply {
         // Each chat keeps its own phone model: the host finds and loads the one a chat asks for.
         lookup = { key -> db.models().all().firstOrNull { (it.id == key || it.name == key) && it.status == com.gravity.ide.models.ModelStatus.READY.name } }

@@ -519,6 +519,10 @@ class DeviceServicesTest {
                 if (made == null) Thread.sleep(300)
             }
             val kept = com.gravity.ide.ai.local.LlamaBridge.modelInfo(loaded.handle).getOrNull(6)
+            // The reply's speed line, as shown under it in the chat.
+            val speedLine = c.replySpeeds.get(reply!!.id)
+            Ci.log("picture-speed", "Speed line under the reply: $speedLine")
+            assertTrue("No speed line for the phone model's reply", speedLine?.startsWith("Read ") == true && speedLine.contains("threads"))
             val left = work.getStringSet("work", emptySet()).orEmpty()
             Ci.log(
                 "picture-local",

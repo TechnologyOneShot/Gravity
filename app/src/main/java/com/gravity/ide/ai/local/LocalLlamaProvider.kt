@@ -57,6 +57,12 @@ class LocalLlamaProvider(
         var wanted: String? = request.model
         var attempt = 0
         var outcome: Pair<Int, String>? = null
+        // For the reply's speed line: when the engine started, wrote its first piece, finished.
+        var tStart = 0L
+        var tFirst = 0L
+        var tEnd = 0L
+        var info: IntArray? = null
+        var engineName = ""
         while (outcome == null) {
             val current = host.loadedOrNull()
             if (current == null || !host.matches(current, wanted)) {
@@ -72,9 +78,10 @@ class LocalLlamaProvider(
                 val count = host.nativeWork(
                     LlamaBridge.engineOf(loaded.handle), loaded.modelId,
                     "${loaded.name} writing, context ${request.contextSize ?: loaded.contextSize}, up to $maxTokens tokens",
-                ) { LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
+                ) { tStart = System.nanoTime(); LlamaBridge.generate(loaded.handle, roles, contents, maxTokens, temperature, 0.95f, request.contextSize ?: 0, prefix) { bytes ->
                     val piece = utf8.append(bytes)
                     if (piece.isNotEmpty()) {
+                        if (tFirst == 0L) tFirst = System.nanoTime()
                         full.append(piece)
                         onEvent(LlmEvent.TextDelta(piece))
                         if (stops.isNotEmpty()) {
@@ -93,6 +100,9 @@ class LocalLlamaProvider(
                     }
                     ctx.isActive && !stopped && !host.abortRequested
                 } }
+                tEnd = System.nanoTime()
+                info = runCatching { LlamaBridge.modelInfo(loaded.handle) }.getOrNull()
+                engineName = runCatching { LlamaBridge.engineOf(loaded.handle).name }.getOrDefault("")
                 count to runCatching { LlamaBridge.lastFinish() }.getOrDefault("")
                 }
             }
@@ -115,6 +125,10 @@ class LocalLlamaProvider(
             }
         }
         onEvent(LlmEvent.Usage(0, generated))
+        info?.takeIf { it.size >= 9 && tStart > 0 && generated > 0 }?.let { v ->
+            val first = if (tFirst > 0) tFirst else tEnd
+            onEvent(LlmEvent.Speed(v[7], v[5], (first - tStart) / 1_000_000, generated, (tEnd - first) / 1_000_000, v[8], engineName))
+        }
         // Out of room = the token limit or a full context (the native side reports which).
         val outOfRoom = !stopped && (generated >= maxTokens || nativeFinish == "ctx")
         onEvent(LlmEvent.Done(if (outOfRoom) "MAX_TOKENS" else "STOP"))

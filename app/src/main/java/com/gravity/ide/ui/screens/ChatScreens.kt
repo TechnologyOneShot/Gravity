@@ -463,6 +463,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         val text = StringBuilder()
         val sources = mutableListOf<WebSource>()
         var inTok = 0
+        var speed: LlmEvent.Speed? = null
         var outTok = 0
         try {
             suspend fun answerWith(resolved: com.gravity.ide.ai.ResolvedModel) {
@@ -565,6 +566,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                             text.setLength(maxOf(0, text.length - ev.chars))
                             streaming.value = text.toString()
                         }
+                        is LlmEvent.Speed -> speed = ev
                         is LlmEvent.ModelSwitched -> {
                             resolvedModel = ev.to
                             notice.value = when {
@@ -606,6 +608,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 }
             }
             val savedId = saveAssistant(text.toString(), resolvedModel, providerId, inTok, outTok, sources, null)
+            speed?.let { v -> c.replySpeeds.put(savedId, com.gravity.ide.core.ReplySpeed.line(v.promptTokens, v.reusedTokens, v.readMs, v.outputTokens, v.writeMs, v.threads, v.engine)) }
             c.chatRuns.notifyReady(chatId, c.db.chats().get(chatId)?.title.orEmpty(), text.toString())
             pendingMake?.let { kind -> if (text.isNotBlank()) makeFile(savedId, kind, pendingMakeRequest) }
         } catch (e: CancellationException) {
@@ -871,6 +874,8 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
     val c = LocalAppContainer.current
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    // Ticks when a phone-model reply's speed line is saved, so the bubbles read it again.
+    val speedTick by c.replySpeeds.changes.collectAsState()
     val chat by vm.chat.collectAsState(initial = null)
     val messages by vm.messages.collectAsState(initial = emptyList())
     val streaming by vm.streaming.collectAsState()
@@ -947,6 +952,7 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
                     onOpenApp = { go(Routes.app(it)) },
                     onRetryApp = { p, t -> vm.retryApp(p, t) },
                     onMake = { kind -> vm.makeFile(m.id, kind) },
+                    speed = if (m.role == "assistant" && m.providerId == LocalLlamaProvider.ID) remember(m.id, speedTick) { c.replySpeeds.get(m.id) } else null,
                 )
             }
             streaming?.let { s -> item { StreamingBubble(s) } }

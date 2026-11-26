@@ -80,9 +80,23 @@ object MakeFiles {
             "- bullet points and short paragraphs). Gravity saves your reply as a PDF file, so do not say you cannot make files."
         Kind.ZIP -> "The user wants a ZIP file. Put every file in its own fenced code block, and write its file name on the line " +
             "just before the block as: File: name.ext. Gravity packs these files into a ZIP, so do not say you cannot make files."
-        Kind.IMAGE -> "The user wants an image. Draw it as ONE complete, detailed, colourful SVG (viewBox=\"0 0 1024 1024\", only " +
-            "shapes, gradients and text; no external images or fonts) in a ```svg code block, then add one short sentence about it. " +
-            "Gravity turns the SVG into a PNG picture, so do not say you cannot make images."
+        // Tested on Gemma 3 4B (five subjects, rendered and compared): asking first for what makes the
+        // subject different and for each part's numbers, plus a simple layout, gave recognisable
+        // pictures where "one detailed SVG" gave shapeless ones. The examples are deliberately
+        // other subjects than the test's (a worked example drawing was copied instead).
+        Kind.IMAGE -> "The user wants a picture. Draw it yourself as SVG code: Gravity turns it into a PNG, so never say you cannot make images.\n" +
+            "Write ONE ```svg code block with one complete SVG: <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 400\">.\n" +
+            "Start inside it with a comment that plans the picture:\n" +
+            "1. The features that make this subject different from similar things (for example a giraffe: yellow with brown patches, a very long " +
+            "neck, two small horns; a rabbit: long upright ears, a round white tail).\n" +
+            "2. Each part with its shape, real colour and numbers on the 400x400 canvas (centre x,y and size), so that parts that belong together " +
+            "touch or overlap.\n" +
+            "Layout: the background and ground first; the subject big and in the middle, about 250 wide. A living thing has an oval body around " +
+            "(200,250) with its head overlapping the top of the body, and legs that start inside the body and end on the ground near y=340. Use " +
+            "ellipses and circles for bodies, heads and ears; rects and polygons for buildings, cars and furniture; thick round paths (stroke-width " +
+            "10 to 25, stroke-linecap round) for tails, trunks, arms and branches.\n" +
+            "Then draw the parts from back to front: background, body, legs and tail, head, ears, face details last.\n" +
+            "After the code block write one short sentence about the picture."
         Kind.VIDEO -> "The user wants a short video. Gravity makes it on the phone as an MP4: one picture per scene, your narration read aloud by the " +
             "phone's voice. Write 3 to 6 scenes. For each scene write one line \"Scene N: <one or two narration sentences in the user's language>\" " +
             "and right after it ONE complete, colourful SVG drawing of that scene in a ```svg code block (viewBox=\"0 0 720 1280\", portrait, only " +

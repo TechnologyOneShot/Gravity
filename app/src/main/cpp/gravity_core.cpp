@@ -123,6 +123,7 @@ int generate(Session *s, const std::vector<std::string> &roles, const std::vecto
     if (reuse == 0) llama_memory_clear(mem, true);
     s->cached.resize(reuse);
     s->last_reused = (int) reuse;
+    s->last_prompt = (int) tokens.size();
 
     // Mild repetition penalty and min-p keep small models from looping on one token.
     llama_sampler *smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());

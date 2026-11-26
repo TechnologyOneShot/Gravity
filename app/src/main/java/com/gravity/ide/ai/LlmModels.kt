@@ -47,6 +47,14 @@ sealed interface LlmEvent {
     data class Retract(val chars: Int) : LlmEvent
     /** The request was retried with [to] instead of [from] (retired model, or its free quota is used up); [reason] says why. */
     data class ModelSwitched(val from: String, val to: String, val reason: String = "") : LlmEvent
+    /**
+     * How fast a phone model answered: it read [promptTokens] ([reusedTokens] of them already read
+     * before) in [readMs], then wrote [outputTokens] in [writeMs], on [threads] threads of [engine].
+     */
+    data class Speed(
+        val promptTokens: Int, val reusedTokens: Int, val readMs: Long,
+        val outputTokens: Int, val writeMs: Long, val threads: Int, val engine: String,
+    ) : LlmEvent
 }
 
 data class WebSource(val title: String, val url: String, val snippet: String = "")
@@ -97,7 +105,7 @@ suspend fun LlmProvider.complete(request: LlmRequest, onText: (String) -> Unit =
             }
             is LlmEvent.Sources -> sources += ev.sources
             is LlmEvent.Done -> finish = ev.finishReason
-            is LlmEvent.ModelSwitched -> Unit
+            is LlmEvent.ModelSwitched, is LlmEvent.Speed -> Unit
             is LlmEvent.Retract -> {
                 text.setLength(maxOf(0, text.length - ev.chars))
                 onText(text.toString())
