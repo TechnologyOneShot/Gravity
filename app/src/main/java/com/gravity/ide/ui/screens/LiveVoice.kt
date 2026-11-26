@@ -47,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +59,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.TextButton
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -432,6 +435,8 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                     }
                     IconButton(onClick = onClose, modifier = Modifier.testTag("live-close")) { Icon(Icons.Filled.Close, "End live mode") }
                 }
+                // The natural offline voice is not downloaded yet: offer it here, where it matters most.
+                NaturalVoiceOffer(if (hindiVoice) "hi" else "en")
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     LiveLanguage.entries.forEach { l ->
@@ -619,3 +624,32 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
 
 private fun createRecognizer(context: android.content.Context): SpeechRecognizer? =
     if (SpeechRecognizer.isRecognitionAvailable(context)) SpeechRecognizer.createSpeechRecognizer(context) else null
+
+/** A one-line offer to download Yamini's natural voice for [lang] (hidden once it is there or downloading). */
+@Composable
+private fun NaturalVoiceOffer(lang: String) {
+    val context = LocalContext.current
+    val c = com.gravity.ide.ui.LocalAppContainer.current
+    val nv = com.gravity.ide.voice.NeuralVoices
+    if (!nv.available || !nv.enabled(context)) return
+    val rows by c.db.models().observeVoiceFiles().collectAsState(initial = emptyList())
+    val pack = nv.chosen(context, lang)
+    val status = nv.statusOf(context, rows, pack)
+    if (status == "ready" || status == "downloading") return
+    val scope = rememberCoroutineScope()
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp).testTag("live-natural-offer"), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "Get Yamini's natural voice: human-like, offline, starts at once (${pack.size / 1_000_000} MB, once).",
+            style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = {
+            scope.launch {
+                runCatching {
+                    rows.filter { it.name == pack.archiveName }.forEach { c.models.delete(it.id) }
+                    c.models.enqueueDownload(pack.url, pack.archiveName, pack.sha256, pack.size, "k2-fsa/sherpa-onnx", nv.LICENSE_NOTE, role = "voice")
+                }
+            }
+        }) { Text("Download") }
+    }
+}
+
