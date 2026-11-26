@@ -64,6 +64,18 @@ class ChatPromptTest {
         )
         case("Hinglish problem", listOf(), turn("user", "Mera phone bahut slow chal raha hai, kya karu?"), script = "latin", hinglish = true)
         case("English short", listOf("Mars", "Jupiter", "Venus", "Saturn", "Mercury", "Neptune", "Uranus"), turn("user", "Name three planets."), script = "latin")
+        // A user's chat: GK for class 2, then "more and hindi text" (English words asking for Hindi).
+        // Gemma 3 4B answered in English with wrong Hindi in brackets (गरुड़ for peacock).
+        case(
+            "Hindi asked for in English words", listOf("भारत", "राजधानी", "दिल्ली", "मोर", "बाघ", "कमल"),
+            turn("user", "class 2 gk questions about India"),
+            turn("assistant", "1. What is the capital of India? – New Delhi\n2. What is the national animal of India? – Tiger\n3. What is the national bird of India? – Peacock"),
+            turn("user", "more and hindi text"), script = "devanagari",
+        )
+        case(
+            "Class 2 GK in Hindi", listOf("मोर", "बाघ", "कमल", "दिल्ली"),
+            turn("user", "class 2 ke bacchon ke liye bharat ke GK ke 10 sawal jawab hindi me likho"), script = "devanagari",
+        )
         File(dir, "cases.json").writeText(cases.toString(2))
         // What the app sends a phone model for "ek bandar ki image banao" drawn on the phone (the
         // arm64 real-model check runs it), and what its warm-up sent before (a new chat).

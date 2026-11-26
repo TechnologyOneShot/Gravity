@@ -48,8 +48,43 @@ object LanguageHint {
         }
     }
 
+    // A language asked for by name: "in Hindi", "hindi me", "hindi text", "into English", "हिंदी में".
+    // "to/into/in X" and "X me/mein/में" (the reply's language) count more than "X text" (could be
+    // what is being described), so "translate this English text into Hindi" asks for Hindi.
+    private val askForms = listOf(
+        Lang.HINDI_DEVANAGARI to listOf("\\b(?:in|into|to)\\s+hindi\\b", "\\bhindi\\s+(?:me|mein|mai|mei|main|mai)\\b", "हि[ंन्]?दी\\s*में", "हिन्दी\\s*में"),
+        Lang.ENGLISH to listOf("\\b(?:in|into|to)\\s+english\\b", "\\benglish\\s+(?:me|mein|mai|mei)\\b", "अंग्रे[ज़ज]ी\\s*में", "\\bangrezi\\s+(?:me|mein)\\b"),
+        Lang.HINGLISH to listOf("\\b(?:in|into|to)\\s+hinglish\\b", "\\bhinglish\\s+(?:me|mein|mai|mei)\\b"),
+    ).map { (lang, forms) -> lang to forms.map { Regex(it) } }
+    private val nameForms = listOf(
+        Lang.HINDI_DEVANAGARI to Regex("\\bhindi\\s+(?:text|language|version|lang|script|font)\\b|\\b(?:and|aur)\\s+hindi\\b"),
+        Lang.ENGLISH to Regex("\\benglish\\s+(?:version|language)\\b"),
+        Lang.HINGLISH to Regex("\\bhinglish\\b"),
+    )
+
+    /**
+     * The reply language the user asks for by name, or null. Without this, "more and hindi text"
+     * (English words) got "(Reply in English.)", and Gemma answered in English with Hindi only
+     * in brackets.
+     */
+    fun asked(text: String): Lang? {
+        val t = text.lowercase()
+        val strong = askForms.filter { (_, forms) -> forms.any { it.containsMatchIn(t) } }.map { it.first }.distinct()
+        if (strong.size == 1) return strong.first()
+        if (strong.size > 1) return null
+        val named = nameForms.filter { it.second.containsMatchIn(t) }.map { it.first }.distinct()
+        return named.singleOrNull()
+    }
+
     /** The instruction to put after the user's latest message, or "" when the language is unclear. */
-    fun hint(text: String): String = when (detect(text)) {
+    fun hint(text: String): String = when (asked(text)) {
+        Lang.HINDI_DEVANAGARI -> "(The user asks for Hindi: reply in Hindi, written in Devanagari; not English with Hindi in brackets.)"
+        Lang.ENGLISH -> "(The user asks for English: reply in English.)"
+        Lang.HINGLISH -> "(The user asks for Hinglish: reply in Hinglish, Hindi words in Roman script, not English.)"
+        else -> byScript(text)
+    }
+
+    private fun byScript(text: String): String = when (detect(text)) {
         Lang.HINDI_DEVANAGARI -> "(Reply in Hindi, written in Devanagari.)"
         // Not "English letters": in tests that made Gemma and Qwen answer in English.
         Lang.HINGLISH -> "(Reply in Hinglish, like this message: Hindi words in Roman script, not English.)"
@@ -66,7 +101,7 @@ object LanguageHint {
      * rest in the user's language.
      */
     fun withPictureHint(text: String): String {
-        val reply = when (detect(text)) {
+        val reply = when (asked(text) ?: detect(text)) {
             Lang.HINDI_DEVANAGARI -> " Reply to the user in Hindi, written in Devanagari."
             Lang.HINGLISH -> " Reply to the user in Hinglish, like this message: Hindi words in Roman script."
             Lang.ENGLISH -> " Reply in English."

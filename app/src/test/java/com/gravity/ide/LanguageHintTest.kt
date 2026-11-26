@@ -64,4 +64,19 @@ class LanguageHintTest {
         assertEquals(false, LanguageHint.mostlyNonLatin("A photorealistic Asian elephant standing in a meadow"))
         assertEquals(false, LanguageHint.mostlyNonLatin("12345 !!"))
     }
+
+    /** A language asked for by name wins over the script the message is written in. */
+    @Test fun askedLanguageWins() {
+        fun asked(expected: Lang?, vararg texts: String) = texts.forEach { assertEquals(it, expected, LanguageHint.asked(it)) }
+        // The user's case: Gemma was told "(Reply in English.)" and wrote English with Hindi in brackets.
+        asked(Lang.HINDI_DEVANAGARI, "more and hindi text", "Write it in Hindi", "class 2 gk hindi me do", "translate this English text into Hindi", "इसे हिंदी में लिखो", "mere liye ek Hindi mein gana Gao")
+        asked(Lang.ENGLISH, "Now a different question, in English please: why is the sky blue?", "isko english me batao", "इसे अंग्रेजी में बताओ")
+        asked(Lang.HINGLISH, "hinglish me likho", "reply in Hinglish")
+        asked(null, "What is the Hindi word for apple?", "Name three planets.", "hindi and english both", "kya haal hai")
+        assertEquals(
+            "more and hindi text\n\n(The user asks for Hindi: reply in Hindi, written in Devanagari; not English with Hindi in brackets.)",
+            LanguageHint.withHint("more and hindi text"),
+        )
+    }
 }
+
