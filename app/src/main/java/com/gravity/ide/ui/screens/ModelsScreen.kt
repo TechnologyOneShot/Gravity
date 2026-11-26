@@ -549,15 +549,13 @@ private fun PhoneAiCheck() {
         sb.appendLine("Model: ${model.name} · ${model.quantization ?: "?"} · ${formatBytes(model.sizeBytes)} · ${java.io.File(model.filePath).name}")
         sb.appendLine("Context ${loaded.contextSize} · threads $threads · loaded: ${c.localHost.loadMode(model.id)} · ${bridge.systemInfo(bridge.engineOf(loaded.handle)).trim()}")
         // A very large context costs memory (Android closes apps that use too much) and time when
-        // a chat starts: say how much, and what is enough.
-        runCatching { bridge.modelInfo(loaded.handle) }.getOrNull()?.takeIf { it.size >= 5 && it[3] > 0 }?.let { v ->
-            val kvBytes = 2L * v[1] * loaded.contextSize * (v[2].toLong() / v[3] * v[4]) * 2
-            if (loaded.contextSize > 8192) {
-                sb.appendLine(
-                    "Note: context ${loaded.contextSize} keeps up to ${"%.1f".format(kvBytes / 1e9)} GB of memory for this model. 8192 is enough for chats " +
-                        "(Yamini makes it bigger by itself for long files) and starts chats faster: Settings → Phone AI → Memory for answers (context).",
-                )
-            }
+        // a chat starts: say so, and what is enough. (No per-model figure: models with sliding-window
+        // attention, like Gemma 3, keep much less than a simple estimate says.)
+        if (loaded.contextSize > 8192) {
+            sb.appendLine(
+                "Note: context ${loaded.contextSize} keeps a lot of memory (a 7B model about 1.9 GB at 32768, 0.5 GB at 8192). 8192 is enough for chats " +
+                    "(Yamini makes it bigger by itself for long files) and starts chats faster: Settings → Phone AI → Memory for answers (context).",
+            )
         }
         val questions = listOf("What is the capital of France? Answer with one word." to "paris", "What is 12 + 30? Reply with the number only." to "42")
 
