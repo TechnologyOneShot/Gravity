@@ -59,4 +59,26 @@ object LanguageHint {
 
     /** [text] with its reply instruction on a new line (unchanged when the language is unclear). */
     fun withHint(text: String): String = hint(text).let { if (it.isEmpty()) text else "$text\n\n$it" }
+
+    /**
+     * For a request whose reply has "Picture:" lines for the online image AI: those lines in English
+     * (the image AI misreads Hindi: a Hindi "elephant" description gave a picture of a girl), the
+     * rest in the user's language.
+     */
+    fun withPictureHint(text: String): String {
+        val reply = when (detect(text)) {
+            Lang.HINDI_DEVANAGARI -> " Reply to the user in Hindi, written in Devanagari."
+            Lang.HINGLISH -> " Reply to the user in Hinglish, like this message: Hindi words in Roman script."
+            Lang.ENGLISH -> " Reply in English."
+            Lang.UNKNOWN -> ""
+        }
+        return "$text\n\n(Write every Picture line in English.$reply)"
+    }
+
+    /** True when most letters of [text] are not Latin (e.g. Devanagari). */
+    fun mostlyNonLatin(text: String): Boolean {
+        val letters = text.filter { it.isLetter() }
+        if (letters.isEmpty()) return false
+        return letters.count { it.code >= 0x250 } * 10 >= letters.length * 3
+    }
 }

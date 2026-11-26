@@ -47,4 +47,21 @@ class LanguageHintTest {
         assertEquals("hello", LanguageHint.withHint("hello"))
         assertEquals("Name three planets.\n\n(Reply in English.)", LanguageHint.withHint("Name three planets."))
     }
+
+    @Test fun pictureLinesAreAskedInEnglish() {
+        assertEquals(
+            "हाथी की तस्वीर बनाओ\n\n(Write every Picture line in English. Reply to the user in Hindi, written in Devanagari.)",
+            LanguageHint.withPictureHint("हाथी की तस्वीर बनाओ"),
+        )
+        assertEquals(
+            "draw a red car\n\n(Write every Picture line in English. Reply in English.)",
+            LanguageHint.withPictureHint("draw a red car"),
+        )
+    }
+
+    @Test fun hindiScriptIsSpotted() {
+        assertEquals(true, LanguageHint.mostlyNonLatin("एक विशाल एशियाई हाथी घास के मैदान में खड़ा है"))
+        assertEquals(false, LanguageHint.mostlyNonLatin("A photorealistic Asian elephant standing in a meadow"))
+        assertEquals(false, LanguageHint.mostlyNonLatin("12345 !!"))
+    }
 }

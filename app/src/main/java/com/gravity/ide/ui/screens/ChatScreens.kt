@@ -248,7 +248,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
     private suspend fun conversationStart(
         resolved: com.gravity.ide.ai.ResolvedModel, settings: com.gravity.ide.data.settings.AppSettings,
         project: com.gravity.ide.data.db.ProjectEntity?, extra: String, live: Boolean,
-        replyTokens: Int? = null, out: (String) -> String,
+        replyTokens: Int? = null, pictureLines: Boolean = false, out: (String) -> String,
     ): Pair<String, ArrayList<LlmMessage>> {
         val projectPart = if (project == null) "" else buildString {
             val root = File(project.rootPath)
@@ -276,10 +276,19 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         // Not in live voice, which names the language itself.
         val hint = resolved.provider.isLocal && !live
         val recent = ArrayList<LlmMessage>()
-        for (m in history.drop(from)) {
+        val kept = history.drop(from)
+        for ((i, m) in kept.withIndex()) {
             val user = m.role == "user"
             val text = out(m.content)
-            recent += LlmMessage(if (user) Role.USER else Role.ASSISTANT, if (user && hint) com.gravity.ide.core.LanguageHint.withHint(text) else text)
+            recent += LlmMessage(
+                if (user) Role.USER else Role.ASSISTANT,
+                when {
+                    !user || !hint -> text
+                    // This message asks for an online picture: its Picture lines must be in English.
+                    pictureLines && i == kept.lastIndex -> com.gravity.ide.core.LanguageHint.withPictureHint(text)
+                    else -> com.gravity.ide.core.LanguageHint.withHint(text)
+                },
+            )
         }
         return out(system) to recent
     }
@@ -506,7 +515,12 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 } else null
                 val drawTokens = pendingMake?.takeIf { drawing }?.let { com.gravity.ide.core.MakeFiles.drawTokens(it, drawContext ?: loadedCtx) }
                 // The same start as the warm-up built (see warmUp), so a phone model reuses what it already read.
-                val (system, recent) = conversationStart(resolved, settings, project, extra, live, drawTokens, ::out)
+                val (system, recent) = conversationStart(
+                    resolved, settings, project, extra, live, drawTokens,
+                    pictureLines = settings.pictureMaker == "online" &&
+                        (pendingMake == com.gravity.ide.core.MakeFiles.Kind.IMAGE || pendingMake == com.gravity.ide.core.MakeFiles.Kind.VIDEO),
+                    out = ::out,
+                )
                 llm += LlmMessage(Role.SYSTEM, system)
                 var contextSize: Int? = null
                 if (atts.isNotEmpty() && recent.isNotEmpty() && recent.last().role == Role.USER) {
@@ -627,6 +641,32 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
     }
 
     /**
+     * A picture description for the image AI, in English: it misreads other scripts (a Hindi
+     * "elephant" description gave a picture of a girl). If the AI still wrote it in Hindi, the
+     * chat's AI translates just that line; if that fails, the description is used as it is.
+     */
+    private suspend fun inEnglish(desc: String): String {
+        if (!com.gravity.ide.core.LanguageHint.mostlyNonLatin(desc)) return desc
+        val chat = c.db.chats().get(chatId) ?: return desc
+        return runCatching {
+            val resolved = c.providers.resolve(chat.providerId, chat.model)
+            val out = StringBuilder()
+            resolved.provider.stream(
+                LlmRequest(
+                    resolved.model,
+                    listOf(
+                        LlmMessage(Role.SYSTEM, "Translate the user's picture description into English for an image AI. Reply with the English description only, on one line."),
+                        LlmMessage(Role.USER, desc),
+                    ),
+                    maxOutputTokens = 250, temperature = 0.2,
+                )
+            ) { ev -> if (ev is LlmEvent.TextDelta) out.append(ev.text) }
+            out.toString().lines().map { it.trim().removePrefix("Picture:").trim() }.firstOrNull { it.isNotEmpty() }
+                ?.takeIf { it.length > 10 && !com.gravity.ide.core.LanguageHint.mostlyNonLatin(it) } ?: desc
+        }.getOrDefault(desc)
+    }
+
+    /**
      * Makes a file from an AI reply, on the phone (no cloud, no limits): PDF of the text, ZIP of its
      * code blocks (or of this chat's app), PNG of the SVG it drew, or WAV of it read aloud. The file
      * is added to the reply as a card with Open and Share.
@@ -657,7 +697,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                         val svg = com.gravity.ide.core.MakeFiles.svg(msg.content)
                         if (described != null || (online && svg == null)) {
                             // A real AI picture from the online image AI (the user chose it).
-                            val desc = described ?: request.ifBlank { msg.content.take(300) }
+                            val desc = inEnglish(described ?: request.ifBlank { msg.content.take(300) })
                             notice.value = "Making the picture with the free online image AI…"
                             val bytes = com.gravity.ide.files.OnlineImages.generate(desc, 1024, 1024)
                             val f = com.gravity.ide.files.FileMaker.unique(com.gravity.ide.files.FileMaker.dir(ctx), com.gravity.ide.files.FileMaker.clean(name) + ".jpg")
@@ -686,7 +726,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                             try {
                                 described.forEachIndexed { i, (_, desc) ->
                                     notice.value = "Making picture ${i + 1} of ${described.size} with the free online image AI (one per 45 s on the free service)…"
-                                    pictures += com.gravity.ide.files.OnlineImages.bitmap("$desc, vertical portrait composition", com.gravity.ide.files.VideoMaker.W, com.gravity.ide.files.VideoMaker.H)
+                                    pictures += com.gravity.ide.files.OnlineImages.bitmap("${inEnglish(desc)}, vertical portrait composition", com.gravity.ide.files.VideoMaker.W, com.gravity.ide.files.VideoMaker.H)
                                 }
                             } catch (e: Exception) {
                                 pictures.forEach { it.recycle() }

@@ -59,19 +59,30 @@ object MakeFiles {
         minOf(if (kind == Kind.VIDEO) 4000 else 2500, contextTokens * 2 / 3).coerceAtLeast(256)
 
     /**
+     * How to describe a picture for the image AI: a realistic photo unless asked otherwise, with the
+     * pose, the camera shot, a real background and the light (a bare "a monkey" gives a plain picture).
+     */
+    private const val PICTURE_DESCRIPTION =
+        "Each picture description is in English, 40 to 80 words. Unless the user asks for another style (cartoon, anime, painting, " +
+            "sketch), make it a realistic photo. Include: the subject and how it looks; its pose, action and expression; the camera shot and " +
+            "angle (for example a full-body shot at eye level, a close-up portrait, a wide shot); a detailed real background that fits (the " +
+            "place, objects, weather, time of day); the lighting (for example soft golden-hour sunlight); and quality words (photorealistic, " +
+            "sharp focus, natural colours, detailed textures). Keep every detail the user asked for (the place, the people, what they do). " +
+            "No text, letters or watermarks in the picture."
+
+    /**
      * Extra instruction for the AI for this one message, so its reply can be turned into the file.
      * With [onlinePictures], pictures come from an online image AI: the AI only describes them.
      */
     fun instruction(kind: Kind, onlinePictures: Boolean = false): String = when {
         onlinePictures && kind == Kind.IMAGE ->
-            "The user wants a picture. Gravity makes it with an image AI from your description. Write one line \"Picture: <a vivid, detailed " +
-                "description in English for an image AI: the subject, what it is doing, style (for example photo, cartoon, watercolor), colours, " +
-                "lighting, background>\" and then one short friendly sentence for the user in their language. Do not draw it yourself, no code."
+            "The user wants a picture. Gravity makes it with an image AI from your description, so do not draw it yourself and write no code. " +
+                "Write one line \"Picture: <description>\" and then one short friendly sentence for the user.\n" + PICTURE_DESCRIPTION
         onlinePictures && kind == Kind.VIDEO ->
             "The user wants a short video. Gravity makes it on the phone as an MP4: one AI picture per scene, your narration read aloud by the " +
                 "phone's voice. Write 3 to 6 scenes. For each scene write a line \"Scene N: <one or two narration sentences in the user's " +
                 "language>\" and right after it a line \"Picture: <a vivid, detailed description in English of that scene's picture for an image " +
-                "AI, portrait format>\". Keep the same characters and style in every scene. No other text, no code."
+                "AI, portrait format>\". Keep the same characters and style in every scene. No other text, no code.\n" + PICTURE_DESCRIPTION
         else -> instruction(kind)
     }
 
