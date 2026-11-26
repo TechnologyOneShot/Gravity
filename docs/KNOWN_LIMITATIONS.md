@@ -57,6 +57,6 @@ The specification asks Gravity never to fake a feature. This file lists everythi
 
 - **Natural voice**: Piper voices are clear but not as expressive as cloud voices; English words inside a Hindi sentence are read by the Hindi voice. Hinglish words that are not in the 42,000-word list are read as English letters. Voice data licence: CC BY-NC-SA 4.0 (non-commercial). Only arm64 phones and the x86_64 emulator have the engine.
 - **Speed**: a phone model writes as fast as the phone's memory allows (Qwen2.5 7B about 7 tokens/s, Gemma 3 4B about 11 on an Arm Neoverse-N2 with 4 threads; phones are similar or slower). The saved prompt helps the first reply after a start, not the writing speed. For the quickest replies use Gemma 3 4B (or smaller) or Gemini.
-- **The i8mm engine** is used only when the CPU reports i8mm and the model answers the check questions correctly; if it ever crashes Yamini it is switched off for that app version.
+- **The i8mm engine** (Armv8.6, prompts ~30% faster in CI) is not built by default: after a saved prompt its next-word scores differed from reading everything (Gemma 3 4B, max difference 2.9; the standard and fast engines give 0). Build with `-Pgravity.i8mmEngine=true` to try it.
 - **Closes**: a page's web engine dying no longer closes Yamini (preview, app test, browser). If Android still closes Yamini (for memory), the next start says so and keeps the report until OK is tapped. Why HyperOS/MIUI close an app is not always given by Android.
 

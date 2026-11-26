@@ -31,8 +31,11 @@ val llamaAbis = providers.gradleProperty("gravity.abis").orNull ?: "arm64-v8a,x8
 if (llamaBuild && "arm64-v8a" in llamaAbis && providers.gradleProperty("gravity.fastEngine").orNull != "false") {
     include(":engine-fast")
 }
-// Fastest engine for Armv8.6 phones with int8 matrix instructions (i8mm), unless -Pgravity.i8mmEngine=false.
-if (llamaBuild && "arm64-v8a" in llamaAbis && providers.gradleProperty("gravity.i8mmEngine").orNull != "false") {
+// Engine for Armv8.6 phones with int8 matrix instructions (i8mm): reads prompts ~30% faster, but
+// off by default: in CI (Arm Neoverse-N2, Gemma 3 4B) its next-word scores after a saved prompt
+// differed from reading everything (max difference 2.9 where the other engines give 0), so it is
+// only built with -Pgravity.i8mmEngine=true until that is understood.
+if (llamaBuild && "arm64-v8a" in llamaAbis && providers.gradleProperty("gravity.i8mmEngine").orNull == "true") {
     include(":engine-i8mm")
 }
 // On-phone picture engine (stable-diffusion.cpp), with the native runtime unless -Pgravity.image=false.
