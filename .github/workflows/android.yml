@@ -582,19 +582,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          V="0.1.${GITHUB_RUN_NUMBER}"
           cp app/build/outputs/apk/debug/app-debug.apk yamini-debug.apk
           cp yamini-debug.apk gravity-debug.apk          # old link names keep working
           cp yamini-debug.apk gravity-debug-llama.apk
+          # A phone-only copy without the x86_64 (emulator) libraries: about half the download.
+          # Re-signed with the same fixed debug key, so it installs over the same app.
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          cp yamini-debug.apk phone-unsigned.apk
+          zip -q -d phone-unsigned.apk 'lib/x86_64/*'
+          "$BT/zipalign" -f -P 16 4 phone-unsigned.apk phone-aligned.apk || "$BT/zipalign" -f -p 4 phone-unsigned.apk phone-aligned.apk
+          "$BT/apksigner" sign --ks app/gravity-debug.keystore --ks-pass pass:android --ks-key-alias androiddebugkey --key-pass pass:android \
+            --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled false --out yamini-phone.apk phone-aligned.apk
+          "$BT/apksigner" verify --print-certs yamini-phone.apk | head -3
+          cp yamini-phone.apk "yamini-$V-phone.apk"      # this build's own name: never replaced while someone downloads it
           SUM=$(sha256sum yamini-debug.apk | cut -d' ' -f1)
+          PSUM=$(sha256sum yamini-phone.apk | cut -d' ' -f1)
           git tag -f debug-latest "$GITHUB_SHA"
           git push -f origin refs/tags/debug-latest
-          NOTES="Yamini debug build ${GITHUB_RUN_NUMBER} (version 0.1.${GITHUB_RUN_NUMBER}) from commit ${GITHUB_SHA::7} on main. Replaced by CI on every push.
-          - yamini-debug.apk: the app (Yamini, formerly Gravity), with the on-device AI engines (llama.cpp, stable-diffusion.cpp) for arm64 phones and x86_64 emulators. SHA-256 $SUM
-          - gravity-debug.apk, gravity-debug-llama.apk: the same file under its old names.
+          NOTES="Yamini debug build ${GITHUB_RUN_NUMBER} (version $V) from commit ${GITHUB_SHA::7} on main. Replaced by CI on every push.
+          - yamini-phone.apk (and yamini-$V-phone.apk, the same file): for phones (arm64), $(( $(stat -c %s yamini-phone.apk) / 1048576 )) MB. SHA-256 $PSUM
+          - yamini-debug.apk: the app (Yamini, formerly Gravity), with the on-device AI engines (llama.cpp, stable-diffusion.cpp, sherpa-onnx voice) for arm64 phones and x86_64 emulators. SHA-256 $SUM
+          - gravity-debug.apk, gravity-debug-llama.apk: the same file as yamini-debug.apk under its old names.
           Debug-signed with the fixed debug key, so it installs over any build since 2026-11-23 15:30 IST; older builds must be uninstalled once. For testing, not a release build."
           gh release view debug-latest > /dev/null 2>&1 || gh release create debug-latest --prerelease --verify-tag --title "Yamini debug build (latest main)" --notes "$NOTES"
-          gh release upload debug-latest yamini-debug.apk gravity-debug.apk gravity-debug-llama.apk --clobber
+          gh release upload debug-latest yamini-phone.apk "yamini-$V-phone.apk" yamini-debug.apk gravity-debug.apk gravity-debug-llama.apk --clobber
           gh release edit debug-latest --prerelease --title "Yamini debug build (latest main)" --notes "$NOTES"
+          # Older builds' own files go (only this build's stays).
+          gh release view debug-latest --json assets -q '.assets[].name' | grep -E '^yamini-0\.1\.[0-9]+-phone\.apk$' | grep -v "^yamini-$V-phone.apk$" | while read -r old; do gh release delete-asset debug-latest "$old" -y || true; done
 
       - name: Enable KVM
         run: |

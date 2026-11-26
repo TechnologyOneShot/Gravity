@@ -32,21 +32,27 @@ object SelfUpdate {
             if (!r.isSuccessful) throw IOException("GitHub answered HTTP ${r.code}")
             JSONObject(r.body?.string().orEmpty())
         }
-        parse(json)
+        parse(json, phone = Build.SUPPORTED_ABIS.firstOrNull() == "arm64-v8a")
     }
 
-    /** Reads a release (its body says "build N (version x.y.N)" and the APK's SHA-256). */
-    fun parse(json: JSONObject): Release {
+    /**
+     * Reads a release (its body says "build N (version x.y.N)" and each APK's SHA-256). On a phone
+     * ([phone], arm64) the phone-only APK under this build's own name is used: about half the
+     * download, and its address never gets a newer file while it downloads (a download that
+     * mixed two builds gave a broken APK).
+     */
+    fun parse(json: JSONObject, phone: Boolean = false): Release {
         val body = json.optString("body")
         val code = Regex("build (\\d+)").find(body)?.groupValues?.get(1)?.toIntOrNull() ?: throw IOException("The release does not say its build number")
         val name = Regex("version ([0-9.]+)").find(body)?.groupValues?.get(1) ?: "0.1.$code"
-        val sha = Regex("${Regex.escape(ASSET)}[^\\n]*?SHA-256 ([0-9a-f]{64})").find(body)?.groupValues?.get(1)
+        fun sha(asset: String) = Regex("${Regex.escape(asset)}[^\\n]*?SHA-256 ([0-9a-f]{64})").find(body)?.groupValues?.get(1)
         val assets = json.optJSONArray("assets") ?: throw IOException("The release has no files")
-        for (i in 0 until assets.length()) {
-            val a = assets.getJSONObject(i)
-            if (a.optString("name") == ASSET) return Release(code, name, a.getString("browser_download_url"), a.optLong("size"), sha)
+        val byName = (0 until assets.length()).map { assets.getJSONObject(it) }.associateBy { it.optString("name") }
+        if (phone) {
+            byName["yamini-$name-phone.apk"]?.let { a -> return Release(code, name, a.getString("browser_download_url"), a.optLong("size"), sha("yamini-phone.apk")) }
         }
-        throw IOException("The release has no $ASSET")
+        val a = byName[ASSET] ?: throw IOException("The release has no $ASSET")
+        return Release(code, name, a.getString("browser_download_url"), a.optLong("size"), sha(ASSET))
     }
 
     fun isNewer(r: Release) = r.versionCode > BuildConfig.VERSION_CODE

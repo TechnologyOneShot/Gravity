@@ -22,4 +22,23 @@ class SelfUpdateTest {
         assertEquals(201413147L, r.size)
         assertEquals(sha, r.sha256)
     }
+
+    @Test fun phonesTakeThisBuildsPhoneApk() {
+        val sha = "a".repeat(64)
+        val psha = "b".repeat(64)
+        val body = "Yamini debug build 96 (version 0.1.96) from commit abc on main.\n" +
+            "- yamini-phone.apk (and yamini-0.1.96-phone.apk, the same file): for phones (arm64), 110 MB. SHA-256 $psha\n" +
+            "- yamini-debug.apk: the app. SHA-256 $sha"
+        val assets = JSONArray()
+            .put(JSONObject().put("name", "yamini-phone.apk").put("browser_download_url", "https://example/p.apk").put("size", 110L))
+            .put(JSONObject().put("name", "yamini-0.1.96-phone.apk").put("browser_download_url", "https://example/p96.apk").put("size", 110L))
+            .put(JSONObject().put("name", "yamini-debug.apk").put("browser_download_url", "https://example/y.apk").put("size", 200L))
+        val json = JSONObject().put("body", body).put("assets", assets)
+        val phone = SelfUpdate.parse(json, phone = true)
+        assertEquals("https://example/p96.apk", phone.url)
+        assertEquals(psha, phone.sha256)
+        val emulator = SelfUpdate.parse(json, phone = false)
+        assertEquals("https://example/y.apk", emulator.url)
+        assertEquals(sha, emulator.sha256)
+    }
 }
