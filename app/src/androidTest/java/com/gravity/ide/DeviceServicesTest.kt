@@ -849,6 +849,20 @@ class DeviceServicesTest {
         assertEquals("Yamini crashed last time", r!!.title)
         assertTrue(r.details.contains("IllegalStateException: test crash"))
         assertFalse("The saved crash was not cleared", file.exists())
+        // The report stays until it is dismissed, also after a restart.
+        val again = com.gravity.ide.CrashReports(ctx).also { it.check() }
+        val start = System.currentTimeMillis()
+        while (again.pending.value == null && System.currentTimeMillis() - start < 8_000) Thread.sleep(100)
+        assertEquals("The report did not stay until dismissed", "Yamini crashed last time", again.pending.value?.title)
+        again.dismiss()
+        val third = com.gravity.ide.CrashReports(ctx).also { it.check() }
+        Thread.sleep(1500)
+        assertEquals("A dismissed report came back", null, third.pending.value)
+        val onScreen = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_SIGNALED, null, 9, emptyList(), "details", onScreen = true)
+        val swipedOnScreen = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_OTHER, "remove task", 0, emptyList(), "details", onScreen = true)
+        Ci.log("crash-report", "Closed on screen: ${onScreen?.title} | ${onScreen?.explanation}")
+        assertEquals("Yamini closed unexpectedly", onScreen?.title)
+        assertEquals("Swiping away is not reported", null, swipedOnScreen)
     }
 
     /**
@@ -1019,5 +1033,35 @@ class DeviceServicesTest {
         } finally {
             com.gravity.ide.files.VoicePrefs.setNatural(ctx, was)
         }
+    }
+
+    /**
+     * When a page's web engine crashes or the phone closes it for memory, Android closes the whole
+     * app unless the WebView handles it. The app test (PageChecker, also used by App Builder) must
+     * survive both and say what happened; this test would not finish if Yamini closed.
+     */
+    @Test
+    fun t20_webEngineDyingDoesNotCloseYamini() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.MULTI_PROCESS) ||
+            !androidx.webkit.WebViewCompat.isMultiProcessEnabled()
+        ) {
+            Ci.log("web-engine", "This device runs web pages inside the app's own process: a crash test cannot run here")
+            return
+        }
+        val checker = com.gravity.ide.build.PageChecker(ctx, ctx.filesDir)
+        val root = java.io.File(ctx.filesDir, "web-engine-test").apply { mkdirs() }
+        val crashed = runBlocking { checker.check(root, timeoutMs = 20_000, startUrl = "chrome://crash") }
+        Ci.log("web-engine", "Page crashed its engine: loaded=${crashed.loaded}, closed=${crashed.engineClosed}, errors=${crashed.errors}")
+        assertTrue("The engine crash was not reported: ${crashed.errors}", crashed.errors.any { "crashed the phone's web engine" in it })
+        val killed = runBlocking { checker.check(root, timeoutMs = 20_000, startUrl = "chrome://kill") }
+        Ci.log("web-engine", "Engine closed by the system: loaded=${killed.loaded}, closed=${killed.engineClosed}, errors=${killed.errors}")
+        assertTrue("A closed engine was not noticed", killed.engineClosed || killed.errors.any { "web engine" in it })
+        // A normal page still works afterwards.
+        java.io.File(root, "index.html").writeText("<!doctype html><button onclick=\"document.title='ok'\">Tap</button>")
+        val normal = runBlocking { checker.check(root) }
+        Ci.log("web-engine", "Normal page after that: loaded=${normal.loaded}, tapped=${normal.controlsTapped}, errors=${normal.errors}")
+        assertTrue("The web engine did not come back", normal.loaded && normal.controlsTapped == 1)
+        root.deleteRecursively()
     }
 }

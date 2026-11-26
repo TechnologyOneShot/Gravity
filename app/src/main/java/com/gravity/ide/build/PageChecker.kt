@@ -31,10 +31,15 @@ import kotlin.coroutines.resume
  */
 class PageChecker(private val context: Context, private val workspacesRoot: File) {
 
-    data class Report(val loaded: Boolean, val errors: List<String>, val controlsTapped: Int)
+    /**
+     * [engineClosed]: the phone closed the web engine during the test (it needed the memory), so the
+     * test could not finish; that is not the app's fault. A page that crashes the engine is an error.
+     */
+    data class Report(val loaded: Boolean, val errors: List<String>, val controlsTapped: Int, val engineClosed: Boolean = false)
 
+    /** [startUrl] replaces the project's page (tests use chrome://crash and chrome://kill). */
     @SuppressLint("SetJavaScriptEnabled")
-    suspend fun check(projectRoot: File, timeoutMs: Long = 20_000): Report = withContext(Dispatchers.Main) {
+    suspend fun check(projectRoot: File, timeoutMs: Long = 20_000, startUrl: String? = null): Report = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { cont ->
             val handler = Handler(Looper.getMainLooper())
             val errors = LinkedHashSet<String>()
@@ -46,13 +51,16 @@ class PageChecker(private val context: Context, private val workspacesRoot: File
             var done = false
             var loaded = false
             var tapped = 0
+            var engineGone = false
+            var engineClosed = false
 
             fun finish() {
                 if (done) return
                 done = true
                 handler.removeCallbacksAndMessages(null)
-                runCatching { wv.stopLoading(); wv.destroy() }
-                if (cont.isActive) cont.resume(Report(loaded, errors.filterNot(::isOfflineNoise).take(12), tapped))
+                // After the engine is gone the WebView may only be destroyed.
+                runCatching { if (!engineGone) wv.stopLoading(); wv.destroy() }
+                if (cont.isActive) cont.resume(Report(loaded, errors.filterNot(::isOfflineNoise).take(12), tapped, engineClosed))
             }
 
             wv.settings.javaScriptEnabled = true
@@ -94,6 +102,19 @@ class PageChecker(private val context: Context, private val workspacesRoot: File
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = true // stay on the page
 
+                // Without this, Android closes all of Yamini when the page's web engine crashes or is
+                // closed for memory (the phone model can use most of it while an app is built).
+                override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                    engineGone = true
+                    if (detail.didCrash()) {
+                        errors += "The page crashed the phone's web engine (often an endless loop, or building something huge in memory)"
+                    } else {
+                        engineClosed = true
+                    }
+                    finish()
+                    return true
+                }
+
                 override fun onPageFinished(view: WebView, url: String) {
                     if (loaded || done) return
                     loaded = true
@@ -118,7 +139,7 @@ class PageChecker(private val context: Context, private val workspacesRoot: File
                 finish()
             }, timeoutMs)
             cont.invokeOnCancellation { handler.post { finish() } }
-            wv.loadUrl("https://$HOST/project/${projectRoot.name}/index.html")
+            wv.loadUrl(startUrl ?: "https://$HOST/project/${projectRoot.name}/index.html")
         }
     }
 

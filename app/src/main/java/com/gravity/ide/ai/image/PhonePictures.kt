@@ -122,9 +122,9 @@ class PhonePictures(
         if (state() != State.Ready) throw IllegalStateException("the on-phone picture model is not downloaded (Settings → AI → Pictures and videos)")
         val rows = db.models().pictureFiles()
         val (model, lora, taesd) = PARTS.map { p -> rows.last { matches(it, p) && it.status == ModelStatus.READY.name }.filePath }
-        // Make room: the chat model goes if the phone is short of memory (it loads again for the next reply).
-        val loaded = localHost.loadedOrNull()
-        if (loaded != null && com.gravity.ide.core.ContextPlanner.reallyFree(availableBytes(), loaded.fileBytes) < NEEDS_BYTES) localHost.unload()
+        // Make room: the chat model goes (it loads again for the next reply). Keeping both in memory
+        // let Android close Yamini on phones that looked like they had enough free memory.
+        if (localHost.loadedOrNull() != null) localHost.unload()
         val wake = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Gravity:phone-picture").apply { setReferenceCounted(false); acquire(20 * 60_000L) }
         try {

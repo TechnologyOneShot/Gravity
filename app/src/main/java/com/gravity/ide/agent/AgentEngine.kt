@@ -104,6 +104,8 @@ class AgentEngine(
     private val builds: com.gravity.ide.build.BuildEngine? = null,
     private val installer: com.gravity.ide.device.AppInstaller? = null,
     private val appTests: com.gravity.ide.testing.AppTestRunner? = null,
+    /** Notes each running task so a close during it is reported on the next start. */
+    private val crashReports: com.gravity.ide.CrashReports? = null,
 ) {
     private val jobs = ConcurrentHashMap<String, Job>()
     private val pauseRequested = ConcurrentHashMap.newKeySet<String>()
@@ -223,7 +225,12 @@ class AgentEngine(
         val team = task.teamId?.let { db.teams().get(it) }
         update(taskId) { it.copy(status = TaskStatus.RUNNING.name, error = null) }
         events.log(EventCategory.AGENT, "Task started${team?.let { " with team ${it.name}" } ?: ""}", task.title, taskId = taskId, projectId = project.id)
-        if (team == null) runSingle(task, project) else runTeam(task, project, TeamCodec.decode(team.members), team.reviewRounds, team.runTests)
+        val note = crashReports?.begin("running the task \"${task.title.take(80)}\" (building or changing an app with ${task.model ?: "the AI"})")
+        try {
+            if (team == null) runSingle(task, project) else runTeam(task, project, TeamCodec.decode(team.members), team.reviewRounds, team.runTests)
+        } finally {
+            note?.let { crashReports?.end(it) }
+        }
     }
 
     private fun effectiveMode(task: AgentTaskEntity): ReasoningMode {
@@ -670,6 +677,12 @@ class AgentEngine(
         // Test it for real: open the page off-screen, tap every button, collect JavaScript errors.
         stage(task.id, "Testing the app (opening it and tapping every button)")
         var report = pageChecker.check(root)
+        if (report.engineClosed && local) {
+            // The phone closed the web engine for memory: free the phone model and test again.
+            events.log(EventCategory.TEST, "The phone closed the web engine during the test (memory); testing again without the phone model loaded", "", EventLevel.WARN, taskId = task.id)
+            localHost.unload()
+            report = pageChecker.check(root)
+        }
         events.log(EventCategory.TEST, "App test: ${report.errors.size} error(s), ${report.controlsTapped} button(s) tapped", report.errors.joinToString("\n"), if (report.errors.isEmpty()) EventLevel.INFO else EventLevel.WARN, taskId = task.id)
         if (report.errors.isNotEmpty()) {
             val (rs, ru) = AppBuilder.repairPrompt(html, report.errors, compact = local)
@@ -704,7 +717,8 @@ class AgentEngine(
         complete(
             task.id,
             if (report.errors.isEmpty()) {
-                "$verb with ${resolved.model}. Yamini opened it and tapped ${report.controlsTapped} button(s): no errors."
+                if (report.engineClosed) "$verb with ${resolved.model}. Yamini could not finish testing it: the phone closed its web engine to free memory. Open it to try it."
+                else "$verb with ${resolved.model}. Yamini opened it and tapped ${report.controlsTapped} button(s): no errors."
             } else {
                 "$verb with ${resolved.model}, but Yamini's test still finds ${report.errors.size} error(s), so parts may not work: " +
                     report.errors.take(3).joinToString("; ") + ". Describe the problem to try a fix" + if (local) ", or use Gemini for a better app." else "."

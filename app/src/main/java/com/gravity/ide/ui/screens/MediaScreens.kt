@@ -224,6 +224,11 @@ fun BrowserScreen(initialUrl: String?) {
     var showConsole by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var desktop by remember { mutableStateOf(false) }
+    // The page's web engine closed (crash, or the phone needed the memory): say so, offer Reload.
+    var gone by remember { mutableStateOf<String?>(null) }
+    var generation by remember { mutableStateOf(0) }
+    LaunchedEffect(generation, webView) { if (generation > 0 && address.isNotBlank()) webView?.loadUrl(address) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { webView?.destroy() } }
 
     val loader = remember {
         WebViewAssetLoader.Builder()
@@ -265,7 +270,7 @@ fun BrowserScreen(initialUrl: String?) {
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { address = resolve(address); webView?.loadUrl(address) }),
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go),
             )
-            IconButton(onClick = { webView?.reload() }) { Icon(Icons.Filled.Refresh, "Reload") }
+            IconButton(onClick = { if (gone != null) { gone = null; generation++ } else webView?.reload() }) { Icon(Icons.Filled.Refresh, "Reload") }
             IconButton(onClick = { showConsole = !showConsole }) { Icon(Icons.Filled.Terminal, "Console", tint = if (console.any { it.startsWith("ERROR") }) GravityColors.Red else MaterialTheme.colorScheme.onSurface) }
         }
         Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -280,7 +285,13 @@ fun BrowserScreen(initialUrl: String?) {
         }
         if (!network.online) Text("Offline: only local project previews will load.", color = GravityColors.Amber, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 12.dp))
         if (loading) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
-        AndroidView(
+        val goneMessage = gone
+        if (goneMessage != null) {
+            Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("browser-gone"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(goneMessage, style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = { gone = null; generation++ }) { Text("Reload") }
+            }
+        } else androidx.compose.runtime.key(generation) { AndroidView(
             factory = { ctx ->
                 WebView(ctx).apply {
                     settings.javaScriptEnabled = true
@@ -299,6 +310,14 @@ fun BrowserScreen(initialUrl: String?) {
                         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                             console.add("ERROR load ${request.url}: ${error.description}")
                         }
+
+                        override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                            if (webView === view) webView = null
+                            com.gravity.ide.ui.WebEngine.discard(view)
+                            loading = false
+                            gone = com.gravity.ide.ui.WebEngine.goneMessage(detail)
+                            return true
+                        }
                     }
                     webChromeClient = object : WebChromeClient() {
                         override fun onProgressChanged(view: WebView, newProgress: Int) {
@@ -314,7 +333,7 @@ fun BrowserScreen(initialUrl: String?) {
                 }
             },
             modifier = Modifier.weight(1f).fillMaxWidth(),
-        )
+        ) }
         if (showConsole) {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentPadding = PaddingValues(8.dp)) {
                 item {

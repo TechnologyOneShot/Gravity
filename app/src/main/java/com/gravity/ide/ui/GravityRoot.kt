@@ -194,7 +194,7 @@ fun GravityRoot() {
                 val reports = LocalAppContainer.current.crashReports
                 crash?.let { r ->
                     androidx.compose.material3.AlertDialog(
-                        onDismissRequest = { reports.pending.value = null },
+                        onDismissRequest = { reports.dismiss() },
                         title = { Text(r.title) },
                         text = {
                             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
@@ -210,7 +210,7 @@ fun GravityRoot() {
                                 runCatching { crashCtx.startActivity(android.content.Intent.createChooser(send, "Share report").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
                             }, modifier = Modifier.testTag("crash-share")) { Text("Share report") }
                         },
-                        dismissButton = { androidx.compose.material3.TextButton(onClick = { reports.pending.value = null }) { Text("OK") } },
+                        dismissButton = { androidx.compose.material3.TextButton(onClick = { reports.dismiss() }) { Text("OK") } },
                         modifier = Modifier.testTag("crash-report"),
                     )
                 }

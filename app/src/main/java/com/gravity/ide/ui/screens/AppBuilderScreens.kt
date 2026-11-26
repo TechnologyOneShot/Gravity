@@ -575,6 +575,10 @@ fun AppPreview(project: ProjectEntity, reloadKey: Int, consoleErrors: SnapshotSt
         pending = null
     }
     var webView by remember { mutableStateOf<WebView?>(null) }
+    // The page's web engine closed (crash, or the phone needed the memory): say so, offer Reload.
+    var gone by remember { mutableStateOf<String?>(null) }
+    var generation by remember { mutableIntStateOf(0) }
+    LaunchedEffect(reloadKey) { if (gone != null) { gone = null; generation++ } }
     LaunchedEffect(reloadKey, webView) {
         val wv = webView ?: return@LaunchedEffect
         consoleErrors.clear()
@@ -582,7 +586,14 @@ fun AppPreview(project: ProjectEntity, reloadKey: Int, consoleErrors: SnapshotSt
         wv.loadUrl(url)
     }
     DisposableEffect(Unit) { onDispose { webView?.destroy() } }
-    AndroidView(
+    gone?.let { message ->
+        Column(modifier.heightIn(min = 200.dp).padding(16.dp).testTag("app-preview-gone"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(message, style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = { gone = null; generation++ }) { Text("Reload") }
+        }
+        return
+    }
+    androidx.compose.runtime.key(generation) { AndroidView(
         factory = { ctx ->
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true
@@ -595,6 +606,13 @@ fun AppPreview(project: ProjectEntity, reloadKey: Int, consoleErrors: SnapshotSt
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         if (request.url.host == "appassets.androidplatform.net") return false
                         runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, request.url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        return true
+                    }
+
+                    override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                        if (webView === view) webView = null
+                        com.gravity.ide.ui.WebEngine.discard(view)
+                        gone = com.gravity.ide.ui.WebEngine.goneMessage(detail)
                         return true
                     }
                 }
@@ -624,5 +642,5 @@ fun AppPreview(project: ProjectEntity, reloadKey: Int, consoleErrors: SnapshotSt
             }
         },
         modifier = modifier.heightIn(min = 200.dp).testTag("app-preview"),
-    )
+    ) }
 }

@@ -84,7 +84,7 @@ class AppContainer(context: Context) {
     val approvals = ApprovalGate()
     val agent = AgentEngine(
         appContext, db, providers, localHost, workspace, checkpoints, terminals, search, approvals, settings, network, events, appScope,
-        builds = builds, installer = installer, appTests = appTests,
+        builds = builds, installer = installer, appTests = appTests, crashReports = crashReports,
     )
     /** One-line app creation and change requests (Home screen). */
     val appBuilder = com.gravity.ide.agent.AppBuilder(db, workspace, agent, checkpoints, events)
