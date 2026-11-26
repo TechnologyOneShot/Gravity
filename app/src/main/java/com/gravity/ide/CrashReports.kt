@@ -222,7 +222,7 @@ class CrashReports(private val context: Context) {
             val was = doing.firstOrNull()?.let { " It was $it." } ?: ""
             val oem = listOf("powerkeeper", "freez", "lmk", "oom", "low memory", "lowmem").any { it in desc }
             // The user swiping Yamini away or stopping it is a normal close.
-            val byUser = listOf("remove task", "swipe", "user request", "force stop", "stop app", "instr", "finished inst").any { it in desc }
+            val byUser = listOf("remove task", "swipe", "user request", "force stop", "stop app", "instr", "finished inst", "shutdown", "reboot").any { it in desc }
             val engineWork = doing.any { "on the phone" in it || "phone-model engine" in it || "loading" in it }
             return when (reason) {
                 ApplicationExitInfo.REASON_CRASH -> Report("Yamini crashed last time", "A mistake in Yamini's code closed it.$was Please share the report.", details)
