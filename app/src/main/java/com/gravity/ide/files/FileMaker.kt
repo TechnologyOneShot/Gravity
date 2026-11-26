@@ -159,7 +159,7 @@ object FileMaker {
      */
     suspend fun speechClips(context: Context, texts: List<String>, locale: Locale): List<ByteArray?> {
         val ready = CompletableDeferred<Int>()
-        val tts = withContext(Dispatchers.Main) { TextToSpeech(context.applicationContext) { status -> ready.complete(status) } }
+        val tts = withContext(Dispatchers.Main) { VoicePrefs.create(context, VoicePrefs.engine(context, locale.language == "hi")) { status -> ready.complete(status) } }
         try {
             val status = withTimeout(15_000) { ready.await() }
             if (status != TextToSpeech.SUCCESS) throw IllegalStateException("This phone has no working text-to-speech engine (Android Settings → Text-to-speech).")
@@ -167,7 +167,8 @@ object FileMaker {
             val natural = VoicePrefs.natural(context)
             val (baseRate, basePitch, pause) = humanBase(context)
             return texts.mapIndexed { i, text ->
-                val clean = SpeechText.clean(text).take(TextToSpeech.getMaxSpeechInputLength() - 100)
+                val clean = SpeechText.clean(text).let { if (locale.language == "hi") com.gravity.ide.core.HinglishReader.forVoice(context, it).text else it }
+                    .take(TextToSpeech.getMaxSpeechInputLength() - 100)
                 if (clean.isBlank()) return@mapIndexed null
                 // Narration spoken like a person (Settings → Voice: Speak like a person).
                 if (natural) return@mapIndexed runCatching { humanWav(context, tts, clean, baseRate, basePitch, pause) }.getOrNull()
@@ -272,17 +273,17 @@ object FileMaker {
     }
 
     suspend fun audio(context: Context, name: String, text: String, locale: Locale, voiceName: String? = null, rate: Float = 1f): File {
-        val clean = SpeechText.clean(text)
+        val clean = SpeechText.clean(text).let { if (locale.language == "hi") com.gravity.ide.core.HinglishReader.forVoice(context, it).text else it }
         require(clean.isNotBlank()) { "There is no text to read aloud" }
         val ready = CompletableDeferred<Int>()
-        val tts = withContext(Dispatchers.Main) { TextToSpeech(context.applicationContext) { status -> ready.complete(status) } }
+        val tts = withContext(Dispatchers.Main) { VoicePrefs.create(context, VoicePrefs.engine(context, locale.language == "hi")) { status -> ready.complete(status) } }
         try {
             val status = withTimeout(15_000) { ready.await() }
             if (status != TextToSpeech.SUCCESS) throw IllegalStateException("This phone has no working text-to-speech engine (Android Settings → Text-to-speech).")
             // The user's voice settings (Settings → Voice & speech): voice, speed, pitch, style.
             val hindi = locale.language == "hi"
             VoicePrefs.apply(context, tts, hindi)
-            if (voiceName != null) VoicePicker.choose(tts, locale, voiceName)?.let { tts.setVoice(it) }
+            if (voiceName != null && !VoicePrefs.isNatural(tts)) VoicePicker.choose(tts, locale, voiceName)?.let { tts.setVoice(it) }
             if (rate != 1f) tts.setSpeechRate(rate)
             if (VoicePrefs.natural(context)) {
                 val (baseRate, basePitch, pause) = humanBase(context, rate)

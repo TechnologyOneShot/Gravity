@@ -16,8 +16,13 @@ val llamaAbis = (project.findProperty("gravity.abis") as String?)?.split(',')?.m
     ?: listOf("arm64-v8a", "x86_64")
 // Second engine build for Armv8.2 phones (module :engine-fast, included by settings.gradle.kts).
 val fastEngine = rootProject.findProject(":engine-fast") != null
+// Third engine build for Armv8.6 phones with i8mm (module :engine-i8mm).
+val i8mmEngine = rootProject.findProject(":engine-i8mm") != null
 // On-phone picture engine, stable-diffusion.cpp (module :engine-image, included by settings.gradle.kts).
 val imageEngine = rootProject.findProject(":engine-image") != null
+// Offline natural voice (sherpa-onnx), fetched by .github/scripts/fetch-sherpa.sh into app/voice-libs.
+val voiceLibs = file("voice-libs")
+val voiceEngine = llamaEnabled && voiceLibs.resolve("arm64-v8a/libsherpa-onnx-jni.so").isFile
 if (llamaEnabled && !llamaDir.resolve("CMakeLists.txt").exists()) {
     throw GradleException(
         "gravity.llama=true but llama.cpp was not found at ${llamaDir.path}. " +
@@ -51,7 +56,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "LLAMA_BUNDLED", llamaEnabled.toString())
         buildConfigField("boolean", "ENGINE_FAST_BUNDLED", fastEngine.toString())
+        buildConfigField("boolean", "ENGINE_I8MM_BUNDLED", i8mmEngine.toString())
         buildConfigField("boolean", "IMAGE_BUNDLED", imageEngine.toString())
+        buildConfigField("boolean", "VOICE_BUNDLED", voiceEngine.toString())
 
         if (llamaEnabled) {
             ndk {
@@ -143,9 +150,11 @@ ksp {
 }
 
 android.sourceSets["main"].assets.srcDir(webShellOut)
+if (voiceEngine) android.sourceSets["main"].jniLibs.srcDir(voiceLibs)
 
 dependencies {
     if (fastEngine) implementation(project(":engine-fast"))
+    if (i8mmEngine) implementation(project(":engine-i8mm"))
     if (imageEngine) implementation(project(":engine-image"))
     implementation(libs.apksig)
     implementation(libs.androidx.core.ktx)
@@ -174,6 +183,8 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
+    // Unpacks the offline voice packs (tar.bz2).
+    implementation(libs.commons.compress)
     implementation(libs.pdfbox.android)
     implementation(libs.mlkit.text.devanagari)
     implementation(libs.androidsvg)

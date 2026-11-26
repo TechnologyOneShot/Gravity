@@ -106,8 +106,16 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
             if (target.exists()) target.delete()
             if (!part.renameTo(target)) throw IOException("Could not finalise file")
             val done = model.copy(sha256Actual = sha, sizeBytes = target.length(), downloadedBytes = target.length())
+            // A natural voice pack (tar.bz2): unpack it safely; the archive is not kept.
+            val voicePack = if (model.role == "voice") com.gravity.ide.voice.NeuralVoices.packs.firstOrNull { it.archiveName == model.name } else null
             // Picture model files are .safetensors, not GGUF: check their header instead.
-            val verified = if (model.role == "picture") {
+            val verified = if (model.role == "voice") {
+                db.models().progress(id, target.length(), target.length(), ModelStatus.VERIFYING.name, System.currentTimeMillis())
+                val problem = if (voicePack == null) "Unknown voice pack" else runCatching { com.gravity.ide.voice.NeuralVoices.unpack(applicationContext, target, voicePack) }.exceptionOrNull()?.message
+                target.delete()
+                if (problem == null) done.copy(status = ModelStatus.READY.name, error = null, updatedAt = System.currentTimeMillis())
+                else done.copy(status = ModelStatus.FAILED.name, error = "The voice could not be unpacked: $problem", updatedAt = System.currentTimeMillis())
+            } else if (model.role == "picture") {
                 if (isSafetensors(target)) done.copy(status = ModelStatus.READY.name, error = null, updatedAt = System.currentTimeMillis())
                 else done.copy(status = ModelStatus.FAILED.name, error = "The downloaded file is not a safetensors model file.", updatedAt = System.currentTimeMillis())
             } else manager.withGgufMetadata(done)

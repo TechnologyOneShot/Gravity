@@ -51,6 +51,9 @@ interface ChatDao {
     @Query("UPDATE chats SET model = :replacement WHERE model = :old")
     suspend fun replaceModel(old: String, replacement: String)
 
+    @Query("UPDATE chats SET reasoning = :replacement WHERE reasoning = :old")
+    suspend fun replaceReasoning(old: String, replacement: String)
+
     @Upsert
     suspend fun upsert(chat: ChatEntity)
 
@@ -105,11 +108,12 @@ interface ProviderDao {
 
 @Dao
 interface LocalModelDao {
-    // Chat models only: the picture model's files (role 'picture') are listed by the queries below.
-    @Query("SELECT * FROM local_models WHERE role IS NULL OR role != 'picture' ORDER BY isDefault DESC, updatedAt DESC")
+    // Chat models only: the picture model's files (role 'picture') and voice packs (role 'voice')
+    // are listed by the queries below.
+    @Query("SELECT * FROM local_models WHERE role IS NULL OR role NOT IN ('picture', 'voice') ORDER BY isDefault DESC, updatedAt DESC")
     fun observe(): Flow<List<LocalModelEntity>>
 
-    @Query("SELECT * FROM local_models WHERE role IS NULL OR role != 'picture' ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM local_models WHERE role IS NULL OR role NOT IN ('picture', 'voice') ORDER BY updatedAt DESC")
     suspend fun all(): List<LocalModelEntity>
 
     /** The on-phone picture model's files (see PhonePictures). */
@@ -118,6 +122,13 @@ interface LocalModelDao {
 
     @Query("SELECT * FROM local_models WHERE role = 'picture' ORDER BY createdAt ASC")
     fun observePictureFiles(): Flow<List<LocalModelEntity>>
+
+    /** Downloads of the natural voice packs (see NeuralVoices). */
+    @Query("SELECT * FROM local_models WHERE role = 'voice' ORDER BY createdAt ASC")
+    suspend fun voiceFiles(): List<LocalModelEntity>
+
+    @Query("SELECT * FROM local_models WHERE role = 'voice' ORDER BY createdAt ASC")
+    fun observeVoiceFiles(): Flow<List<LocalModelEntity>>
 
     @Query("SELECT * FROM local_models WHERE id = :id")
     suspend fun get(id: String): LocalModelEntity?

@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.gravity.ide.core.VoiceStyles
 import com.gravity.ide.files.VoicePicker
 import com.gravity.ide.files.VoicePrefs
@@ -66,14 +68,22 @@ internal fun VoiceSettingsPanel() {
     var address by remember { mutableStateOf(VoicePrefs.address(context)) }
     var greet by remember { mutableStateOf(VoicePrefs.greet(context)) }
     var natural by remember { mutableStateOf(VoicePrefs.natural(context)) }
+    // Yamini's natural voice (offline): its own engine, for previews of its voices.
+    var neuralReady by remember { mutableStateOf<Boolean?>(null) }
+    val neuralTts = remember { VoicePrefs.create(context, context.packageName) { status -> neuralReady = status == TextToSpeech.SUCCESS } }
+    DisposableEffect(Unit) { onDispose { runCatching { neuralTts.stop(); neuralTts.shutdown() } } }
     val voices = remember(ready, hindiTab, accent) { if (ready == true) VoicePicker.voices(tts, VoicePrefs.locale(context, hindiTab)) else emptyList() }
     val shown = voices.filter { gender == "all" || VoicePicker.gender(it) == gender }
     val chosen = if (hindiTab) hindiVoice else englishVoice
 
     fun preview(style: VoiceStyles.Style, hindi: Boolean, voice: Voice? = null) {
-        if (ready != true) return
-        VoicePrefs.apply(context, tts, hindi, style, voice)
-        VoicePrefs.speak(tts, VoicePrefs.sample(style, hindi), style, "preview", "preview-end", flush = true)
+        // The natural voice when it is in use for this language (and no phone voice was tapped).
+        val useNatural = voice == null && neuralReady == true && VoicePrefs.engine(context, hindi) != null
+        val speaker = if (useNatural) neuralTts else tts
+        if (!useNatural && ready != true) return
+        runCatching { (if (useNatural) tts else neuralTts).stop() }
+        VoicePrefs.apply(context, speaker, hindi, style, voice)
+        VoicePrefs.speak(speaker, VoicePrefs.sample(style, hindi), style, "preview", "preview-end", flush = true)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.testTag("voice-settings")) {
@@ -83,6 +93,8 @@ internal fun VoiceSettingsPanel() {
                 color = GravityColors.Red, style = MaterialTheme.typography.bodySmall,
             )
         }
+        NaturalVoiceCard(onHear = { hindi -> preview(VoiceStyles.byId(styleId), hindi) })
+
         VoiceCard("Speaking style", "How Yamini talks in live mode and when it reads replies: its words and mood, and the voice's speed, pitch and pauses.") {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
                 Column(Modifier.weight(1f)) {
@@ -218,5 +230,93 @@ private fun VoiceCard(title: String, note: String, content: @Composable () -> Un
             Spacer(Modifier.height(4.dp))
             content()
         }
+    }
+}
+
+/**
+ * Yamini's natural voice: neural voices made on the phone (no internet, no account, no limits),
+ * downloaded once per language. Speaking starts at once (about 0.1 s for a sentence).
+ */
+@Composable
+private fun NaturalVoiceCard(onHear: (hindi: Boolean) -> Unit) {
+    val context = LocalContext.current
+    val c = com.gravity.ide.ui.LocalAppContainer.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val rows by c.db.models().observeVoiceFiles().collectAsState(initial = emptyList())
+    var enabled by remember { mutableStateOf(com.gravity.ide.voice.NeuralVoices.enabled(context)) }
+    var chosen by remember { mutableStateOf(listOf("hi", "en").associateWith { com.gravity.ide.voice.NeuralVoices.chosen(context, it).id }) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    val nv = com.gravity.ide.voice.NeuralVoices
+    VoiceCard(
+        "Yamini's natural voice (offline, free)",
+        "A human-sounding neural voice made on this phone: no internet, no account, no limits, and it starts speaking at once. " +
+            "Download a voice for Hindi/Hinglish and one for English (about 67 MB each). Without it, the phone's own voice is used.",
+    ) {
+        val reason = nv.unavailableReason
+        if (reason != null) {
+            Text(reason, style = MaterialTheme.typography.bodySmall, color = GravityColors.Amber)
+            return@VoiceCard
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Use the natural voice", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            androidx.compose.material3.Switch(
+                checked = enabled, onCheckedChange = { enabled = it; nv.setEnabled(context, it) },
+                modifier = Modifier.testTag("natural-voice-on"),
+            )
+        }
+        for ((lang, title) in listOf("hi" to "Hindi and Hinglish", "en" to "English")) {
+            Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+            nv.packs.filter { it.lang == lang }.forEach { pack ->
+                val status = nv.statusOf(context, rows, pack)
+                val row = nv.rowFor(rows, pack)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().testTag("natural-${pack.id}")) {
+                    RadioButton(
+                        selected = chosen[lang] == pack.id,
+                        onClick = { nv.choose(context, pack); chosen = chosen + (lang to pack.id) },
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(pack.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            when (status) {
+                                "ready" -> "Downloaded · works offline"
+                                "downloading" -> "Downloading… " + (row?.let { r -> if (r.sizeBytes > 0) "${r.downloadedBytes * 100 / r.sizeBytes}%" else "" } ?: "")
+                                "failed" -> "Download failed: ${row?.error ?: "try again"}"
+                                "paused" -> "Paused"
+                                else -> "${pack.size / 1_000_000} MB"
+                            },
+                            style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted,
+                        )
+                    }
+                    when (status) {
+                        "ready" -> {
+                            IconButton(onClick = { nv.choose(context, pack); chosen = chosen + (lang to pack.id); onHear(lang == "hi") }) {
+                                Icon(Icons.Filled.PlayArrow, "Hear ${pack.label}", tint = GravityColors.Accent)
+                            }
+                            TextButton(onClick = {
+                                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                    nv.release()
+                                    nv.packDir(context, pack).deleteRecursively()
+                                    rows.filter { it.name == pack.archiveName }.forEach { c.models.delete(it.id) }
+                                }
+                            }) { Text("Delete") }
+                        }
+                        "downloading" -> Unit
+                        else -> TextButton(onClick = {
+                            problem = null
+                            scope.launch {
+                                runCatching {
+                                    rows.filter { it.name == pack.archiveName }.forEach { c.models.delete(it.id) }
+                                    c.models.enqueueDownload(pack.url, pack.archiveName, pack.sha256, pack.size, "k2-fsa/sherpa-onnx", nv.LICENSE_NOTE, role = "voice")
+                                    nv.choose(context, pack)
+                                    chosen = chosen + (lang to pack.id)
+                                }.onFailure { problem = it.message }
+                            }
+                        }, modifier = Modifier.testTag("natural-download-${pack.id}")) { Text("Download") }
+                    }
+                }
+            }
+        }
+        problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = GravityColors.Red) }
+        Text(nv.LICENSE_NOTE + ". Engine: sherpa-onnx (Apache-2.0).", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted)
     }
 }

@@ -102,6 +102,9 @@ class LocalLlamaProvider(
                 } }
                 tEnd = System.nanoTime()
                 info = runCatching { LlamaBridge.modelInfo(loaded.handle) }.getOrNull()
+                // Read a long prompt ahead: keep it on disk so the next start of this model skips it.
+                // Only when the prompt was actually read now (not already reused from a saved one).
+                if (request.warmUp && count >= 0) info?.takeIf { it.size >= 8 && it[7] - it[5] > 64 }?.let { runCatching { host.saveState(loaded) } }
                 engineName = runCatching { LlamaBridge.engineOf(loaded.handle).name }.getOrDefault("")
                 count to runCatching { LlamaBridge.lastFinish() }.getOrDefault("")
                 }

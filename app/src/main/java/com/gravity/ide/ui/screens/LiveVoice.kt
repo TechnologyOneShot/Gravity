@@ -105,15 +105,19 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
     var problem by remember { mutableStateOf<String?>(null) }
     var level by remember { mutableStateOf(0f) }
     var misses by remember { mutableStateOf(0) }
-    var ttsReady by remember { mutableStateOf<Boolean?>(null) }
     val open = remember { AtomicBoolean(true) }
     val main = remember { Handler(Looper.getMainLooper()) }
     // Set below; lets callbacks created once start listening with the current settings.
     val listenNow = remember { mutableStateOf<() -> Unit>({}) }
 
-    val tts = remember { TextToSpeech(context.applicationContext) { status -> main.post { ttsReady = status == TextToSpeech.SUCCESS } } }
     // Hinglish and Hindi use the Hindi voice; English the English (India) voice.
     val hindiVoice = language != LiveLanguage.ENGLISH
+    // Yamini's natural voice (offline) when its pack is downloaded, else the phone's own voice.
+    val engine = remember(hindiVoice) { VoicePrefs.engine(context, hindiVoice) }
+    var ttsReady by remember(engine) { mutableStateOf<Boolean?>(null) }
+    val tts = remember(engine) { VoicePrefs.create(context, engine) { status -> main.post { ttsReady = status == TextToSpeech.SUCCESS } } }
+    DisposableEffect(tts) { onDispose { runCatching { tts.stop(); tts.shutdown() } } }
+    LaunchedEffect(hindiVoice) { com.gravity.ide.voice.NeuralVoices.preload(context, if (hindiVoice) "hi" else "en") }
     // Speaking style (Settings → Voice & speech): the AI's mood and the voice's speed, pitch and pauses.
     var styleId by remember { mutableStateOf(VoicePrefs.style(context).id) }
     val style = VoiceStyles.byId(styleId)
@@ -147,7 +151,6 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         onDispose {
             open.set(false)
             runCatching { recognizer?.destroy() }
-            runCatching { tts.stop(); tts.shutdown() }
             vm.liveLanguage.value = null
         }
     }
@@ -158,8 +161,12 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         vm.livePersona.value = VoiceStyles.personaFor(style, VoicePrefs.address(context), voiceGender, hindiVoice)
     }
     LaunchedEffect(fastest, hasCloud) { vm.liveFastest.value = fastest && hasCloud }
-    // Load the AI now (e.g. the phone model), not after the user's first sentence.
-    LaunchedEffect(Unit) { vm.warmUp() }
+    // Load the AI now (e.g. the phone model) and let it read the live instructions, not after the
+    // user's first sentence; again when the language, style or voice (its persona) changes.
+    LaunchedEffect(language, styleId, voiceGender) {
+        kotlinx.coroutines.delay(200) // the effects above set the language and persona first
+        vm.warmUp()
+    }
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {

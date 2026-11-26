@@ -34,6 +34,18 @@ Session *load(const std::string &path, int n_ctx, int n_threads, int n_gpu_layer
 void unload(Session *s);
 
 /**
+ * Saves what the kept context has read (its tokens and their keys/values) to [path], so the next
+ * time the model loads it does not read the long system prompt again (llama_state_save_file).
+ */
+bool save_state(Session *s, const std::string &path, std::string &error);
+
+/**
+ * Loads a state saved by [save_state] into a context of [n_ctx_req] (0 = the loaded size).
+ * Returns the number of tokens now kept, or -1 ([error] set) when the file does not fit.
+ */
+int load_state(Session *s, const std::string &path, int n_ctx_req, std::string &error);
+
+/**
  * Applies the model's chat template, appends [prefix] (the start of the reply), tokenizes and
  * samples up to [max_tokens] tokens. [on_piece] gets the UTF-8 bytes of each token piece and
  * returns false to stop. Returns the number of generated tokens, or -1 on error ([error] set).

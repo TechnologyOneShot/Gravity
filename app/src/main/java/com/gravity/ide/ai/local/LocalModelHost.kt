@@ -31,6 +31,8 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         const val KEY_FAST_OFF = "fast_off"
         /** A model that crashed Gravity (standard engine): not loaded automatically until loaded by hand. */
         const val KEY_CRASHED_MODEL = "crashed_model"
+        /** "versionCode|reason": the i8mm engine crashed with this app version, so it is not used. */
+        const val KEY_I8MM_OFF = "i8mm_off"
     }
 
     private val prefs by lazy { context.getSharedPreferences("local_model_host", Context.MODE_PRIVATE) }
@@ -44,6 +46,10 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         prefs.getString(KEY_FAST_OFF, null)?.split('|', limit = 2)?.let { (version, reason) ->
             if (version == com.gravity.ide.BuildConfig.VERSION_CODE.toString()) LlamaBridge.turnOffFast(reason)
             else prefs.edit().remove(KEY_FAST_OFF).apply() // a new version may have fixed it: try again
+        }
+        prefs.getString(KEY_I8MM_OFF, null)?.split('|', limit = 2)?.let { (version, reason) ->
+            if (version == com.gravity.ide.BuildConfig.VERSION_CODE.toString()) LlamaBridge.turnOffI8mm(reason)
+            else prefs.edit().remove(KEY_I8MM_OFF).apply()
         }
         runCatching { checkLastExit() }
     }
@@ -69,7 +75,12 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
             true // no exit records before Android 11: the engine was running when Gravity died
         }
         if (!crashed) return
-        if (engine == EngineKind.FAST) {
+        if (engine == EngineKind.I8MM) {
+            val reason = "it crashed Yamini on this phone"
+            prefs.edit().putString(KEY_I8MM_OFF, "${com.gravity.ide.BuildConfig.VERSION_CODE}|$reason").commit()
+            LlamaBridge.turnOffI8mm(reason)
+            crashNotice = "Yamini closed because the fastest phone-model engine (i8mm) crashed. It now uses the fast engine."
+        } else if (engine == EngineKind.FAST) {
             val reason = "it crashed Yamini on this phone"
             prefs.edit().putString(KEY_FAST_OFF, "${com.gravity.ide.BuildConfig.VERSION_CODE}|$reason").commit()
             LlamaBridge.turnOffFast(reason)
@@ -178,7 +189,10 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         _state.value = State.Loading(model.name)
         val checkable = model.hasChatTemplate || Regex("(?i)instruct|chat|-it\\b").containsMatchIn(model.name + " " + file.name)
         val known = parseConfig(prefs.getString("cfg_${model.id}", null))
-        val ladder = (listOfNotNull(known) + LlamaBridge.engines.flatMap { e ->
+        // A faster engine this phone can run is tried first even if another one was remembered
+        // (it is checked once with the two questions, and the remembered way is next).
+        val faster = LlamaBridge.engines.firstOrNull()?.takeIf { known != null && it != known.engine && it.ordinal > known.engine.ordinal && known.mmap && known.threads == 0 }
+        val ladder = (listOfNotNull(faster?.let { LoadConfig(it, true, 0) }, known) + LlamaBridge.engines.flatMap { e ->
             listOf(LoadConfig(e, true, 0), LoadConfig(e, false, 0), LoadConfig(e, false, 1))
         }).distinct()
         var lastAnswer = ""
@@ -231,6 +245,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
                 }
             }
             if (cfg != known) prefs.edit().putString("cfg_${model.id}", cfg.toString()).apply()
+            restoreState(loaded)
             _state.value = State.Ready(loaded)
             prefs.edit().putString(KEY_LAST_MODEL, model.id).apply()
             events.log(
@@ -253,6 +268,49 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         _state.value = State.Failed(msg)
         events.log(EventCategory.MODEL, "Not using ${model.name}: wrong answers in every mode", msg, EventLevel.ERROR)
         throw ModelUnhealthyException(msg)
+    }
+
+    /**
+     * What a model's warm-up read (the long system prompt), saved so the next start of the model
+     * does not read it again: a 7B model reads only about 11–14 tokens a second, so the prompt
+     * alone took 40 s or more before the first reply. One file per model, engine, context size
+     * and app version (another llama.cpp build may not read it).
+     */
+    private fun stateFile(loaded: Loaded): java.io.File = java.io.File(
+        java.io.File(context.cacheDir, "kv").apply { mkdirs() },
+        "${loaded.modelId}-${LlamaBridge.engineOf(loaded.handle).name}-${loaded.contextSize}-${com.gravity.ide.BuildConfig.VERSION_CODE}.bin",
+    )
+
+    private suspend fun restoreState(loaded: Loaded) {
+        val f = stateFile(loaded)
+        if (!f.isFile) return
+        val t0 = System.currentTimeMillis()
+        val n = generationMutex.withLock {
+            withContext(Dispatchers.Default) {
+                nativeWork(LlamaBridge.engineOf(loaded.handle), loaded.modelId, "loading what ${loaded.name} read last time") {
+                    LlamaBridge.loadState(loaded.handle, f.absolutePath, 0)
+                }
+            }
+        }
+        if (n <= 0) f.delete()
+        events.log(
+            EventCategory.MODEL,
+            if (n > 0) "Loaded what ${loaded.name} read before ($n tokens, ${System.currentTimeMillis() - t0} ms): the first reply starts sooner"
+            else "The saved prompt of ${loaded.name} did not fit; it reads it again",
+        )
+    }
+
+    /** After a warm-up (inside [generationMutex]): saves what the model read, see [stateFile]. */
+    fun saveState(loaded: Loaded) {
+        val f = stateFile(loaded)
+        val tmp = java.io.File(f.path + ".tmp")
+        val ok = nativeWork(LlamaBridge.engineOf(loaded.handle), loaded.modelId, "saving what ${loaded.name} read") {
+            LlamaBridge.saveState(loaded.handle, tmp.absolutePath)
+        }
+        if (ok && tmp.renameTo(f)) {
+            // Older files of this model (other engine, size or app version) are not needed.
+            f.parentFile?.listFiles { x -> x.name.startsWith(loaded.modelId + "-") && x != f }?.forEach { it.delete() }
+        } else tmp.delete()
     }
 
     /** What the last load tried (mode → result), for Phone Models → Check the phone AI. */

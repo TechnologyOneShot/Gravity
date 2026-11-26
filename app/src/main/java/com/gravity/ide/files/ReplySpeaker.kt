@@ -18,6 +18,8 @@ object ReplySpeaker {
     val problem = MutableStateFlow<String?>(null)
 
     private var tts: TextToSpeech? = null
+    /** The engine [tts] runs on (null = the phone's default; this app = the natural voice). */
+    private var ttsEngine: String? = null
     private var ready = false
     private var pending: Pair<Long, String>? = null
     private var appContext: Context? = null
@@ -29,6 +31,13 @@ object ReplySpeaker {
         }
         appContext = context.applicationContext
         speakingId.value = id
+        // Hindi/Hinglish or English, on the natural voice if its pack is ready, else the phone's voice.
+        val wanted = VoicePrefs.engine(context, VoicePrefs.isHindi(context, SpeechText.clean(text)))
+        if (tts != null && wanted != ttsEngine) {
+            runCatching { tts?.stop(); tts?.shutdown() }
+            tts = null
+            ready = false
+        }
         val engine = tts
         if (engine != null && ready) {
             speak(engine, id, text)
@@ -36,7 +45,8 @@ object ReplySpeaker {
         }
         pending = id to text
         if (engine == null) {
-            tts = TextToSpeech(context.applicationContext) { status ->
+            ttsEngine = wanted
+            tts = VoicePrefs.create(context, wanted) { status ->
                 ready = status == TextToSpeech.SUCCESS
                 val p = pending
                 pending = null
@@ -69,7 +79,7 @@ object ReplySpeaker {
             return
         }
         // The user's voice, speed, pitch and speaking style (Settings → Voice & speech).
-        val hindi = VoicePrefs.isHindi(clean)
+        val hindi = VoicePrefs.isHindi(ctx, clean)
         val style = VoicePrefs.style(ctx)
         VoicePrefs.apply(ctx, t, hindi, style)
         VoicePrefs.speak(t, clean, style, "reply-$id", "reply-end-$id", flush = true)

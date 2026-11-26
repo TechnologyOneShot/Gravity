@@ -25,7 +25,10 @@ object ReasoningMapper {
         val text = instruction.lowercase()
         val heavy = listOf("architecture", "refactor", "debug", "migrate", "design", "multiple files", "whole project", "build error", "crash", "security")
         val score = heavy.count { it in text } + instruction.length / 600
+        // A long answer asked for by length ("500 words", "500 शब्द") needs room, not speed.
+        val longAsk = Regex("(\\d{3,4})\\s*(words|word|shabd|shabdon|शब्द|lines|पंक्ति)").find(text)?.groupValues?.get(1)?.toIntOrNull()?.let { it >= 300 } == true
         return when {
+            longAsk && score < 1 -> ReasoningMode.BALANCED
             score >= 3 -> ReasoningMode.HIGH
             score >= 1 -> ReasoningMode.DEEP_THINK
             // Ordinary chat (up to a long paragraph, nothing heavy): answer at once, little thinking.

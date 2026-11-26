@@ -10,6 +10,9 @@ enum class EngineKind(val label: String) {
 
     /** Armv8.2 dot product + fp16 (most phones since 2018): faster, and different CPU code. */
     FAST("fast engine (Armv8.2)"),
+
+    /** Armv8.6 int8 matrix instructions (i8mm; most phones since 2022): reads prompts ~30% faster. */
+    I8MM("fastest engine (Armv8.6 i8mm)"),
 }
 
 /**
@@ -57,8 +60,14 @@ object LlamaBridge {
     private const val HWCAP_ASIMDHP = 1L shl 10
     private const val HWCAP_ASIMDDP = 1L shl 20
 
+    /** AT_HWCAP2 bit (arm64): i8mm. */
+    private const val HWCAP2_I8MM = 1L shl 13
+
     /** CPU features the kernel reports (0 if unknown or not arm64). */
     fun cpuHwcap(): Long = if (isAvailable) runCatching { NativeBase.cpuHwcap() }.getOrDefault(0L) else 0L
+
+    /** The second word of CPU features (0 if unknown, not arm64, or an older engine library). */
+    fun cpuHwcap2(): Long = if (isAvailable) runCatching { NativeBase.cpuHwcap2() }.getOrDefault(0L) else 0L
 
     /** True on an arm64 CPU with Armv8.2 dot product and fp16 (what the fast and picture engines are built for). */
     fun armv82(): Boolean = android.os.Build.SUPPORTED_ABIS.firstOrNull() == "arm64-v8a" &&
@@ -76,6 +85,16 @@ object LlamaBridge {
         }
     }
 
+    /** Why the fastest (i8mm) engine is not used on this phone, or null if it can be used. */
+    val i8mmUnavailableReason: String? by lazy {
+        when {
+            fastUnavailableReason != null -> fastUnavailableReason
+            !BuildConfig.ENGINE_I8MM_BUNDLED -> "not in this build"
+            (cpuHwcap2() and HWCAP2_I8MM) == 0L -> "this CPU has no Armv8.6 int8 matrix instructions (i8mm)"
+            else -> NativeI8mm.loadError
+        }
+    }
+
     /** Set when the fast engine crashed Gravity on this phone (see LocalModelHost.checkLastExit). */
     @Volatile
     var fastTurnedOff: String? = null
@@ -83,11 +102,21 @@ object LlamaBridge {
 
     fun turnOffFast(reason: String) { fastTurnedOff = reason }
 
+    /** Set when the i8mm engine crashed Yamini on this phone. */
+    @Volatile
+    var i8mmTurnedOff: String? = null
+        private set
+
+    fun turnOffI8mm(reason: String) { i8mmTurnedOff = reason }
+
     /** Engines this phone can run, the faster first. */
     val engines: List<EngineKind>
         get() = if (!isAvailable) emptyList()
-        else if (fastUnavailableReason == null && fastTurnedOff == null) listOf(EngineKind.FAST, EngineKind.BASE)
-        else listOf(EngineKind.BASE)
+        else buildList {
+            if (i8mmUnavailableReason == null && i8mmTurnedOff == null && fastTurnedOff == null) add(EngineKind.I8MM)
+            if (fastUnavailableReason == null && fastTurnedOff == null) add(EngineKind.FAST)
+            add(EngineKind.BASE)
+        }
 
     /** Which engine a loaded model runs on. */
     fun engineOf(handle: Long): EngineKind = engineOfHandle[handle] ?: EngineKind.BASE
@@ -102,6 +131,11 @@ object LlamaBridge {
                 fastTurnedOff?.let { throw IllegalStateException("The fast engine is off on this phone: $it") }
                 NativeFast.load(path, contextSize, threads, gpuLayers, useMmap)
             }
+            EngineKind.I8MM -> {
+                i8mmUnavailableReason?.let { throw IllegalStateException("The i8mm engine cannot run here: $it") }
+                i8mmTurnedOff?.let { throw IllegalStateException("The i8mm engine is off on this phone: $it") }
+                NativeI8mm.load(path, contextSize, threads, gpuLayers, useMmap)
+            }
         }
         if (handle != 0L) engineOfHandle[handle] = engine
         return handle
@@ -111,8 +145,30 @@ object LlamaBridge {
         when (engineOfHandle.remove(handle) ?: EngineKind.BASE) {
             EngineKind.BASE -> NativeBase.unload(handle)
             EngineKind.FAST -> NativeFast.unload(handle)
+            EngineKind.I8MM -> NativeI8mm.unload(handle)
         }
     }
+
+    /**
+     * Saves what a loaded model's context has read to [path] (see gravity_core.h save_state), so
+     * the next start does not read the system prompt again. False if there was nothing to save.
+     */
+    fun saveState(handle: Long, path: String): Boolean = runCatching {
+        when (engineOf(handle)) {
+            EngineKind.BASE -> NativeBase.saveState(handle, path)
+            EngineKind.FAST -> NativeFast.saveState(handle, path)
+            EngineKind.I8MM -> NativeI8mm.saveState(handle, path)
+        }
+    }.getOrDefault(false)
+
+    /** Loads a saved state into a context of [contextSize] (0 = loaded size); tokens kept, or -1. */
+    fun loadState(handle: Long, path: String, contextSize: Int): Int = runCatching {
+        when (engineOf(handle)) {
+            EngineKind.BASE -> NativeBase.loadState(handle, path, contextSize)
+            EngineKind.FAST -> NativeFast.loadState(handle, path, contextSize)
+            EngineKind.I8MM -> NativeI8mm.loadState(handle, path, contextSize)
+        }
+    }.getOrDefault(-1)
 
     /**
      * Applies the model's own chat template (from GGUF metadata), tokenizes with the model's
@@ -129,6 +185,7 @@ object LlamaBridge {
         return when (engine) {
             EngineKind.BASE -> NativeBase.generate(handle, roles, contents, maxTokens, temperature, topP, contextSize, prefix, callback)
             EngineKind.FAST -> NativeFast.generate(handle, roles, contents, maxTokens, temperature, topP, contextSize, prefix, callback)
+            EngineKind.I8MM -> NativeI8mm.generate(handle, roles, contents, maxTokens, temperature, topP, contextSize, prefix, callback)
         }
     }
 
@@ -139,23 +196,27 @@ object LlamaBridge {
     fun modelInfo(handle: Long): IntArray = when (engineOf(handle)) {
         EngineKind.BASE -> NativeBase.modelInfo(handle)
         EngineKind.FAST -> NativeFast.modelInfo(handle)
+        EngineKind.I8MM -> NativeI8mm.modelInfo(handle)
     }
 
     /** The last error of the engine used last. */
     fun lastError(): String = when (lastUsed) {
         EngineKind.BASE -> NativeBase.lastError()
         EngineKind.FAST -> NativeFast.lastError()
+        EngineKind.I8MM -> NativeI8mm.lastError()
     }
 
     /** Why the last generation ended: "eos", "stop", "max", "ctx" (context full) or "error". */
     fun lastFinish(): String = when (lastUsed) {
         EngineKind.BASE -> NativeBase.lastFinish()
         EngineKind.FAST -> NativeFast.lastFinish()
+        EngineKind.I8MM -> NativeI8mm.lastFinish()
     }
 
     fun systemInfo(engine: EngineKind = EngineKind.BASE): String = when (engine) {
         EngineKind.BASE -> NativeBase.systemInfo()
         EngineKind.FAST -> if (fastUnavailableReason == null) NativeFast.systemInfo() else "fast engine: $fastUnavailableReason"
+        EngineKind.I8MM -> if (i8mmUnavailableReason == null) NativeI8mm.systemInfo() else "i8mm engine: $i8mmUnavailableReason"
     }
 
     /** True if native heap pointers are tagged (Android pointer tagging), for diagnostics. */
@@ -176,6 +237,9 @@ internal object NativeBase {
     external fun systemInfo(): String
     external fun heapTagged(): Boolean
     external fun cpuHwcap(): Long
+    external fun cpuHwcap2(): Long
+    external fun saveState(handle: Long, path: String): Boolean
+    external fun loadState(handle: Long, path: String, contextSize: Int): Int
 }
 
 /** The fast engine (libgravity_llama_fast.so, module :engine-fast); loaded only on CPUs that support it. */
@@ -199,4 +263,33 @@ internal object NativeFast {
     external fun systemInfo(): String
     external fun heapTagged(): Boolean
     external fun cpuHwcap(): Long
+    external fun cpuHwcap2(): Long
+    external fun saveState(handle: Long, path: String): Boolean
+    external fun loadState(handle: Long, path: String, contextSize: Int): Int
+}
+
+/** The fastest engine (libgravity_llama_i8mm.so, module :engine-i8mm); loaded only on CPUs with i8mm. */
+internal object NativeI8mm {
+    val loadError: String? = try {
+        System.loadLibrary("gravity_llama_i8mm")
+        null
+    } catch (t: Throwable) {
+        "could not be loaded: ${t.message}"
+    }
+
+    external fun load(path: String, contextSize: Int, threads: Int, gpuLayers: Int, useMmap: Boolean): Long
+    external fun unload(handle: Long)
+    external fun generate(
+        handle: Long, roles: Array<String>, contents: Array<String>, maxTokens: Int, temperature: Float, topP: Float,
+        contextSize: Int, prefix: String, callback: LlamaBridge.TokenCallback,
+    ): Int
+    external fun modelInfo(handle: Long): IntArray
+    external fun lastError(): String
+    external fun lastFinish(): String
+    external fun systemInfo(): String
+    external fun heapTagged(): Boolean
+    external fun cpuHwcap(): Long
+    external fun cpuHwcap2(): Long
+    external fun saveState(handle: Long, path: String): Boolean
+    external fun loadState(handle: Long, path: String, contextSize: Int): Int
 }

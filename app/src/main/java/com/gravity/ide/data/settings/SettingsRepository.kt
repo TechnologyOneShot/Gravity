@@ -28,7 +28,8 @@ data class AppSettings(
     val operatingMode: OperatingMode = OperatingMode.HYBRID,
     val defaultProviderId: String? = null,
     val defaultModel: String? = null,
-    val reasoning: ReasoningMode = ReasoningMode.BALANCED,
+    // Auto: ordinary chat is answered at once (no thinking time); bigger tasks think more.
+    val reasoning: ReasoningMode = ReasoningMode.AUTO,
     val agentMaxSteps: Int = 40,
     val approveAllCommands: Boolean = false,
     val approveFileWrites: Boolean = false,
@@ -117,7 +118,7 @@ class SettingsRepository(private val context: Context) {
             operatingMode = this[Keys.mode]?.let { runCatching { OperatingMode.valueOf(it) }.getOrNull() } ?: d.operatingMode,
             defaultProviderId = this[Keys.provider],
             defaultModel = this[Keys.model],
-            reasoning = ReasoningMode.fromName(this[Keys.reasoning]),
+            reasoning = this[Keys.reasoning]?.let { ReasoningMode.fromName(it) } ?: ReasoningMode.AUTO,
             agentMaxSteps = this[Keys.maxSteps] ?: d.agentMaxSteps,
             approveAllCommands = this[Keys.approveCommands] ?: d.approveAllCommands,
             approveFileWrites = this[Keys.approveWrites] ?: d.approveFileWrites,

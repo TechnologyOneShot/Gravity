@@ -35,6 +35,65 @@ void unload(Session *s) {
     delete s;
 }
 
+// The context for [n_ctx] tokens, kept between requests; another size gets a new one (a big
+// context is not kept around for ordinary chats).
+static llama_context *ensure_ctx(Session *s, int n_ctx, std::string &error) {
+    if (s->ctx && s->ctx_size == n_ctx) return s->ctx;
+    if (s->ctx) llama_free(s->ctx);
+    s->ctx = nullptr;
+    s->cached.clear();
+    llama_context_params cparams = llama_context_default_params();
+    cparams.n_ctx = n_ctx;
+    cparams.n_batch = n_ctx;
+    cparams.n_threads = s->n_threads;
+    cparams.n_threads_batch = s->n_threads;
+    // Flash attention: faster attention and a smaller cache on the CPU (llama.cpp turns it on
+    // by default where supported in later versions).
+    cparams.flash_attn = true;
+    s->ctx = llama_init_from_model(s->model, cparams);
+    if (!s->ctx) {
+        s->ctx_size = 0;
+        error = "llama_init_from_model failed (out of memory?)";
+        return nullptr;
+    }
+    s->ctx_size = n_ctx;
+    return s->ctx;
+}
+
+bool save_state(Session *s, const std::string &path, std::string &error) {
+    if (!s || !s->ctx || s->cached.empty()) {
+        error = "nothing to save";
+        return false;
+    }
+    if (!llama_state_save_file(s->ctx, path.c_str(), s->cached.data(), s->cached.size())) {
+        error = "llama_state_save_file failed";
+        return false;
+    }
+    return true;
+}
+
+int load_state(Session *s, const std::string &path, int n_ctx_req, std::string &error) {
+    if (!s || !s->model) {
+        error = "Model not loaded";
+        return -1;
+    }
+    const int n_ctx = n_ctx_req > s->n_ctx ? n_ctx_req : s->n_ctx;
+    llama_context *ctx = ensure_ctx(s, n_ctx, error);
+    if (!ctx) return -1;
+    std::vector<llama_token> tokens(n_ctx);
+    size_t count = 0;
+    if (!llama_state_load_file(ctx, path.c_str(), tokens.data(), tokens.size(), &count) || count == 0 || count >= (size_t) n_ctx) {
+        // A file from another model, size or engine: start clean.
+        llama_memory_clear(llama_get_memory(ctx), true);
+        s->cached.clear();
+        error = "the saved state does not fit this model";
+        return -1;
+    }
+    tokens.resize(count);
+    s->cached = tokens;
+    return (int) count;
+}
+
 int generate(Session *s, const std::vector<std::string> &roles, const std::vector<std::string> &contents, int max_tokens,
              float temperature, float top_p, int n_ctx_req, const std::string &prefix,
              const std::function<bool(const char *, int)> &on_piece, std::string &finish, std::string &error) {
@@ -81,29 +140,9 @@ int generate(Session *s, const std::vector<std::string> &roles, const std::vecto
         return -1;
     }
 
-    // 3. One context per loaded model, kept between requests; a request for another size gets
-    //    a new one (a big context is not kept around for ordinary chats).
-    if (!s->ctx || s->ctx_size != n_ctx) {
-        if (s->ctx) llama_free(s->ctx);
-        s->ctx = nullptr;
-        s->cached.clear();
-        llama_context_params cparams = llama_context_default_params();
-        cparams.n_ctx = n_ctx;
-        cparams.n_batch = n_ctx;
-        cparams.n_threads = s->n_threads;
-        cparams.n_threads_batch = s->n_threads;
-        // Flash attention: faster attention and a smaller cache on the CPU (llama.cpp turns it on
-        // by default where supported in later versions).
-        cparams.flash_attn = true;
-        s->ctx = llama_init_from_model(s->model, cparams);
-        if (!s->ctx) {
-            s->ctx_size = 0;
-            error = "llama_init_from_model failed (out of memory?)";
-            return -1;
-        }
-        s->ctx_size = n_ctx;
-    }
-    llama_context *ctx = s->ctx;
+    // 3. One context per loaded model, kept between requests (see ensure_ctx).
+    llama_context *ctx = ensure_ctx(s, n_ctx, error);
+    if (!ctx) return -1;
     llama_memory_t mem = llama_get_memory(ctx);
 
     // Reuse the tokens this context already read (same start of the conversation); at least the

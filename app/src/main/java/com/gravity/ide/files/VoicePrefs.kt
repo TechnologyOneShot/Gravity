@@ -41,9 +41,32 @@ object VoicePrefs {
     fun natural(context: Context): Boolean = prefs(context).getBoolean("natural", true)
     fun setNatural(context: Context, on: Boolean) = prefs(context).edit().putBoolean("natural", on).apply()
 
-    /** What [apply] set on each speaker: its speed and pitch, and whether to speak like a person. */
-    private data class Base(val rate: Float, val pitch: Float, val natural: Boolean)
+    /**
+     * What [apply] set on each speaker: its speed and pitch, whether to speak like a person, and
+     * for a Hindi voice the Hinglish word list (Hinglish is read in Devanagari, see HinglishReader).
+     */
+    private class Base(val rate: Float, val pitch: Float, val natural: Boolean, val hinglish: Map<String, String>?)
     private val bases = java.util.WeakHashMap<TextToSpeech, Base>()
+
+    /**
+     * The text-to-speech engine for Hindi ([hindi]) or English speech: Yamini's own natural voice
+     * (this app's package, see voice/NeuralVoices) when its pack is downloaded and switched on,
+     * else null for the phone's default engine.
+     */
+    fun engine(context: Context, hindi: Boolean): String? =
+        if (com.gravity.ide.voice.NeuralVoices.active(context, if (hindi) "hi" else "en") != null) context.packageName else null
+
+    private val natural = java.util.Collections.newSetFromMap(java.util.WeakHashMap<TextToSpeech, Boolean>())
+
+    /** A TextToSpeech on [engine] (null = the phone's default). */
+    fun create(context: Context, engine: String?, onInit: TextToSpeech.OnInitListener): TextToSpeech {
+        val tts = if (engine != null) TextToSpeech(context.applicationContext, onInit, engine) else TextToSpeech(context.applicationContext, onInit)
+        if (engine == context.packageName) synchronized(natural) { natural += tts }
+        return tts
+    }
+
+    /** True for a TextToSpeech made on Yamini's natural voice. */
+    fun isNatural(tts: TextToSpeech): Boolean = synchronized(natural) { tts in natural }
 
     fun greet(context: Context): Boolean = prefs(context).getBoolean("greet", true)
     fun setGreet(context: Context, on: Boolean) = prefs(context).edit().putBoolean("greet", on).apply()
@@ -62,12 +85,20 @@ object VoicePrefs {
         return devanagari * 10 > letters * 3
     }
 
+    /** Hindi, or Hinglish (Hindi in Roman letters): read with the Hindi voice. */
+    fun isHindi(context: Context, text: String): Boolean =
+        isHindi(text) || com.gravity.ide.core.HinglishReader.forVoice(context, text).let { it.hindiWords * 2 >= it.latinWords && it.wasHinglish }
+
     /** Sets language, voice, speed and pitch on [tts]; [style] overrides the saved one (e.g. a preview). */
     fun apply(context: Context, tts: TextToSpeech, hindi: Boolean, style: VoiceStyles.Style = style(context), voice: Voice? = null): Int {
         val locale = locale(context, hindi)
         val result = tts.setLanguage(locale)
-        (voice ?: VoicePicker.choose(tts, locale, voiceName(context, hindi)))?.let { tts.setVoice(it) }
-        val base = Base(VoiceStyles.rate(style, rate(context)), VoiceStyles.pitch(style, pitch(context)), natural(context))
+        // The natural voice has one voice per language (chosen in its own settings).
+        if (!isNatural(tts)) (voice ?: VoicePicker.choose(tts, locale, voiceName(context, hindi)))?.let { tts.setVoice(it) }
+        val base = Base(
+            VoiceStyles.rate(style, rate(context)), VoiceStyles.pitch(style, pitch(context)), natural(context),
+            if (hindi) com.gravity.ide.core.HinglishReader.words(context) else null,
+        )
         tts.setSpeechRate(base.rate)
         tts.setPitch(base.pitch)
         synchronized(bases) { bases[tts] = base }
@@ -78,8 +109,10 @@ object VoicePrefs {
      * Queues [text] in the style: sentence by sentence with the style's pause between them. The
      * last piece gets [lastId] (for "finished" callbacks). [flush] clears what was playing first.
      */
-    fun speak(tts: TextToSpeech, text: String, style: VoiceStyles.Style, idPrefix: String, lastId: String, flush: Boolean) {
+    fun speak(tts: TextToSpeech, said: String, style: VoiceStyles.Style, idPrefix: String, lastId: String, flush: Boolean) {
         val base = synchronized(bases) { bases[tts] }
+        // A Hindi voice reads Hinglish in Devanagari (Roman letters would be read by English rules).
+        val text = base?.hinglish?.let { com.gravity.ide.core.HinglishReader.read(said, it).text } ?: said
         if (base?.natural == true && text.isNotBlank()) {
             speakLikeAPerson(tts, text, style, base, idPrefix, lastId, flush)
             return

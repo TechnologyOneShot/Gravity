@@ -27,3 +27,9 @@ target_compile_features(gravity-cli PRIVATE cxx_std_17)
 target_link_libraries(gravity-cli llama ggml)
 # Static, so it runs under qemu-aarch64 without Android's dynamic linker.
 target_link_options(gravity-cli PRIVATE -static)
+
+# The saved prompt (save_state / load_state) with a real model; runs natively on the Arm runner.
+add_executable(state-check state_check.cpp ${APP_CPP}/gravity_core.cpp)
+target_include_directories(state-check PRIVATE ${LLAMA_DIR}/include ${APP_CPP})
+target_compile_features(state-check PRIVATE cxx_std_17)
+target_link_libraries(state-check llama ggml)

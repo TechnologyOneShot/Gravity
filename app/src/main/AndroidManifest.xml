@@ -101,6 +101,21 @@
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
 
+        <!-- Yamini's offline natural voice as an Android text-to-speech engine (voice/YaminiVoiceService).
+             Exported like every TTS engine: Android binds it by the TTS_SERVICE action. -->
+        <service
+            android:name=".voice.YaminiVoiceService"
+            android:exported="true"
+            android:label="Yamini natural voice">
+            <intent-filter>
+                <action android:name="android.intent.action.TTS_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech.tts"
+                android:resource="@xml/tts_engine" />
+        </service>
+
         <receiver
             android:name=".device.InstallResultReceiver"
             android:exported="false" />

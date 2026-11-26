@@ -298,6 +298,17 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
      * loaded (this chat's own) and reads the system prompt and the chat so far now (kept in its
      * memory, so a reply only reads the new message); for a cloud AI the connection is opened now.
      */
+    /**
+     * The live voice instruction added to the system prompt (empty outside live mode). The warm-up
+     * adds the same, so a phone model has already read it when the first spoken question comes.
+     */
+    private fun liveExtra(): String = liveLanguage.value?.let { lang ->
+        "\n\nThis is a live voice conversation, like a phone call: the user speaks and your reply is read aloud at once. " +
+            (livePersona.value ?: "Talk like a warm, friendly Indian friend.") + " Reply in $lang, in 1 to 3 short spoken " +
+            "sentences; make the first sentence very short so the voice can start at once. Use simple words that sound good " +
+            "when spoken. No Markdown, lists, emojis, links or code."
+    } ?: ""
+
     fun warmUp() = viewModelScope.launch {
         val chat = c.db.chats().get(chatId) ?: return@launch
         val settings = c.settings.current()
@@ -313,14 +324,14 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         if (busy.value) return@launch
         if (resolved.provider.isLocal) {
             val project = chat.projectId?.let { c.db.projects().get(it) }
-            val (system, recent) = conversationStart(resolved, c.settings.current(), project, "", liveLanguage.value != null) { it }
+            val (system, recent) = conversationStart(resolved, c.settings.current(), project, liveExtra(), liveLanguage.value != null) { it }
             if (busy.value) return@launch
             runCatching {
                 // Ends with an empty user turn: some chat formats (Gemma's) put the system prompt inside
                 // the first user turn, so without one the warm-up read nothing (CI: 2 tokens reused).
                 val warm = listOf(LlmMessage(Role.SYSTEM, system)) + recent +
                     (if (recent.lastOrNull()?.role == Role.USER) emptyList() else listOf(LlmMessage(Role.USER, "")))
-                resolved.provider.stream(LlmRequest(resolved.model, warm, maxOutputTokens = 1)) { }
+                resolved.provider.stream(LlmRequest(resolved.model, warm, maxOutputTokens = 1, warmUp = true)) { }
             }
         } else {
             val host = when (resolved.entity?.kind) {
@@ -521,14 +532,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 val extra = buildString {
                     // Online and on-phone image AIs both make the picture from the chat AI's description.
                     pendingMake?.let { append("\n\n").append(com.gravity.ide.core.MakeFiles.instruction(it, onlinePictures = settings.pictureMaker == "online" || settings.pictureMaker == "phone")) }
-                    liveLanguage.value?.let { lang ->
-                        append(
-                            "\n\nThis is a live voice conversation, like a phone call: the user speaks and your reply is read aloud at once. " +
-                                (livePersona.value ?: "Talk like a warm, friendly Indian friend.") + " Reply in $lang, in 1 to 3 short spoken " +
-                                "sentences; make the first sentence very short so the voice can start at once. Use simple words that sound good " +
-                                "when spoken. No Markdown, lists, emojis, links or code."
-                        )
-                    }
+                    append(liveExtra())
                 }
                 // A picture or video is drawn as SVG code: a phone model needs room for a long reply.
                 // A picture fits the context the model already has (old messages make room); a bigger
@@ -772,7 +776,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                         val drawn = com.gravity.ide.core.MakeFiles.scenes(msg.content)
                         val narrations = if (described.isNotEmpty()) described.map { it.first } else drawn.map { it.first }
                         val text = narrations.joinToString(" ")
-                        val hindi = text.count { it in '\u0900'..'\u097F' } * 10 > text.count { it.isLetter() }.coerceAtLeast(1) * 3
+                        val hindi = com.gravity.ide.files.VoicePrefs.isHindi(ctx, text)
                         val locale = java.util.Locale.forLanguageTag(if (hindi) "hi-IN" else "en-IN")
                         val made = if (described.isNotEmpty()) {
                             // Each scene's picture from the online image AI (one per 45 s on the free service),
@@ -809,7 +813,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                     com.gravity.ide.core.MakeFiles.Kind.AUDIO -> {
                         val devanagari = msg.content.count { it in '\u0900'..'\u097F' }
                         val letters = msg.content.count { it.isLetter() }.coerceAtLeast(1)
-                        val locale = java.util.Locale.forLanguageTag(if (devanagari * 10 > letters * 3) "hi-IN" else "en-IN")
+                        val locale = java.util.Locale.forLanguageTag(if (devanagari * 10 > letters * 3 || com.gravity.ide.files.VoicePrefs.isHindi(ctx, msg.content)) "hi-IN" else "en-IN")
                         com.gravity.ide.files.FileMaker.audio(ctx, name, msg.content, locale)
                     }
                 }

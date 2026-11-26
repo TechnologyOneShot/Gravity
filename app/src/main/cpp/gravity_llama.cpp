@@ -155,6 +155,34 @@ GRAVITY_JNI(heapTagged)(JNIEnv *, jobject) {
     return tagged ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+GRAVITY_JNI(saveState)(JNIEnv *env, jobject, jlong handle, jstring jpath) {
+    std::string error;
+    if (!gravity::save_state(reinterpret_cast<gravity::Session *>(handle), to_string(env, jpath), error)) {
+        set_error(error);
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+GRAVITY_JNI(loadState)(JNIEnv *env, jobject, jlong handle, jstring jpath, jint n_ctx) {
+    std::string error;
+    int n = gravity::load_state(reinterpret_cast<gravity::Session *>(handle), to_string(env, jpath), n_ctx, error);
+    if (n < 0) set_error(error);
+    return n;
+}
+
+// The second word of CPU features (AT_HWCAP2, e.g. i8mm) on arm64; 0 elsewhere.
+extern "C" JNIEXPORT jlong JNICALL
+GRAVITY_JNI(cpuHwcap2)(JNIEnv *, jobject) {
+#if defined(__aarch64__)
+    return (jlong) getauxval(AT_HWCAP2);
+#else
+    return 0;
+#endif
+}
+
 // The CPU features the kernel reports (AT_HWCAP) on arm64; 0 elsewhere.
 extern "C" JNIEXPORT jlong JNICALL
 GRAVITY_JNI(cpuHwcap)(JNIEnv *, jobject) {

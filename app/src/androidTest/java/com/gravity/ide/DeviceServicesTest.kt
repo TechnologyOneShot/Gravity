@@ -432,6 +432,52 @@ class DeviceServicesTest {
     }
 
     /**
+     * What a warm-up read is saved, so the next start of the model does not read the long system
+     * prompt again (a 7B model reads it for 40 s or more): after unloading and loading the model,
+     * the first question reuses the saved prompt, answers right, and starts much sooner.
+     */
+    @Test
+    fun t12dg_savedPromptMakesTheFirstReplyFastAfterARestart() {
+        Assume.assumeTrue("llama.cpp runtime is not bundled in this build", c.localHost.runtimeAvailable)
+        val model = runBlocking { c.db.models().all() }.firstOrNull { it.status == ModelStatus.READY.name && it.filePath.contains("0.5b-instruct", ignoreCase = true) }
+        Assume.assumeTrue("Needs the instruct model downloaded by t12d", model != null)
+        java.io.File(ctx.cacheDir, "kv").deleteRecursively()
+        val system = LlmMessage(Role.SYSTEM, com.gravity.ide.core.ChatPrompt.system(compact = true))
+        val earlier = listOf(LlmMessage(Role.USER, "Hi, my name is Ravi."), LlmMessage(Role.ASSISTANT, "Hello Ravi! How can I help you today?"))
+        val question = listOf(system) + earlier + LlmMessage(Role.USER, "What is my name?")
+        fun firstWord(): Pair<Long, String> {
+            val t = System.currentTimeMillis()
+            var first = -1L
+            val reply = StringBuilder()
+            runBlocking {
+                c.providers.local.stream(LlmRequest(model!!.name, question, maxOutputTokens = 12, temperature = 0.1)) { ev ->
+                    if (ev is com.gravity.ide.ai.LlmEvent.TextDelta) { if (first < 0) first = System.currentTimeMillis() - t; reply.append(ev.text) }
+                }
+            }
+            return first to reply.toString().trim()
+        }
+        runBlocking { c.localHost.unload() }
+        var loaded = runBlocking { c.localHost.load(model!!, 2048, 2) }
+        val (cold, coldReply) = firstWord()
+        // The chat screen's warm-up when a chat opens: it reads the prompt and saves what it read.
+        runBlocking { c.localHost.unload() }
+        loaded = runBlocking { c.localHost.load(model!!, 2048, 2) }
+        runBlocking { c.providers.local.stream(LlmRequest(loaded.name, listOf(system) + earlier + LlmMessage(Role.USER, ""), maxOutputTokens = 1, warmUp = true)) { } }
+        val saved = java.io.File(ctx.cacheDir, "kv").listFiles().orEmpty().filter { it.name.endsWith(".bin") }
+        Ci.log("local-state", "Saved after the warm-up: ${saved.map { "${it.name} (${it.length() / 1024} KB)" }}")
+        assertTrue("Nothing was saved after the warm-up", saved.isNotEmpty())
+        // A restart of the model (as after a phone picture or a new app start).
+        runBlocking { c.localHost.unload() }
+        loaded = runBlocking { c.localHost.load(model!!, 2048, 2) }
+        val (warm, warmReply) = firstWord()
+        val reused = com.gravity.ide.ai.local.LlamaBridge.modelInfo(loaded.handle).getOrElse(5) { 0 }
+        Ci.log("local-state", "First word after loading: $cold ms reading everything (\"$coldReply\"), $warm ms with the saved prompt (\"$warmReply\"), reused $reused tokens")
+        assertTrue("The saved prompt was not used (reused $reused tokens)", reused > 150)
+        assertTrue("The answer is wrong with the saved prompt: $warmReply", warmReply.contains("Ravi", ignoreCase = true))
+        assertTrue("The first word did not come sooner ($warm ms vs $cold ms)", warm < cold)
+    }
+
+    /**
      * Two chats, two phone models (the user's case: Gemma in one chat, Qwen in another), both
      * asking at the same time: both must answer, each with its own model. The same file is
      * registered twice, so Gravity really unloads one model and loads the other between them.
@@ -1064,4 +1110,89 @@ class DeviceServicesTest {
         assertTrue("The web engine did not come back", normal.loaded && normal.controlsTapped == 1)
         root.deleteRecursively()
     }
+
+    /**
+     * Yamini's natural voice, end to end: the Hindi voice pack downloads (SHA-256 checked) and
+     * unpacks, Android binds Yamini's own voice engine, Hinglish is read in Devanagari, the first
+     * audio comes quickly, speed changes are honoured, and an audio file is made with it.
+     */
+    @Test
+    fun t21_naturalVoiceSpeaksOffline() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val nv = com.gravity.ide.voice.NeuralVoices
+        if (!BuildConfig.VOICE_BUNDLED) {
+            Ci.log("natural-voice", "Not in this build: ${nv.unavailableReason}")
+            return
+        }
+        assertTrue("The voice engine library did not load", nv.available)
+        val pack = nv.pack("hi-female")!!
+        val c = (ctx.applicationContext as GravityApp).container
+        if (!nv.isReady(ctx, pack)) {
+            val t0 = System.currentTimeMillis()
+            val row = runBlocking { c.models.enqueueDownload(pack.url, pack.archiveName, pack.sha256, pack.size, "k2-fsa/sherpa-onnx", nv.LICENSE_NOTE, role = "voice") }
+            var status = ""
+            while (System.currentTimeMillis() - t0 < 8 * 60_000) {
+                status = runBlocking { c.db.models().get(row.id) }?.status.orEmpty()
+                if (status == com.gravity.ide.models.ModelStatus.READY.name || status == com.gravity.ide.models.ModelStatus.FAILED.name) break
+                Thread.sleep(2000)
+            }
+            val r = runBlocking { c.db.models().get(row.id) }
+            Ci.log("natural-voice", "Download: ${r?.status} in ${(System.currentTimeMillis() - t0) / 1000} s, ${r?.error ?: "ok"}")
+            assertEquals("The voice pack did not download and unpack: ${r?.error}", com.gravity.ide.models.ModelStatus.READY.name, status)
+            assertFalse("The archive was kept after unpacking", java.io.File(r!!.filePath).exists())
+        }
+        assertTrue(nv.isReady(ctx, pack))
+        nv.choose(ctx, pack)
+        nv.setEnabled(ctx, true)
+        assertEquals("The natural voice is not used for Hindi", ctx.packageName, com.gravity.ide.files.VoicePrefs.engine(ctx, true))
+        // Not in the chat model list.
+        assertTrue(runBlocking { c.db.models().all() }.none { it.role == "voice" })
+
+        val ready = kotlinx.coroutines.CompletableDeferred<Int>()
+        val tts = runBlocking(kotlinx.coroutines.Dispatchers.Main) { com.gravity.ide.files.VoicePrefs.create(ctx, ctx.packageName) { ready.complete(it) } }
+        try {
+            assertEquals(android.speech.tts.TextToSpeech.SUCCESS, runBlocking { kotlinx.coroutines.withTimeout(20_000) { ready.await() } })
+            val lang = tts.setLanguage(java.util.Locale.forLanguageTag("hi-IN"))
+            assertTrue("Hindi is not available on the natural voice ($lang)", lang >= android.speech.tts.TextToSpeech.LANG_AVAILABLE)
+            fun make(text: String, rate: Float): Triple<Double, Long, Long> {
+                val f = java.io.File.createTempFile("nat-", ".wav", ctx.cacheDir)
+                val done = java.util.concurrent.CountDownLatch(1)
+                var firstAudio = 0L
+                val start = System.currentTimeMillis()
+                tts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onAudioAvailable(utteranceId: String?, audio: ByteArray?) { if (firstAudio == 0L) firstAudio = System.currentTimeMillis() - start }
+                    override fun onDone(utteranceId: String?) { done.countDown() }
+                    @Deprecated("Deprecated in Java") override fun onError(utteranceId: String?) { done.countDown() }
+                })
+                tts.setSpeechRate(rate)
+                assertEquals(android.speech.tts.TextToSpeech.SUCCESS, tts.synthesizeToFile(text, android.os.Bundle(), f, "nat-$rate"))
+                assertTrue("The natural voice did not finish", done.await(60, java.util.concurrent.TimeUnit.SECONDS))
+                val total = System.currentTimeMillis() - start
+                val (samples, sr) = com.gravity.ide.core.WavJoin.pcmMono16(f.readBytes())
+                f.delete()
+                return Triple(samples.size.toDouble() / sr, firstAudio, total)
+            }
+            val sentence = com.gravity.ide.core.HinglishReader.forVoice(ctx, "Arre, ye toh bahut achha hai! Main aapke liye ek gaana bana sakti hoon.").text
+            Ci.log("natural-voice", "Read as: $sentence")
+            assertTrue("Hinglish was not written in Devanagari for the voice", sentence.startsWith("अरे"))
+            make("नमस्ते", 1f) // first use loads the voice
+            val (secs, first, total) = make(sentence, 1f)
+            Ci.log("natural-voice", "Sentence: %.2f s of speech, first audio after %d ms, all made in %d ms".format(secs, first, total))
+            assertTrue("The speech is too short: $secs s", secs > 2.0)
+            val slow = make(sentence, 0.7f).first
+            val quick = make(sentence, 1.4f).first
+            Ci.log("natural-voice", "Speed 0.7: %.2f s, 1.4: %.2f s".format(slow, quick))
+            assertTrue("The natural voice ignores speed", slow > quick * 1.3)
+        } finally {
+            runBlocking(kotlinx.coroutines.Dispatchers.Main) { tts.shutdown() }
+        }
+        // An audio file through the app's own path (speak like a person, natural voice).
+        val wav = runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "natural", "Arre, ye toh bahut achha hai! Kya aap taiyaar hain?", java.util.Locale.forLanguageTag("hi-IN")) }
+        val (samples, sr) = com.gravity.ide.core.WavJoin.pcmMono16(wav.readBytes())
+        Ci.log("natural-voice", "Audio file: %.2f s at %d Hz".format(samples.size.toDouble() / sr, sr))
+        assertTrue(samples.size.toDouble() / sr > 2.0)
+        wav.delete()
+    }
 }
+

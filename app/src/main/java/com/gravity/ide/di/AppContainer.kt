@@ -27,6 +27,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Manual dependency injection: one instance of each service for the process, created in
@@ -93,4 +94,24 @@ class AppContainer(context: Context) {
 
     val selfTest = SelfTestRunner(appContext, db, secrets, workspace, checkpoints, terminals, network, providers, localHost, settings, events)
     val offlineReadiness = com.gravity.ide.device.OfflineReadinessChecker(db, localHost, models, device, network, settings, events)
+
+    init {
+        // Read the Hinglish word list early, so the first reply read aloud does not wait for it.
+        appScope.launch(Dispatchers.IO) { com.gravity.ide.core.HinglishReader.words(appContext) }
+        // Balanced (the old default) thinks before every answer, which made ordinary replies slow.
+        // Once, the setting and the chats on Balanced switch to Auto: ordinary chat is answered at
+        // once, bigger tasks still think. The user can pick another mode any time.
+        appScope.launch(Dispatchers.IO) {
+            val prefs = appContext.getSharedPreferences("migrations", android.content.Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("auto_reasoning", false)) {
+                runCatching {
+                    val balanced = com.gravity.ide.ai.ReasoningMode.BALANCED
+                    val auto = com.gravity.ide.ai.ReasoningMode.AUTO
+                    settings.update { if (it.reasoning == balanced) it.copy(reasoning = auto) else it }
+                    db.chats().replaceReasoning(balanced.name, auto.name)
+                    prefs.edit().putBoolean("auto_reasoning", true).apply()
+                }
+            }
+        }
+    }
 }

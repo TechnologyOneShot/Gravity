@@ -31,6 +31,10 @@ val llamaAbis = providers.gradleProperty("gravity.abis").orNull ?: "arm64-v8a,x8
 if (llamaBuild && "arm64-v8a" in llamaAbis && providers.gradleProperty("gravity.fastEngine").orNull != "false") {
     include(":engine-fast")
 }
+// Fastest engine for Armv8.6 phones with int8 matrix instructions (i8mm), unless -Pgravity.i8mmEngine=false.
+if (llamaBuild && "arm64-v8a" in llamaAbis && providers.gradleProperty("gravity.i8mmEngine").orNull != "false") {
+    include(":engine-i8mm")
+}
 // On-phone picture engine (stable-diffusion.cpp), with the native runtime unless -Pgravity.image=false.
 // Needs engine-image/src/main/cpp/stable-diffusion.cpp (pinned commit, cloned with submodules).
 if (llamaBuild && providers.gradleProperty("gravity.image").orNull != "false" &&

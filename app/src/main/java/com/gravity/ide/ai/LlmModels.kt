@@ -35,6 +35,8 @@ data class LlmRequest(
     val assistantPrefix: String? = null,
     /** On-device only: stop as soon as the reply contains one of these (kept in the reply). */
     val stop: List<String> = emptyList(),
+    /** On-device only: a warm-up (reads the prompt ahead of the user's message); what it read is saved for the next start. */
+    val warmUp: Boolean = false,
 )
 
 sealed interface LlmEvent {
