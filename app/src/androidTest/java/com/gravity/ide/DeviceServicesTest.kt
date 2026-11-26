@@ -1194,5 +1194,31 @@ class DeviceServicesTest {
         assertTrue(samples.size.toDouble() / sr > 2.0)
         wav.delete()
     }
+
+    /**
+     * Update Yamini: the latest release is read from GitHub, its phone APK downloads with the
+     * SHA-256 the release states, and it is signed with the same key as the installed app (so
+     * Android updates in place and keeps the models). In CI the release is this same build, so
+     * the only refusal allowed is "not newer".
+     */
+    @Test
+    fun t22_updateDownloadsAVerifiedSameKeyApk() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val json = runBlocking {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val req = okhttp3.Request.Builder().url("https://api.github.com/repos/TechnologyOneShot/Gravity/releases/tags/debug-latest").header("User-Agent", "Yamini-CI").build()
+                com.gravity.ide.ai.Http.base.newCall(req).execute().use { org.json.JSONObject(it.body!!.string()) }
+            }
+        }
+        val r = com.gravity.ide.device.SelfUpdate.parse(json, phone = true)
+        Ci.log("update", "Latest: ${r.versionName} (${r.versionCode}), ${r.size / 1_000_000} MB, ${r.url.substringAfterLast('/')}, SHA-256 ${r.sha256?.take(12)}; installed ${BuildConfig.VERSION_CODE}")
+        assertTrue("The release gives no SHA-256 for the file", r.sha256 != null)
+        val t0 = System.currentTimeMillis()
+        val apk = runBlocking { com.gravity.ide.device.SelfUpdate.download(ctx, r) { _, _ -> } }
+        val problem = com.gravity.ide.device.SelfUpdate.problem(ctx, apk)
+        Ci.log("update", "Downloaded and SHA-256 checked in ${(System.currentTimeMillis() - t0) / 1000} s; would install: ${problem ?: "yes"}")
+        assertTrue("Android would refuse it for its signing key: $problem", problem == null || problem.startsWith("It is not newer"))
+        apk.delete()
+    }
 }
 
