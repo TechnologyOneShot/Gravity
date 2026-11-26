@@ -78,7 +78,7 @@ object LanguageHint {
 
     /** The instruction to put after the user's latest message, or "" when the language is unclear. */
     fun hint(text: String): String = when (asked(text)) {
-        Lang.HINDI_DEVANAGARI -> "(The user asks for Hindi: reply in Hindi, written in Devanagari; not English with Hindi in brackets.)"
+        Lang.HINDI_DEVANAGARI -> "(The user asks for Hindi: reply only in Hindi, written in Devanagari, with no English translation.)"
         Lang.ENGLISH -> "(The user asks for English: reply in English.)"
         Lang.HINGLISH -> "(The user asks for Hinglish: reply in Hinglish, Hindi words in Roman script, not English.)"
         else -> byScript(text)

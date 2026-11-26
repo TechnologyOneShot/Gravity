@@ -74,7 +74,7 @@ class LanguageHintTest {
         asked(Lang.HINGLISH, "hinglish me likho", "reply in Hinglish")
         asked(null, "What is the Hindi word for apple?", "Name three planets.", "hindi and english both", "kya haal hai")
         assertEquals(
-            "more and hindi text\n\n(The user asks for Hindi: reply in Hindi, written in Devanagari; not English with Hindi in brackets.)",
+            "more and hindi text\n\n(The user asks for Hindi: reply only in Hindi, written in Devanagari, with no English translation.)",
             LanguageHint.withHint("more and hindi text"),
         )
     }
