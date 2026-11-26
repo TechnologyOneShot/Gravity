@@ -1,0 +1,67 @@
+name: Speed trial
+
+# Measures, on a real Arm machine, how fast the phone engines read prompts and write replies with
+# and without the Armv8.6 int8 matrix instructions (i8mm), and how fast offline voices speak.
+on:
+  push:
+    branches: ["work-*"]
+  workflow_dispatch:
+
+jobs:
+  llm-speed:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: Gemma-3-4B-it-Q4_K_M
+            url: https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf
+          - model: Qwen2.5-7B-Instruct-Q4_K_M
+            url: https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf
+    name: llm-speed (${{ matrix.model }})
+    steps:
+      - name: CPU
+        run: lscpu | grep -iE "model name|flags" | cut -c1-400
+      - name: Build llama-bench twice (dot product, and dot product + i8mm)
+        run: |
+          git clone -q --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
+          for v in "dotprod:armv8.2-a+dotprod+fp16" "i8mm:armv8.6-a+dotprod+fp16+i8mm"; do
+            n=${v%%:*}; a=${v#*:}
+            cmake -S /tmp/llama.cpp -B /tmp/b-$n -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=$a \
+              -DGGML_OPENMP=OFF -DLLAMA_CURL=OFF -DGGML_LLAMAFILE=OFF > /dev/null
+            cmake --build /tmp/b-$n --target llama-bench -j"$(nproc)" > /dev/null
+          done
+      - name: Download ${{ matrix.model }}
+        run: curl -fsSL --retry 3 -o /tmp/model.gguf "${{ matrix.url }}"
+      - name: Prompt reading (pp) and writing (tg) speed, 4 threads
+        run: |
+          for n in dotprod i8mm; do
+            echo "== $n"
+            /tmp/b-$n/bin/llama-bench -m /tmp/model.gguf -t 4 -p 256 -n 32 -fa 1 -r 2 -o md 2>/dev/null | tee -a $GITHUB_STEP_SUMMARY
+          done
+
+  voice-speed:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install sherpa-onnx 1.13.6
+        run: pip install -q sherpa-onnx==1.13.6 soundfile
+      - name: Download voices
+        run: |
+          mkdir -p /tmp/v /tmp/samples && cd /tmp/v
+          for n in vits-piper-hi_IN-priyamvada-medium vits-piper-en_US-lessac-medium vits-piper-en_US-hfc_female-medium kokoro-int8-multi-lang-v1_0; do
+            curl -fsSL --retry 3 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/$n.tar.bz2 | tar xjf - &
+          done
+          wait
+          du -sh /tmp/v/*
+      - name: Speed with 2 and 4 threads
+        run: |
+          python3 tools/speed-trial/voices.py /tmp/v 2 | tee /tmp/voice-2.txt
+          python3 tools/speed-trial/voices.py /tmp/v 4 | tee /tmp/voice-4.txt
+          { echo '```'; cat /tmp/voice-2.txt /tmp/voice-4.txt; echo '```'; } >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voice-samples
+          path: /tmp/samples
