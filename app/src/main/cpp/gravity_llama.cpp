@@ -173,6 +173,12 @@ GRAVITY_JNI(loadState)(JNIEnv *env, jobject, jlong handle, jstring jpath, jint n
     return n;
 }
 
+// Threads for writing and for reading the prompt (see gravity_core.h set_threads).
+extern "C" JNIEXPORT void JNICALL
+GRAVITY_JNI(setThreads)(JNIEnv *, jobject, jlong handle, jint n_threads, jint n_threads_batch) {
+    gravity::set_threads(reinterpret_cast<gravity::Session *>(handle), n_threads, n_threads_batch);
+}
+
 // The second word of CPU features (AT_HWCAP2, e.g. i8mm) on arm64; 0 elsewhere.
 extern "C" JNIEXPORT jlong JNICALL
 GRAVITY_JNI(cpuHwcap2)(JNIEnv *, jobject) {

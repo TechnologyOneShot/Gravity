@@ -80,8 +80,8 @@ object NeuralVoices {
 
     private fun prefs(context: Context) = context.getSharedPreferences("voice_prefs", Context.MODE_PRIVATE)
 
-    /** Use the natural voice when its pack is downloaded (on by default). */
-    fun enabled(context: Context) = prefs(context).getBoolean("neural", true)
+    /** Use the offline voice (Piper) when its pack is downloaded. Off by default: the phone's own voice sounds better. */
+    fun enabled(context: Context) = prefs(context).getBoolean("neural", false)
     fun setEnabled(context: Context, on: Boolean) = prefs(context).edit().putBoolean("neural", on).apply()
 
     /** The chosen pack for a language ("hi" or "en"). */

@@ -158,8 +158,11 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         }
     }
     LaunchedEffect(language) { vm.liveLanguage.value = language.forModel }
-    // The voice in use (chosen, or the clearest installed one) decides the Hindi grammar for "I".
-    val voiceGender = (voices.firstOrNull { it.name == voiceName } ?: voices.firstOrNull())?.let { com.gravity.ide.files.VoicePicker.gender(it) }
+    // The voice in use (chosen, else the clearest one of Yamini's gender) decides the Hindi grammar for "I".
+    val yaminiGender = VoicePrefs.gender(context)
+    val voiceGender = (voices.firstOrNull { it.name == voiceName }
+        ?: voices.firstOrNull { com.gravity.ide.files.VoicePicker.gender(it) == yaminiGender } ?: voices.firstOrNull())
+        ?.let { com.gravity.ide.files.VoicePicker.gender(it) } ?: yaminiGender
     LaunchedEffect(styleId, voiceGender, hindiVoice) {
         vm.livePersona.value = VoiceStyles.personaFor(style, VoicePrefs.address(context), voiceGender, hindiVoice)
     }
@@ -229,7 +232,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         if (clean.isBlank() || ttsReady != true) return
         prepareVoice()
         val n = partNo++
-        VoicePrefs.speak(tts, clean, style, "live-p$n", "live-p$n-end", flush = false)
+        VoicePrefs.speak(tts, clean, style, "live-p$n", "live-p$n-end", flush = false, userText = heard)
         phase = LivePhase.SPEAKING
     }
 
@@ -248,9 +251,22 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
             listenSoon()
             return
         }
-        VoicePrefs.speak(tts, clean, style, "live-rest", "live-end", flush = false)
+        VoicePrefs.speak(tts, clean, style, "live-rest", "live-end", flush = false, userText = heard)
         phase = LivePhase.SPEAKING
     }
+
+    // A listening response: when the answer takes a moment, a short "हम्म…" (no gendered words)
+    // so the user knows they were heard. Never when the reply has already started.
+    val fillerNow = remember { mutableStateOf<() -> Unit>({}) }
+    fillerNow.value = {
+        if (open.get() && phase == LivePhase.THINKING && partNo == 0 && ttsReady == true && VoicePrefs.filler(context)) {
+            prepareVoice()
+            val line = com.gravity.ide.core.SpeechPlanner.listeningFiller(hindiVoice, (System.nanoTime() / 1000).toInt())
+            VoicePrefs.speak(tts, line, style, "filler", "filler-end", flush = false, keepMood = false)
+        }
+    }
+    val filler = remember { Runnable { fillerNow.value() } }
+    DisposableEffect(Unit) { onDispose { main.removeCallbacks(filler) } }
 
     /** Plays a sample of a style or voice. Pauses listening (so the mic does not hear it); never cuts a reply. */
     fun previewSample(st: VoiceStyles.Style, v: android.speech.tts.Voice? = null) {
@@ -380,6 +396,8 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                 partNo = 0
                 voiceReady = false
                 phase = LivePhase.THINKING
+                main.removeCallbacks(filler)
+                main.postDelayed(filler, 900)
                 val started = vm.sendLive(said) { answer, error ->
                     if (!open.get()) return@sendLive
                     reply = answer

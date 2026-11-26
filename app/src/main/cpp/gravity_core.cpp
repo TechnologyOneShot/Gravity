@@ -35,6 +35,13 @@ void unload(Session *s) {
     delete s;
 }
 
+void set_threads(Session *s, int n_threads, int n_threads_batch) {
+    if (!s) return;
+    if (n_threads > 0) s->n_threads = n_threads;
+    if (n_threads_batch > 0) s->n_threads_batch = n_threads_batch;
+    if (s->ctx) llama_set_n_threads(s->ctx, s->n_threads, s->n_threads_batch > 0 ? s->n_threads_batch : s->n_threads);
+}
+
 // The context for [n_ctx] tokens, kept between requests; another size gets a new one (a big
 // context is not kept around for ordinary chats).
 static llama_context *ensure_ctx(Session *s, int n_ctx, std::string &error) {
@@ -46,7 +53,7 @@ static llama_context *ensure_ctx(Session *s, int n_ctx, std::string &error) {
     cparams.n_ctx = n_ctx;
     cparams.n_batch = n_ctx;
     cparams.n_threads = s->n_threads;
-    cparams.n_threads_batch = s->n_threads;
+    cparams.n_threads_batch = s->n_threads_batch > 0 ? s->n_threads_batch : s->n_threads;
     // Flash attention: faster attention and a smaller cache on the CPU (llama.cpp turns it on
     // by default where supported in later versions).
     cparams.flash_attn = true;

@@ -14,6 +14,8 @@ struct Session {
     llama_model *model = nullptr;
     int n_ctx = 4096;
     int n_threads = 4;
+    // Threads for reading the prompt (many tokens at once: more cores help); 0 = n_threads.
+    int n_threads_batch = 0;
     // Kept between requests: the context and the tokens whose keys/values it already holds, so
     // the next message only reads what is new (the system prompt and earlier turns are reused).
     llama_context *ctx = nullptr;
@@ -32,6 +34,12 @@ struct Session {
 Session *load(const std::string &path, int n_ctx, int n_threads, int n_gpu_layers, bool use_mmap, std::string &error);
 
 void unload(Session *s);
+
+/**
+ * Threads for writing ([n_threads], one token at a time: limited by memory speed) and for reading
+ * the prompt ([n_threads_batch], many tokens at once: limited by the cores); 0 keeps a value.
+ */
+void set_threads(Session *s, int n_threads, int n_threads_batch);
 
 /**
  * Saves what the kept context has read (its tokens and their keys/values) to [path], so the next

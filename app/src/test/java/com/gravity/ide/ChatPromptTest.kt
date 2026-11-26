@@ -28,6 +28,15 @@ class ChatPromptTest {
         assertTrue(p.endsWith(phone.substringAfterLast("\n")))
     }
 
+    @Test fun yaminisGrammarFollowsHerVoice() {
+        // A woman's voice says "kar sakti hoon", a man's "kar sakta hoon" (Settings → Voice).
+        assertTrue(ChatPrompt.phone().contains("You speak as a woman") && ChatPrompt.phone().contains("sakti"))
+        val male = ChatPrompt.phone(male = true)
+        assertTrue(male.contains("You speak as a man") && male.contains("sakta") && !male.contains("sakti"))
+        assertTrue("phone prompt too long: ${male.length}", male.length < 1800)
+        assertTrue(ChatPrompt.forChat(compact = false, male = true).contains("masculine forms"))
+    }
+
     @Test fun exportPromptAndQuestionsForThePhoneModelCheck() {
         val dir = File("build/chat-prompts").apply { mkdirs() }
         // The phone-model check asks phone models, so it gets what they get: the short prompt.

@@ -161,6 +161,19 @@ object LlamaBridge {
         }
     }.getOrDefault(false)
 
+    /**
+     * Threads for writing ([threads]) and for reading the prompt ([batchThreads]) of a loaded
+     * model; 0 keeps a value. False if the engine could not take it.
+     */
+    fun setThreads(handle: Long, threads: Int, batchThreads: Int): Boolean = runCatching {
+        when (engineOf(handle)) {
+            EngineKind.BASE -> NativeBase.setThreads(handle, threads, batchThreads)
+            EngineKind.FAST -> NativeFast.setThreads(handle, threads, batchThreads)
+            EngineKind.I8MM -> NativeI8mm.setThreads(handle, threads, batchThreads)
+        }
+        true
+    }.getOrDefault(false)
+
     /** Loads a saved state into a context of [contextSize] (0 = loaded size); tokens kept, or -1. */
     fun loadState(handle: Long, path: String, contextSize: Int): Int = runCatching {
         when (engineOf(handle)) {
@@ -240,6 +253,7 @@ internal object NativeBase {
     external fun cpuHwcap2(): Long
     external fun saveState(handle: Long, path: String): Boolean
     external fun loadState(handle: Long, path: String, contextSize: Int): Int
+    external fun setThreads(handle: Long, threads: Int, batchThreads: Int)
 }
 
 /** The fast engine (libgravity_llama_fast.so, module :engine-fast); loaded only on CPUs that support it. */
@@ -266,6 +280,7 @@ internal object NativeFast {
     external fun cpuHwcap2(): Long
     external fun saveState(handle: Long, path: String): Boolean
     external fun loadState(handle: Long, path: String, contextSize: Int): Int
+    external fun setThreads(handle: Long, threads: Int, batchThreads: Int)
 }
 
 /** The fastest engine (libgravity_llama_i8mm.so, module :engine-i8mm); loaded only on CPUs with i8mm. */
@@ -292,4 +307,5 @@ internal object NativeI8mm {
     external fun cpuHwcap2(): Long
     external fun saveState(handle: Long, path: String): Boolean
     external fun loadState(handle: Long, path: String, contextSize: Int): Int
+    external fun setThreads(handle: Long, threads: Int, batchThreads: Int)
 }

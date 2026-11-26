@@ -40,15 +40,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import com.gravity.ide.core.EmotionClassifier
+import com.gravity.ide.core.Expressions
 import com.gravity.ide.core.VoiceStyles
 import com.gravity.ide.files.VoicePicker
 import com.gravity.ide.files.VoicePrefs
 import com.gravity.ide.ui.theme.GravityColors
 
 /**
- * Settings → Voice & speech: 10 speaking styles, the phone's male and female voices for Hindi and
- * English, speed and pitch, each with a ▶ to hear it. Used by live mode, the speaker button and
- * audio files. The voices are the phone's own text-to-speech voices (Google's on most phones).
+ * Settings → Voice & speech: Yamini's voice (female or male: also its Hindi grammar), feelings in
+ * the voice (Normal, Expressive, Professional; each mood with what it really changes), speaking
+ * styles, the phone's voices for Hindi and English, speed and pitch, each with a ▶ to hear it.
+ * Used by live mode, the speaker button and audio files. The voices are the phone's own
+ * text-to-speech voices (Google's on most phones); an offline voice pack is optional.
  */
 @Composable
 internal fun VoiceSettingsPanel() {
@@ -68,6 +72,12 @@ internal fun VoiceSettingsPanel() {
     var address by remember { mutableStateOf(VoicePrefs.address(context)) }
     var greet by remember { mutableStateOf(VoicePrefs.greet(context)) }
     var natural by remember { mutableStateOf(VoicePrefs.natural(context)) }
+    var mode by remember { mutableStateOf(VoicePrefs.mode(context)) }
+    var breath by remember { mutableStateOf(VoicePrefs.breath(context)) }
+    var filler by remember { mutableStateOf(VoicePrefs.filler(context)) }
+    var fixedMood by remember { mutableStateOf(VoicePrefs.fixedMood(context)) }
+    var yaminiGender by remember { mutableStateOf(VoicePrefs.gender(context)) }
+    var showMoods by remember { mutableStateOf(false) }
     // Yamini's natural voice (offline): its own engine, for previews of its voices.
     var neuralReady by remember { mutableStateOf<Boolean?>(null) }
     val neuralTts = remember { VoicePrefs.create(context, context.packageName) { status -> neuralReady = status == TextToSpeech.SUCCESS } }
@@ -76,14 +86,15 @@ internal fun VoiceSettingsPanel() {
     val shown = voices.filter { gender == "all" || VoicePicker.gender(it) == gender }
     val chosen = if (hindiTab) hindiVoice else englishVoice
 
-    fun preview(style: VoiceStyles.Style, hindi: Boolean, voice: Voice? = null) {
-        // The natural voice when it is in use for this language (and no phone voice was tapped).
+    fun preview(style: VoiceStyles.Style, hindi: Boolean, voice: Voice? = null, mood: EmotionClassifier.Emotion? = null) {
+        // The offline voice when it is in use for this language (and no phone voice was tapped).
         val useNatural = voice == null && neuralReady == true && VoicePrefs.engine(context, hindi) != null
         val speaker = if (useNatural) neuralTts else tts
         if (!useNatural && ready != true) return
         runCatching { (if (useNatural) tts else neuralTts).stop() }
         VoicePrefs.apply(context, speaker, hindi, style, voice)
-        VoicePrefs.speak(speaker, VoicePrefs.sample(style, hindi), style, "preview", "preview-end", flush = true)
+        val line = if (mood != null) Expressions.sample(mood, hindi) else VoicePrefs.sample(style, hindi)
+        VoicePrefs.speak(speaker, line, style, "preview", "preview-end", flush = true, keepMood = false, mood = mood)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.testTag("voice-settings")) {
@@ -93,25 +104,128 @@ internal fun VoiceSettingsPanel() {
                 color = GravityColors.Red, style = MaterialTheme.typography.bodySmall,
             )
         }
-        NaturalVoiceCard(onHear = { hindi -> preview(VoiceStyles.byId(styleId), hindi) })
-
-        VoiceCard("Speaking style", "How Yamini talks in live mode and when it reads replies: its words and mood, and the voice's speed, pitch and pauses.") {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text("Speak like a person", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "Speed, pitch and loudness change from phrase to phrase: feeling words are drawn out (\"bahut achha\"), small words go quicker, " +
-                            "questions rise, excited lines are brighter, asides softer, with natural pauses. Off: every sentence the same.",
-                        style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted,
+        VoiceCard(
+            "Yamini's voice",
+            "A woman's or a man's voice, for Hindi and English alike. It also sets how Yamini talks about itself in Hindi: " +
+                "female \"मैं कर सकती हूँ, सुन रही थी\", male \"मैं कर सकता हूँ, सुन रहा था\" (in chat and live mode).",
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("female" to "Female · महिला", "male" to "Male · पुरुष").forEach { (key, label) ->
+                    FilterChip(
+                        selected = yaminiGender == key,
+                        onClick = {
+                            yaminiGender = key
+                            VoicePrefs.setGender(context, key)
+                            hindiVoice = VoicePrefs.voiceName(context, true); englishVoice = VoicePrefs.voiceName(context, false)
+                            gender = key
+                            preview(VoiceStyles.byId(styleId), hindiTab)
+                        },
+                        label = { Text(label) }, modifier = Modifier.testTag("yamini-gender-$key"),
                     )
                 }
+            }
+            if (ready == true && voices.isNotEmpty() && voices.none { VoicePicker.gender(it) == yaminiGender }) {
+                Text(
+                    "This phone has no ${if (yaminiGender == "male") "male" else "female"} ${if (hindiTab) "Hindi" else "English"} voice that Yamini can tell apart, " +
+                        "so the clearest voice is used. Get more voices below.",
+                    style = MaterialTheme.typography.bodySmall, color = GravityColors.Amber,
+                )
+            }
+        }
+
+        VoiceCard(
+            "Feelings in the voice",
+            "Yamini reads the mood of each reply (and of what you said): serious topics slower and calmer, happy ones brighter, sad ones " +
+                "soft and slow. Whole sentences are spoken as the voice says them best, with pauses between them.",
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Speak with feeling", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 androidx.compose.material3.Switch(
                     checked = natural,
                     onCheckedChange = { natural = it; VoicePrefs.setNatural(context, it); preview(VoiceStyles.byId(styleId), hindiTab) },
                     modifier = Modifier.testTag("voice-natural"),
                 )
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            if (natural) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Expressions.Mode.entries.forEach { m ->
+                        FilterChip(
+                            selected = mode == m,
+                            onClick = {
+                                mode = m; VoicePrefs.setMode(context, m)
+                                preview(VoiceStyles.byId(styleId), hindiTab, mood = fixedMood ?: EmotionClassifier.Emotion.HAPPY)
+                            },
+                            label = { Text(m.label) }, modifier = Modifier.testTag("voice-mode-${m.name}"),
+                        )
+                    }
+                }
+                Text(mode.hindi, style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted)
+                if (mode == Expressions.Mode.EXPRESSIVE) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Breath sound", style = MaterialTheme.typography.bodyMedium)
+                            Text("A soft breath before some longer sentences (a sound added by the app, not the voice itself).", style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted)
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = breath, onCheckedChange = { breath = it; VoicePrefs.setBreath(context, it) },
+                            modifier = Modifier.testTag("voice-breath"),
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("\"हम्म…\" while thinking", style = MaterialTheme.typography.bodyMedium)
+                        Text("In live mode, a short \"हम्म…\" when the answer takes a moment, so you know Yamini heard you.", style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted)
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = filler, onCheckedChange = { filler = it; VoicePrefs.setFiller(context, it) },
+                        modifier = Modifier.testTag("voice-filler"),
+                    )
+                }
+                TextButton(onClick = { showMoods = !showMoods }, modifier = Modifier.testTag("voice-moods")) {
+                    Text(if (showMoods) "Hide the moods" else "Hear each mood, or fix one (${fixedMood?.label ?: "automatic"})")
+                }
+                if (showMoods) {
+                    Text(
+                        "A phone voice can change speed, pitch, loudness and pauses; Yamini adds a spoken \"हा हा\" where a reply laughs, " +
+                            "and in Expressive mode a breath sound. It cannot really cry, whisper or laugh: those moods are as close as the voice allows.",
+                        style = MaterialTheme.typography.bodySmall, color = GravityColors.Amber,
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().clickable { fixedMood = null; VoicePrefs.setFixedMood(context, null) },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = fixedMood == null, onClick = { fixedMood = null; VoicePrefs.setFixedMood(context, null) })
+                        Text("Automatic (from each reply's words)", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    EmotionClassifier.Emotion.entries.forEach { e ->
+                        val p = Expressions.profile(e, 1f, mode)
+                        Row(
+                            Modifier.fillMaxWidth().clickable { fixedMood = e; VoicePrefs.setFixedMood(context, e); preview(VoiceStyles.byId(styleId), hindiTab, mood = e) }
+                                .testTag("voice-mood-${e.name}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = fixedMood == e, onClick = { fixedMood = e; VoicePrefs.setFixedMood(context, e); preview(VoiceStyles.byId(styleId), hindiTab, mood = e) })
+                            Column(Modifier.weight(1f)) {
+                                Text("${e.label} · ${e.hindi}", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "Speed ×%.2f · pitch ×%.2f · loudness %d%% · pause %d ms".format(p.rate, p.pitch, (p.volume * 100).toInt(), p.sentencePauseMs) +
+                                        (if (p.limit.isNotEmpty()) " · ${p.limit}" else ""),
+                                    style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted,
+                                )
+                            }
+                            IconButton(onClick = { preview(VoiceStyles.byId(styleId), hindiTab, mood = e) }) {
+                                Icon(Icons.Filled.PlayArrow, "Hear ${e.label}", tint = GravityColors.Accent)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        OnlineVoiceCard(yaminiGender, hindiTab)
+
+        VoiceCard("Speaking style", "How Yamini talks in live mode and when it reads replies: its words and mood, and the voice's speed, pitch and pauses.") {
             VoiceStyles.all.forEachIndexed { i, st ->
                 if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(
@@ -172,22 +286,24 @@ internal fun VoiceSettingsPanel() {
                     style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted,
                 )
             }
-            val best = voices.firstOrNull()
+            val best = VoicePicker.choose(tts, VoicePrefs.locale(context, hindiTab), null, yaminiGender).takeIf { ready == true } ?: voices.firstOrNull()
+            /** The voice the user tapped; a voice of the other gender makes Yamini that gender (voice and grammar match). */
+            fun pick(v: Voice) {
+                VoicePicker.gender(v)?.takeIf { it != yaminiGender }?.let { g ->
+                    VoicePrefs.setGender(context, g); yaminiGender = g
+                    if (hindiTab) englishVoice = VoicePrefs.voiceName(context, false) else hindiVoice = VoicePrefs.voiceName(context, true)
+                }
+                VoicePrefs.setVoice(context, hindiTab, v.name)
+                if (hindiTab) hindiVoice = v.name else englishVoice = v.name
+                preview(VoiceStyles.byId(styleId), hindiTab, v)
+            }
             shown.forEach { v ->
                 val selected = chosen == v.name || (chosen == null && v == best)
                 Row(
-                    Modifier.fillMaxWidth().clickable {
-                        VoicePrefs.setVoice(context, hindiTab, v.name)
-                        if (hindiTab) hindiVoice = v.name else englishVoice = v.name
-                        preview(VoiceStyles.byId(styleId), hindiTab, v)
-                    }.padding(vertical = 2.dp),
+                    Modifier.fillMaxWidth().clickable { pick(v) }.padding(vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RadioButton(selected = selected, onClick = {
-                        VoicePrefs.setVoice(context, hindiTab, v.name)
-                        if (hindiTab) hindiVoice = v.name else englishVoice = v.name
-                        preview(VoiceStyles.byId(styleId), hindiTab, v)
-                    })
+                    RadioButton(selected = selected, onClick = { pick(v) })
                     Text(VoicePicker.label(v, voices), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     IconButton(onClick = { preview(VoiceStyles.byId(styleId), hindiTab, v) }) { Icon(Icons.Filled.PlayArrow, "Hear this voice", tint = GravityColors.Accent) }
                 }
@@ -215,6 +331,8 @@ internal fun VoiceSettingsPanel() {
                 VoicePrefs.setRate(context, 1f); VoicePrefs.setPitch(context, 1f)
             }) { Text("Reset speed and pitch") }
         }
+
+        NaturalVoiceCard(onHear = { hindi -> preview(VoiceStyles.byId(styleId), hindi) })
     }
 }
 
@@ -248,9 +366,10 @@ private fun NaturalVoiceCard(onHear: (hindi: Boolean) -> Unit) {
     var problem by remember { mutableStateOf<String?>(null) }
     val nv = com.gravity.ide.voice.NeuralVoices
     VoiceCard(
-        "Yamini's natural voice (offline, free)",
-        "A human-sounding neural voice made on this phone: no internet, no account, no limits, and it starts speaking at once. " +
-            "Download a voice for Hindi/Hinglish and one for English (about 67 MB each). Without it, the phone's own voice is used.",
+        "Offline voice pack (optional)",
+        "Yamini normally uses the phone's own voice (Google's on most phones), which sounds the most natural. This optional pack is a " +
+            "neural voice made on the phone (no internet, no account) for phones whose own Hindi voice is missing or poor. " +
+            "About 67 MB per language; off unless you switch it on.",
     ) {
         val reason = nv.unavailableReason
         if (reason != null) {
@@ -258,7 +377,7 @@ private fun NaturalVoiceCard(onHear: (hindi: Boolean) -> Unit) {
             return@VoiceCard
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Use the natural voice", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text("Use the offline voice instead of the phone's", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             androidx.compose.material3.Switch(
                 checked = enabled, onCheckedChange = { enabled = it; nv.setEnabled(context, it) },
                 modifier = Modifier.testTag("natural-voice-on"),
@@ -318,5 +437,65 @@ private fun NaturalVoiceCard(onHear: (hindi: Boolean) -> Unit) {
         }
         problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = GravityColors.Red) }
         Text(nv.LICENSE_NOTE + ". Engine: sherpa-onnx (Apache-2.0).", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted)
+    }
+}
+
+/**
+ * Gemini's expressive online voice for reading replies aloud: off by default; when on, a reply's
+ * text goes to Google with the user's own Gemini key. ▶ really asks Gemini and says what happened.
+ */
+@Composable
+private fun OnlineVoiceCard(gender: String, hindi: Boolean) {
+    val context = LocalContext.current
+    var on by remember { mutableStateOf(VoicePrefs.online(context)) }
+    var voice by remember(gender) { mutableStateOf(VoicePrefs.onlineVoice(context)) }
+    var hasKey by remember { mutableStateOf<Boolean?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        hasKey = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.gravity.ide.voice.OnlineVoicePlayer.gemini(context) != null }
+    }
+    DisposableEffect(Unit) { onDispose { com.gravity.ide.voice.OnlineVoicePlayer.stop() } }
+    VoiceCard(
+        "Online expressive voice (Gemini)",
+        "Reads replies (the speaker button) in Gemini's voice: real laughs, sighs and moods, Hindi and English. Uses your own Gemini key; " +
+            "while on, the reply's text is sent to Google. With no internet, no key or an error, the phone's voice reads it instead. " +
+            "Live mode keeps the phone's voice, which starts at once.",
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Use the online voice for replies", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            androidx.compose.material3.Switch(
+                checked = on, enabled = hasKey == true,
+                onCheckedChange = { on = it; VoicePrefs.setOnline(context, it) },
+                modifier = Modifier.testTag("voice-online"),
+            )
+        }
+        if (hasKey == false) {
+            Text("Add a Google Gemini key first (AI Providers). Yamini never ships a key of its own.", style = MaterialTheme.typography.bodySmall, color = GravityColors.Amber)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.gravity.ide.voice.OnlineVoice.voices.filter { it.gender == gender }.forEach { v ->
+                FilterChip(
+                    selected = voice == v.name,
+                    onClick = { voice = v.name; VoicePrefs.setOnlineVoice(context, v.name) },
+                    label = { Text("${v.name} · ${v.character}", style = MaterialTheme.typography.labelSmall) },
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(enabled = hasKey == true, onClick = {
+                status = "Asking Gemini…"
+                val line = Expressions.sample(EmotionClassifier.Emotion.LAUGHING, hindi)
+                val style = com.gravity.ide.voice.OnlineVoice.style(EmotionClassifier.Result(EmotionClassifier.Emotion.LAUGHING, 1f, 0.8f), VoicePrefs.mode(context))
+                val started = System.currentTimeMillis()
+                com.gravity.ide.voice.OnlineVoicePlayer.speak(context, line, style, voice) { outcome ->
+                    status = when (outcome) {
+                        is com.gravity.ide.voice.OnlineVoicePlayer.Outcome.Failed -> "Did not work: ${outcome.reason}"
+                        com.gravity.ide.voice.OnlineVoicePlayer.Outcome.Done -> "Played in Gemini's voice (%.1f s from tap to end)".format((System.currentTimeMillis() - started) / 1000.0)
+                        com.gravity.ide.voice.OnlineVoicePlayer.Outcome.Stopped -> "Stopped"
+                    }
+                }
+            }, modifier = Modifier.testTag("voice-online-test")) { Text("▶ Test the online voice") }
+        }
+        status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted) }
     }
 }

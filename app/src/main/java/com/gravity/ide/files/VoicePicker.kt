@@ -24,10 +24,15 @@ object VoicePicker {
             .filter { installed(it) && sameLanguage(it, locale) }
             .sortedByDescending { score(it, locale) }
 
-    /** The voice named [preferred] if it is still installed, else the best one; null if none. */
-    fun choose(tts: TextToSpeech, locale: Locale, preferred: String?): Voice? {
+    /**
+     * The voice named [preferred] if it is still installed, else the best one of [gender]
+     * ("female"/"male", when the phone has one), else the best one; null if none.
+     */
+    fun choose(tts: TextToSpeech, locale: Locale, preferred: String?, gender: String? = null): Voice? {
         val list = voices(tts, locale)
-        return list.firstOrNull { it.name == preferred } ?: list.firstOrNull()
+        return list.firstOrNull { it.name == preferred }
+            ?: gender?.let { g -> list.firstOrNull { gender(it) == g } }
+            ?: list.firstOrNull()
     }
 
     /** "female", "male" or null (see VoiceStyles.gender). */

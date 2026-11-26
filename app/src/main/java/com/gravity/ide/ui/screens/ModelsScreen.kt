@@ -640,6 +640,71 @@ private fun PhoneAiCheck() {
                     }
                 }) { Text("Use 1 thread") }
             }
+            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            PhoneSpeedTest(settings)
+        }
+    }
+}
+
+/**
+ * Speed test for this phone (SpeedTuner): reading the prompt and writing with different thread
+ * counts, measured here; the fastest is kept for this phone. Runs in the app's scope so leaving
+ * the screen does not cut it off halfway.
+ */
+@Composable
+private fun PhoneSpeedTest(settings: AppSettings) {
+    val c = LocalAppContainer.current
+    var running by remember { mutableStateOf(false) }
+    var lines by remember { mutableStateOf(listOf<String>()) }
+    val info = remember { c.device.info() }
+    val base = com.gravity.ide.device.PerformanceManager.threads(settings, info)
+    val tuned = remember(running) { c.localHost.tunedThreads(base) }
+    Text("Speed test for this phone", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Measures how fast the loaded model reads a prompt and writes with $base threads and with more (this phone has ${info.cpuCores} cores), " +
+            "and keeps the fastest. Takes about a minute with a 7B model; the phone gets warm, so close other apps first." +
+            (tuned?.let { (w, r) -> " Now: writing $w threads, reading $r." } ?: ""),
+        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(
+            enabled = !running && c.localHost.runtimeAvailable,
+            onClick = {
+                running = true
+                lines = listOf("Loading the model…")
+                c.appScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                    try {
+                        val loaded = c.localHost.loadedOrNull() ?: c.localHost.autoLoad(c.db.models().all(), settings)
+                            ?: throw IllegalStateException("No phone model to test. Download one above.")
+                        lines = listOf("${loaded.name}, context ${loaded.contextSize}:")
+                        val r = com.gravity.ide.ai.local.SpeedTuner(c.localHost, c.providers.local).tune(loaded, base, info.cpuCores) { line ->
+                            lines = lines + line
+                        }
+                        val before = r.before
+                        val after = r.runs.firstOrNull { it.write == r.write && it.read == r.read }
+                        lines = lines + if (r.write == base && r.read == base) {
+                            "Result: $base threads are already the fastest on this phone. Kept."
+                        } else {
+                            "Result: kept writing ${r.write} / reading ${r.read} threads" +
+                                (if (before != null && after != null) " (reading %.1f → %.1f tokens/s, writing %.1f → %.1f tokens/s)".format(before.readTps, after.readTps, before.writeTps, after.writeTps) else "") + "."
+                        }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        lines = lines + "The speed test could not finish: ${e.message}"
+                    } finally {
+                        running = false
+                    }
+                }
+            },
+            modifier = Modifier.testTag("phone-speed-test"),
+        ) { Text(if (running) "Measuring…" else "Run speed test") }
+        if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        if (!running && tuned != null) TextButton(onClick = { c.localHost.clearTunedThreads(); lines = listOf("Back to $base threads (used from the next load).") }) { Text("Reset") }
+    }
+    if (lines.isNotEmpty()) {
+        androidx.compose.foundation.text.selection.SelectionContainer {
+            Text(lines.joinToString("\n"), style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.testTag("phone-speed-report"))
         }
     }
 }

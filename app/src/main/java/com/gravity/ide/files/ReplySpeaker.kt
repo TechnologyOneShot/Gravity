@@ -71,6 +71,8 @@ object ReplySpeaker {
         }
     }
 
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
     private fun speak(t: TextToSpeech, id: Long, text: String) {
         val clean = SpeechText.clean(text)
         val ctx = appContext
@@ -78,6 +80,30 @@ object ReplySpeaker {
             speakingId.value = null
             return
         }
+        // Gemini's online voice when the user switched it on; the phone's voice if it cannot.
+        if (VoicePrefs.online(ctx)) {
+            runCatching { t.stop() }
+            val style = com.gravity.ide.voice.OnlineVoice.style(VoicePrefs.moodFor(ctx, clean), VoicePrefs.mode(ctx))
+            // Hinglish sentences in Devanagari, so Hindi words are said the Hindi way.
+            val words = com.gravity.ide.core.HinglishReader.forVoice(ctx, clean).text
+            com.gravity.ide.voice.OnlineVoicePlayer.speak(ctx, words, style, VoicePrefs.onlineVoice(ctx)) { outcome ->
+                when (outcome) {
+                    is com.gravity.ide.voice.OnlineVoicePlayer.Outcome.Failed -> main.post {
+                        if (speakingId.value == id) {
+                            problem.value = "Online voice: ${outcome.reason}. The phone's voice reads it."
+                            if (outcome.rest.isBlank()) speakingId.value = null else speakOnPhone(t, id, outcome.rest)
+                        }
+                    }
+                    else -> speakingId.compareAndSet(id, null)
+                }
+            }
+            return
+        }
+        speakOnPhone(t, id, clean)
+    }
+
+    private fun speakOnPhone(t: TextToSpeech, id: Long, clean: String) {
+        val ctx = appContext ?: return
         // The user's voice, speed, pitch and speaking style (Settings → Voice & speech).
         val hindi = VoicePrefs.isHindi(ctx, clean)
         val style = VoicePrefs.style(ctx)
@@ -86,6 +112,7 @@ object ReplySpeaker {
     }
 
     fun stop() {
+        com.gravity.ide.voice.OnlineVoicePlayer.stop()
         tts?.stop()
         speakingId.value = null
     }

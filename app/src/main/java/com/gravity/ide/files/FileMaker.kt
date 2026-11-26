@@ -164,30 +164,12 @@ object FileMaker {
             val status = withTimeout(15_000) { ready.await() }
             if (status != TextToSpeech.SUCCESS) throw IllegalStateException("This phone has no working text-to-speech engine (Android Settings → Text-to-speech).")
             VoicePrefs.apply(context, tts, locale.language == "hi")
-            val natural = VoicePrefs.natural(context)
-            val (baseRate, basePitch, pause) = humanBase(context)
-            return texts.mapIndexed { i, text ->
-                val clean = SpeechText.clean(text).let { if (locale.language == "hi") com.gravity.ide.core.HinglishReader.forVoice(context, it).text else it }
-                    .take(TextToSpeech.getMaxSpeechInputLength() - 100)
-                if (clean.isBlank()) return@mapIndexed null
-                // Narration spoken like a person (Settings → Voice: Speak like a person).
-                if (natural) return@mapIndexed runCatching { humanWav(context, tts, clean, baseRate, basePitch, pause) }.getOrNull()
-                val tmp = File.createTempFile("clip-$i-", ".wav", context.cacheDir)
-                try {
-                    val done = CompletableDeferred<Unit>()
-                    tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                        override fun onStart(utteranceId: String?) {}
-                        override fun onDone(utteranceId: String?) { done.complete(Unit) }
-                        @Deprecated("Deprecated in Java")
-                        override fun onError(utteranceId: String?) { done.completeExceptionally(IllegalStateException("Text-to-speech could not read scene ${i + 1}")) }
-                        override fun onError(utteranceId: String?, errorCode: Int) { done.completeExceptionally(IllegalStateException("Text-to-speech error $errorCode")) }
-                    })
-                    if (tts.synthesizeToFile(clean, Bundle(), tmp, "clip-$i") != TextToSpeech.SUCCESS) return@mapIndexed null
-                    runCatching { withTimeout(120_000) { done.await() } }.getOrNull() ?: return@mapIndexed null
-                    tmp.readBytes()
-                } finally {
-                    tmp.delete()
-                }
+            val style = VoicePrefs.style(context)
+            return texts.map { text ->
+                val clean = SpeechText.clean(text)
+                if (clean.isBlank()) return@map null
+                // Narration in the user's voice settings: mood, Hindi and English voices, pauses.
+                runCatching { planWav(context, tts, clean, style) }.getOrNull()
             }
         } finally {
             withContext(Dispatchers.Main) { tts.shutdown() }
@@ -219,24 +201,24 @@ object FileMaker {
     }
 
     /**
-     * WAV audio of [text] read by the phone's text-to-speech in [locale] (the best installed voice,
-     * see VoicePicker). Long text is read in parts and joined.
+     * WAV audio of [text] as the voice settings read it (VoicePrefs.plan): whole sentences in the
+     * reply's mood, Hindi and English each in its own voice, loudness set on the samples, the
+     * pauses as silence and, in Expressive mode, the soft breath sound.
      */
-    /**
-     * An audio file spoken like a person (HumanSpeech): each phrase with its own speed and pitch,
-     * its loudness set on the samples, and natural silences between phrases.
-     */
-    private suspend fun humanWav(
-        context: Context, tts: TextToSpeech, text: String, baseRate: Float, basePitch: Float, sentencePauseMs: Int,
-    ): ByteArray {
-        val plan = com.gravity.ide.core.HumanSpeech.plan(text, sentencePauseMs = sentencePauseMs)
-            .flatMap { p -> SpeechText.chunks(p.text, minOf(3500, TextToSpeech.getMaxSpeechInputLength() - 100)).map { p.copy(text = it) } }
-            .filter { it.text.isNotBlank() }
+    private suspend fun planWav(context: Context, tts: TextToSpeech, text: String, style: com.gravity.ide.core.VoiceStyles.Style): ByteArray {
+        val plan = VoicePrefs.plan(tts, text, style).map { it.copy(text = it.text.take(TextToSpeech.getMaxSpeechInputLength() - 100)) }
         require(plan.isNotEmpty()) { "There is no text to read aloud" }
         var sampleRate = 0
         val pcm = java.io.ByteArrayOutputStream()
         fun put(s: Short) { pcm.write(s.toInt() and 0xff); pcm.write((s.toInt() shr 8) and 0xff) }
-        val tmp = File.createTempFile("tts-phrase-", ".wav", context.cacheDir)
+        fun putAll(samples: ShortArray, sr: Int, volume: Float) {
+            val x = if (sr != sampleRate) com.gravity.ide.core.WavJoin.resample(samples, sr, sampleRate) else samples
+            x.forEach { put((it * volume).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()) }
+        }
+        val breath by lazy {
+            runCatching { context.resources.openRawResource(com.gravity.ide.R.raw.yamini_breath).use { com.gravity.ide.core.WavJoin.pcmMono16(it.readBytes()) } }.getOrNull()
+        }
+        val tmp = File.createTempFile("tts-part-", ".wav", context.cacheDir)
         try {
             for ((i, p) in plan.withIndex()) {
                 val done = CompletableDeferred<Unit>()
@@ -247,14 +229,15 @@ object FileMaker {
                     override fun onError(utteranceId: String?) { done.completeExceptionally(IllegalStateException("Text-to-speech could not read part ${i + 1}")) }
                     override fun onError(utteranceId: String?, errorCode: Int) { done.completeExceptionally(IllegalStateException("Text-to-speech error $errorCode")) }
                 })
-                tts.setSpeechRate(baseRate * p.rate)
-                tts.setPitch(basePitch * p.pitch)
-                if (tts.synthesizeToFile(p.text, Bundle(), tmp, "human-$i") != TextToSpeech.SUCCESS) throw IllegalStateException("Text-to-speech refused the text")
+                VoicePrefs.useVoice(tts, p)
+                tts.setSpeechRate(p.rate)
+                tts.setPitch(p.pitch)
+                if (tts.synthesizeToFile(p.text, Bundle(), tmp, "part-$i") != TextToSpeech.SUCCESS) throw IllegalStateException("Text-to-speech refused the text")
                 withTimeout(120_000) { done.await() }
-                var (samples, sr) = com.gravity.ide.core.WavJoin.pcmMono16(tmp.readBytes())
+                val (samples, sr) = com.gravity.ide.core.WavJoin.pcmMono16(tmp.readBytes())
                 if (sampleRate == 0) sampleRate = sr
-                if (sr != sampleRate) samples = com.gravity.ide.core.WavJoin.resample(samples, sr, sampleRate)
-                samples.forEach { put((it * p.volume).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()) }
+                if (p.breathBefore) breath?.let { (b, bsr) -> putAll(b, bsr, 0.6f) }
+                putAll(samples, sr, p.volume)
                 repeat((p.pauseAfterMs.toLong() * sampleRate / 1000).toInt()) { put(0) }
             }
         } finally {
@@ -265,54 +248,24 @@ object FileMaker {
         return com.gravity.ide.core.WavJoin.wavMono16(samples, sampleRate)
     }
 
-    /** Speed, pitch and sentence pause of the user's speaking style, for [humanWav]. */
-    private fun humanBase(context: Context, rate: Float = 1f): Triple<Float, Float, Int> {
-        val style = VoicePrefs.style(context)
-        val baseRate = if (rate != 1f) rate else com.gravity.ide.core.VoiceStyles.rate(style, VoicePrefs.rate(context))
-        return Triple(baseRate, com.gravity.ide.core.VoiceStyles.pitch(style, VoicePrefs.pitch(context)), maxOf(style.pauseMs, 260))
-    }
-
+    /**
+     * WAV audio of [text] read with the user's voice settings in [locale]'s voice ([voiceName]
+     * overrides it, [rate] the speed). Long text is read sentence by sentence and joined.
+     */
     suspend fun audio(context: Context, name: String, text: String, locale: Locale, voiceName: String? = null, rate: Float = 1f): File {
-        val clean = SpeechText.clean(text).let { if (locale.language == "hi") com.gravity.ide.core.HinglishReader.forVoice(context, it).text else it }
+        val clean = SpeechText.clean(text)
         require(clean.isNotBlank()) { "There is no text to read aloud" }
         val ready = CompletableDeferred<Int>()
         val tts = withContext(Dispatchers.Main) { VoicePrefs.create(context, VoicePrefs.engine(context, locale.language == "hi")) { status -> ready.complete(status) } }
         try {
             val status = withTimeout(15_000) { ready.await() }
             if (status != TextToSpeech.SUCCESS) throw IllegalStateException("This phone has no working text-to-speech engine (Android Settings → Text-to-speech).")
-            // The user's voice settings (Settings → Voice & speech): voice, speed, pitch, style.
+            // The user's voice settings (Settings → Voice & speech): voices, speed, pitch, style, mood.
             val hindi = locale.language == "hi"
-            VoicePrefs.apply(context, tts, hindi)
-            if (voiceName != null && !VoicePrefs.isNatural(tts)) VoicePicker.choose(tts, locale, voiceName)?.let { tts.setVoice(it) }
-            if (rate != 1f) tts.setSpeechRate(rate)
-            if (VoicePrefs.natural(context)) {
-                val (baseRate, basePitch, pause) = humanBase(context, rate)
-                val wav = humanWav(context, tts, clean, baseRate, basePitch, pause)
-                return unique(dir(context), clean(name) + ".wav").apply { writeBytes(wav) }
-            }
-            val parts = SpeechText.chunks(clean, minOf(3500, TextToSpeech.getMaxSpeechInputLength() - 100))
-            val tmp = parts.indices.map { File.createTempFile("tts-$it-", ".wav", context.cacheDir) }
-            try {
-                for ((i, part) in parts.withIndex()) {
-                    val done = CompletableDeferred<Unit>()
-                    tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                        override fun onStart(utteranceId: String?) {}
-                        override fun onDone(utteranceId: String?) { done.complete(Unit) }
-                        @Deprecated("Deprecated in Java")
-                        override fun onError(utteranceId: String?) { done.completeExceptionally(IllegalStateException("Text-to-speech could not read part ${i + 1}")) }
-                        override fun onError(utteranceId: String?, errorCode: Int) { done.completeExceptionally(IllegalStateException("Text-to-speech error $errorCode")) }
-                    })
-                    val r = tts.synthesizeToFile(part, Bundle(), tmp[i], "make-$i")
-                    if (r != TextToSpeech.SUCCESS) throw IllegalStateException("Text-to-speech refused the text")
-                    withTimeout(120_000) { done.await() }
-                }
-                val joined = WavJoin.join(tmp.map { it.readBytes() })
-                val file = unique(dir(context), clean(name) + ".wav")
-                file.writeBytes(joined)
-                return file
-            } finally {
-                tmp.forEach { it.delete() }
-            }
+            val voice = if (voiceName != null && !VoicePrefs.isNatural(tts)) VoicePicker.choose(tts, locale, voiceName) else null
+            VoicePrefs.apply(context, tts, hindi, voice = voice, rate = if (rate != 1f) rate else null)
+            val wav = planWav(context, tts, clean, VoicePrefs.style(context))
+            return unique(dir(context), clean(name) + ".wav").apply { writeBytes(wav) }
         } finally {
             withContext(Dispatchers.Main) { tts.shutdown() }
         }

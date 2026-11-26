@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
+import com.gravity.ide.core.EmotionClassifier
+import com.gravity.ide.core.Expressions
+import com.gravity.ide.core.HinglishReader
+import com.gravity.ide.core.SpeechPlanner
+import com.gravity.ide.core.SpeechText
 import com.gravity.ide.core.VoiceStyles
 import java.util.Locale
 
@@ -36,22 +41,96 @@ object VoicePrefs {
     fun address(context: Context): String = prefs(context).getString("address", "").orEmpty()
     fun setAddress(context: Context, v: String) = prefs(context).edit().putString("address", v.trim().take(40)).apply()
 
-    /** Live mode greets the user when it opens (on by default). */
-    /** Speak like a person (HumanSpeech): speed, pitch and loudness vary per phrase. On by default. */
+    /**
+     * Feelings in the voice: the mood of each reply (EmotionClassifier) sets its speed, pitch,
+     * loudness and pauses. On by default; off: every reply in the same plain voice.
+     */
     fun natural(context: Context): Boolean = prefs(context).getBoolean("natural", true)
     fun setNatural(context: Context, on: Boolean) = prefs(context).edit().putBoolean("natural", on).apply()
 
-    /**
-     * What [apply] set on each speaker: its speed and pitch, whether to speak like a person, and
-     * for a Hindi voice the Hinglish word list (Hinglish is read in Devanagari, see HinglishReader).
-     */
-    private class Base(val rate: Float, val pitch: Float, val natural: Boolean, val hinglish: Map<String, String>?)
-    private val bases = java.util.WeakHashMap<TextToSpeech, Base>()
+    /** Normal (everyday), Expressive (full feelings, breath sounds) or Professional (calm and clear). */
+    fun mode(context: Context): Expressions.Mode =
+        runCatching { Expressions.Mode.valueOf(prefs(context).getString("mode", null) ?: "NORMAL") }.getOrDefault(Expressions.Mode.NORMAL)
+    fun setMode(context: Context, m: Expressions.Mode) = prefs(context).edit().putString("mode", m.name).apply()
 
     /**
-     * The text-to-speech engine for Hindi ([hindi]) or English speech: Yamini's own natural voice
+     * Gemini's expressive online voice for reading replies (voice/OnlineVoice): off unless the user
+     * switches it on; it sends the reply's text to Google with the user's own Gemini key.
+     */
+    fun online(context: Context): Boolean = prefs(context).getBoolean("online", false)
+    fun setOnline(context: Context, on: Boolean) = prefs(context).edit().putBoolean("online", on).apply()
+
+    /** The online voice's name: the chosen one if it matches Yamini's gender, else that gender's first. */
+    fun onlineVoice(context: Context): String {
+        val g = gender(context)
+        val saved = prefs(context).getString("online_voice", null)
+        return com.gravity.ide.voice.OnlineVoice.voices.firstOrNull { it.name == saved && it.gender == g }?.name
+            ?: com.gravity.ide.voice.OnlineVoice.defaultVoice(g)
+    }
+    fun setOnlineVoice(context: Context, name: String) = prefs(context).edit().putString("online_voice", name).apply()
+
+    /** The mood to read [text] in, by the same rules as the phone voice (off, fixed, or from the words). */
+    fun moodFor(context: Context, text: String, userText: String? = null): EmotionClassifier.Result = when {
+        !natural(context) -> EmotionClassifier.Result(EmotionClassifier.Emotion.NEUTRAL, 1f, 0f)
+        fixedMood(context) != null -> EmotionClassifier.Result(fixedMood(context)!!, 1f, 0.8f)
+        else -> EmotionClassifier.classify(text, userText)
+    }
+
+    /** A mood the user fixed for every reply (manual override), or null: found from each reply's words. */
+    fun fixedMood(context: Context): EmotionClassifier.Emotion? =
+        prefs(context).getString("fixed_mood", null)?.let { n -> EmotionClassifier.Emotion.entries.firstOrNull { it.name == n } }
+    fun setFixedMood(context: Context, e: EmotionClassifier.Emotion?) =
+        prefs(context).edit().apply { if (e == null) remove("fixed_mood") else putString("fixed_mood", e.name) }.apply()
+
+    /** A soft breath sound before some longer sentences (Expressive mode only). On by default. */
+    fun breath(context: Context): Boolean = prefs(context).getBoolean("breath", true)
+    fun setBreath(context: Context, on: Boolean) = prefs(context).edit().putBoolean("breath", on).apply()
+
+    /** Live mode says a short "हम्म…" when the answer takes a moment. On by default. */
+    fun filler(context: Context): Boolean = prefs(context).getBoolean("filler", true)
+    fun setFiller(context: Context, on: Boolean) = prefs(context).edit().putBoolean("filler", on).apply()
+
+    /**
+     * Yamini's voice: "female" or "male". It picks the voices and the AI's Hindi grammar for itself
+     * (a woman says "कर सकती हूँ", a man "कर सकता हूँ"). Not set: the chosen Hindi voice's, else female.
+     */
+    fun gender(context: Context): String =
+        prefs(context).getString("gender", null) ?: voiceName(context, true)?.let { VoiceStyles.gender(it) } ?: "female"
+    fun male(context: Context): Boolean = gender(context) == "male"
+
+    /** Sets the voice's gender; a saved voice of the other gender is forgotten, so both languages match. */
+    fun setGender(context: Context, g: String) {
+        val e = prefs(context).edit().putString("gender", g)
+        for (key in listOf(HINDI, ENGLISH)) {
+            val other = prefs(context).getString(key, null)?.let { VoiceStyles.gender(it) }
+            if (other != null && other != g) e.remove(key)
+        }
+        e.apply()
+    }
+
+    /**
+     * What [apply] set on each speaker: speed and pitch, the voice for each language (a reply can
+     * switch between Hindi and English sentence by sentence), the Hinglish word list (a Hindi voice
+     * reads Hinglish in Devanagari, see HinglishReader), and the mood so far (feelings carry on
+     * from sentence to sentence instead of jumping).
+     */
+    private class Base(
+        val rate: Float, val pitch: Float, val feelings: Boolean, val mode: Expressions.Mode, val breath: Boolean, val fixed: EmotionClassifier.Emotion?,
+        val hindiHome: Boolean, val hindiVoice: Voice?, val englishVoice: Voice?,
+        val hindiLocale: Locale, val englishLocale: Locale, val words: Map<String, String>,
+    ) {
+        @Volatile var mood: EmotionClassifier.Result? = null
+        @Volatile var voiceNow: String? = null
+    }
+    private val bases = java.util.WeakHashMap<TextToSpeech, Base>()
+
+    /** The earcon name of the breath sound (res/raw/yamini_breath.wav, made by tools/voice/make-breath.py). */
+    private const val BREATH = "[yamini-breath]"
+
+    /**
+     * The text-to-speech engine for Hindi ([hindi]) or English speech: Yamini's offline voice
      * (this app's package, see voice/NeuralVoices) when its pack is downloaded and switched on,
-     * else null for the phone's default engine.
+     * else null for the phone's default engine (the default: it sounds best).
      */
     fun engine(context: Context, hindi: Boolean): String? =
         if (com.gravity.ide.voice.NeuralVoices.active(context, if (hindi) "hi" else "en") != null) context.packageName else null
@@ -65,7 +144,7 @@ object VoicePrefs {
         return tts
     }
 
-    /** True for a TextToSpeech made on Yamini's natural voice. */
+    /** True for a TextToSpeech made on Yamini's offline voice. */
     fun isNatural(tts: TextToSpeech): Boolean = synchronized(natural) { tts in natural }
 
     fun greet(context: Context): Boolean = prefs(context).getBoolean("greet", true)
@@ -87,72 +166,138 @@ object VoicePrefs {
 
     /** Hindi, or Hinglish (Hindi in Roman letters): read with the Hindi voice. */
     fun isHindi(context: Context, text: String): Boolean =
-        isHindi(text) || com.gravity.ide.core.HinglishReader.forVoice(context, text).let { it.hindiWords * 2 >= it.latinWords && it.wasHinglish }
+        isHindi(text) || HinglishReader.forVoice(context, text).let { it.hindiWords * 2 >= it.latinWords && it.wasHinglish }
 
-    /** Sets language, voice, speed and pitch on [tts]; [style] overrides the saved one (e.g. a preview). */
-    fun apply(context: Context, tts: TextToSpeech, hindi: Boolean, style: VoiceStyles.Style = style(context), voice: Voice? = null): Int {
+    /**
+     * Sets language, voices, speed and pitch on [tts]; [style] overrides the saved one (e.g. a
+     * preview), [voice] the voice for this language, [rate] the speed (e.g. video narration).
+     */
+    fun apply(
+        context: Context, tts: TextToSpeech, hindi: Boolean, style: VoiceStyles.Style = style(context), voice: Voice? = null,
+        rate: Float? = null,
+    ): Int {
         val locale = locale(context, hindi)
         val result = tts.setLanguage(locale)
-        // The natural voice has one voice per language (chosen in its own settings).
-        if (!isNatural(tts)) (voice ?: VoicePicker.choose(tts, locale, voiceName(context, hindi)))?.let { tts.setVoice(it) }
+        val g = gender(context)
+        val nat = isNatural(tts)
+        // The offline voice has one voice per language (chosen in its own settings).
+        val home = if (nat) null else voice ?: VoicePicker.choose(tts, locale, voiceName(context, hindi), g)
+        val other = if (nat) null else VoicePicker.choose(tts, locale(context, !hindi), voiceName(context, !hindi), g)
+        home?.let { tts.setVoice(it) }
         val base = Base(
-            VoiceStyles.rate(style, rate(context)), VoiceStyles.pitch(style, pitch(context)), natural(context),
-            if (hindi) com.gravity.ide.core.HinglishReader.words(context) else null,
+            rate ?: VoiceStyles.rate(style, rate(context)), VoiceStyles.pitch(style, pitch(context)), natural(context), mode(context),
+            breath(context), fixedMood(context), hindi, if (hindi) home else other, if (hindi) other else home, locale(context, true), locale(context, false),
+            com.gravity.ide.core.HinglishReader.words(context),
         )
+        base.voiceNow = home?.name ?: locale.toLanguageTag()
+        // Feelings carry on from the last turn (live mode sets the voice again for each turn).
+        base.mood = synchronized(bases) { bases[tts] }?.mood
         tts.setSpeechRate(base.rate)
         tts.setPitch(base.pitch)
+        runCatching { tts.addEarcon(BREATH, context.packageName, com.gravity.ide.R.raw.yamini_breath) }
         synchronized(bases) { bases[tts] = base }
         return result
     }
 
+    /** One piece of speech, ready for a TextToSpeech: its text, voice and delivery. */
+    data class Spoken(
+        val text: String, val hindi: Boolean, val voice: Voice?, val locale: Locale,
+        val rate: Float, val pitch: Float, val volume: Float, val pauseAfterMs: Int, val breathBefore: Boolean,
+    )
+
     /**
-     * Queues [text] in the style: sentence by sentence with the style's pause between them. The
-     * last piece gets [lastId] (for "finished" callbacks). [flush] clears what was playing first.
+     * What [tts] will say for [said]: whole sentences (never cut in the middle), in the reply's mood
+     * ([userText] is what the user said, which also sets the mood) and the mode, each sentence with
+     * the Hindi or English voice, Hinglish in Devanagari for the Hindi voice.
      */
-    fun speak(tts: TextToSpeech, said: String, style: VoiceStyles.Style, idPrefix: String, lastId: String, flush: Boolean) {
-        val base = synchronized(bases) { bases[tts] }
-        // A Hindi voice reads Hinglish in Devanagari (Roman letters would be read by English rules).
-        val text = base?.hinglish?.let { com.gravity.ide.core.HinglishReader.read(said, it).text } ?: said
-        if (base?.natural == true && text.isNotBlank()) {
-            speakLikeAPerson(tts, text, style, base, idPrefix, lastId, flush)
-            return
+    fun plan(
+        tts: TextToSpeech, said: String, style: VoiceStyles.Style, userText: String? = null, keepMood: Boolean = true,
+        mood: EmotionClassifier.Emotion? = null,
+    ): List<Spoken> {
+        val base = synchronized(bases) { bases[tts] } ?: return SpeechText.chunks(said, 3500).filter { it.isNotBlank() }.map {
+            Spoken(it, isHindi(it), null, locale(isHindi(it)), 1f, 1f, 1f, 0, false)
         }
-        val pieces = if (style.pauseMs > 0) VoiceStyles.sentences(text) else listOf(text)
-        val all = pieces.flatMap { com.gravity.ide.core.SpeechText.chunks(it, 3500) }.filter { it.isNotBlank() }
-        if (all.isEmpty()) {
-            tts.playSilentUtterance(10, if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, lastId)
-            return
+        // The mood: one asked for (a preview), the user's fixed one, or found in the words.
+        val forced = mood ?: base.fixed
+        val felt = when {
+            !base.feelings -> EmotionClassifier.Result(EmotionClassifier.Emotion.NEUTRAL, 1f, 0f)
+            forced != null -> EmotionClassifier.Result(forced, 1f, 0.8f)
+            else -> EmotionClassifier.continueFrom(base.mood, EmotionClassifier.classify(said, userText))
         }
-        all.forEachIndexed { i, piece ->
-            val mode = if (flush && i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-            tts.speak(piece, mode, null, if (i == all.lastIndex) lastId else "$idPrefix-$i")
-            if (style.pauseMs > 0 && i < all.lastIndex) tts.playSilentUtterance(style.pauseMs.toLong(), TextToSpeech.QUEUE_ADD, "$idPrefix-p$i")
-        }
+        if (keepMood && base.feelings && mood == null) base.mood = felt
+        val mode = if (base.feelings) base.mode else Expressions.Mode.NORMAL
+        val utterances = SpeechPlanner.plan(said, felt, mode, base.hindiHome) { HinglishReader.read(it, base.words).wasHinglish }
+        // A sentence goes to the other language's voice only if the phone has one (the offline
+        // voice switches by language); else the reply's own voice reads it.
+        val nat = isNatural(tts)
+        val hasHindi = nat || base.hindiVoice != null
+        val hasEnglish = nat || base.englishVoice != null
+        return utterances.flatMap { u0 ->
+            val u = when {
+                u0.hindi == base.hindiHome -> u0
+                u0.hindi && !hasHindi -> u0.copy(hindi = false)
+                !u0.hindi && !hasEnglish -> u0.copy(hindi = true)
+                else -> u0
+            }
+            val text = if (u.hindi) HinglishReader.read(u.text, base.words).text else u.text
+            // The style's own pause (e.g. storyteller) is the least pause between sentences.
+            val pause = if (u.pauseAfterMs > 0 || style.pauseMs > 0) maxOf(u.pauseAfterMs, style.pauseMs) else 0
+            val pieces = SpeechText.chunks(text, 3500).filter { it.isNotBlank() }
+            pieces.mapIndexed { i, piece ->
+                Spoken(
+                    piece, u.hindi, if (u.hindi) base.hindiVoice else base.englishVoice, if (u.hindi) base.hindiLocale else base.englishLocale,
+                    base.rate * u.rate, base.pitch * u.pitch, u.volume, if (i == pieces.lastIndex) pause else 0,
+                    u.breathBefore && i == 0 && base.breath && mode == Expressions.Mode.EXPRESSIVE,
+                )
+            }
+        }.let { list -> if (list.isEmpty()) list else list.dropLast(1) + list.last().copy(pauseAfterMs = 0) }
+    }
+
+    /** Puts [s]'s voice on [tts] if another one is on (a switch between Hindi and English). */
+    fun useVoice(tts: TextToSpeech, s: Spoken) {
+        val base = synchronized(bases) { bases[tts] } ?: return
+        val want = s.voice?.name ?: s.locale.toLanguageTag()
+        if (base.voiceNow == want) return
+        if (s.voice != null) tts.setVoice(s.voice) else tts.setLanguage(s.locale)
+        base.voiceNow = want
     }
 
     /**
-     * Speaks [text] phrase by phrase with its own speed, pitch, loudness and pause (HumanSpeech).
-     * Android takes the speed and pitch set when each phrase is queued, so they are set before
-     * each one and put back after.
+     * Queues [said] in the style and the reply's mood: whole sentences, Hindi and English each in
+     * its own voice, with pauses (and in Expressive mode a soft breath) between them. The last piece
+     * gets [lastId] (for "finished" callbacks). [flush] clears what was playing first.
+     * [keepMood] false: a filler such as "हम्म…" does not change the mood of the conversation.
      */
-    private fun speakLikeAPerson(
-        tts: TextToSpeech, text: String, style: VoiceStyles.Style, base: Base, idPrefix: String, lastId: String, flush: Boolean,
+    fun speak(
+        tts: TextToSpeech, said: String, style: VoiceStyles.Style, idPrefix: String, lastId: String, flush: Boolean,
+        userText: String? = null, keepMood: Boolean = true, mood: EmotionClassifier.Emotion? = null,
     ) {
-        val plan = com.gravity.ide.core.HumanSpeech.plan(text, sentencePauseMs = maxOf(style.pauseMs, 260))
-            .flatMap { p -> com.gravity.ide.core.SpeechText.chunks(p.text, 3500).map { p.copy(text = it) } }
-            .filter { it.text.isNotBlank() }
+        val plan = plan(tts, said, style, userText, keepMood, mood)
+        if (plan.isEmpty()) {
+            tts.playSilentUtterance(10, if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, lastId)
+            return
+        }
+        val base = synchronized(bases) { bases[tts] }
         try {
             plan.forEachIndexed { i, p ->
-                tts.setSpeechRate(base.rate * p.rate)
-                tts.setPitch(base.pitch * p.pitch)
-                val params = android.os.Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, p.volume) }
                 val mode = if (flush && i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-                tts.speak(p.text, mode, params, if (i == plan.lastIndex) lastId else "$idPrefix-$i")
+                if (p.breathBefore) {
+                    val b = android.os.Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.6f) }
+                    tts.playEarcon(BREATH, mode, b, "$idPrefix-b$i")
+                }
+                // Android reads speed, pitch and voice when a piece is queued: set before each one.
+                useVoice(tts, p)
+                tts.setSpeechRate(p.rate)
+                tts.setPitch(p.pitch)
+                val params = android.os.Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, p.volume) }
+                tts.speak(p.text, if (p.breathBefore) TextToSpeech.QUEUE_ADD else mode, params, if (i == plan.lastIndex) lastId else "$idPrefix-$i")
                 if (p.pauseAfterMs > 0 && i < plan.lastIndex) tts.playSilentUtterance(p.pauseAfterMs.toLong(), TextToSpeech.QUEUE_ADD, "$idPrefix-p$i")
             }
         } finally {
-            tts.setSpeechRate(base.rate)
-            tts.setPitch(base.pitch)
+            if (base != null) {
+                tts.setSpeechRate(base.rate)
+                tts.setPitch(base.pitch)
+            }
         }
     }
 

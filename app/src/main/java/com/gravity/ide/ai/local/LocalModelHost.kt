@@ -33,6 +33,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         const val KEY_CRASHED_MODEL = "crashed_model"
         /** "versionCode|reason": the i8mm engine crashed with this app version, so it is not used. */
         const val KEY_I8MM_OFF = "i8mm_off"
+        const val KEY_TUNED = "tuned_threads"
     }
 
     private val prefs by lazy { context.getSharedPreferences("local_model_host", Context.MODE_PRIVATE) }
@@ -245,12 +246,15 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
                 }
             }
             if (cfg != known) prefs.edit().putString("cfg_${model.id}", cfg.toString()).apply()
+            // The threads the speed test found fastest on this phone (not in safe mode).
+            val tuned = if (cfg.threads == 0) tunedThreads(t) else null
+            tuned?.let { (w, r) -> LlamaBridge.setThreads(handle, w, r) }
             restoreState(loaded)
             _state.value = State.Ready(loaded)
             prefs.edit().putString(KEY_LAST_MODEL, model.id).apply()
             events.log(
                 EventCategory.MODEL, "Loaded local model ${model.name}",
-                "context=$contextSize threads=$t mmap=${cfg.mmap} engine=${cfg.engine.label}" +
+                "context=$contextSize threads=$t${tuned?.let { (w, r) -> " (tuned: writing $w, reading $r)" } ?: ""} mmap=${cfg.mmap} engine=${cfg.engine.label}" +
                     if (!cfg.mmap || cfg.threads > 0) " (safe mode for this phone)" else "",
             )
             return@withLock loaded
@@ -280,6 +284,9 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         java.io.File(context.cacheDir, "kv").apply { mkdirs() },
         "${loaded.modelId}-${LlamaBridge.engineOf(loaded.handle).name}-${loaded.contextSize}-${com.gravity.ide.BuildConfig.VERSION_CODE}.bin",
     )
+
+    /** Puts back the saved chat prompt after something else used the context (e.g. the speed test). */
+    suspend fun restoreSaved(loaded: Loaded) = restoreState(loaded)
 
     private suspend fun restoreState(loaded: Loaded) {
         val f = stateFile(loaded)
@@ -345,6 +352,17 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
     /** Finds a downloaded, ready model by id or name (set by AppContainer). */
     @Volatile
     var lookup: (suspend (String) -> LocalModelEntity?)? = null
+
+    /**
+     * Threads for writing and for reading the prompt that the speed test (SpeedTuner) measured as
+     * fastest on this phone, when the app would otherwise use [threads] (the test's starting point).
+     * Null when there is no result for that, e.g. the phone is hot and uses fewer threads now.
+     */
+    fun tunedThreads(threads: Int): Pair<Int, Int>? =
+        prefs.getString(KEY_TUNED, null)?.split('|')?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 3 && it[0] == threads }?.let { it[1] to it[2] }
+
+    fun setTunedThreads(base: Int, write: Int, read: Int) = prefs.edit().putString(KEY_TUNED, "$base|$write|$read").apply()
+    fun clearTunedThreads() = prefs.edit().remove(KEY_TUNED).apply()
 
     /** Current settings (set by AppContainer), for context size and threads when loading. */
     @Volatile

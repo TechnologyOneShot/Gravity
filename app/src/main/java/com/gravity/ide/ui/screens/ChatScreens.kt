@@ -257,7 +257,9 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             File(root, "GRAVITY.md").takeIf { it.isFile }?.readText()?.take(6000)?.let { append("\nProject instructions:\n").append(it) }
         }
         // Phone models get the short prompt: they read it before their first word.
-        val system = com.gravity.ide.core.ChatPrompt.forChat(resolved.provider.isLocal, projectPart, extra)
+        val system = com.gravity.ide.core.ChatPrompt.forChat(
+            resolved.provider.isLocal, projectPart, extra, male = com.gravity.ide.files.VoicePrefs.male(c.appContext),
+        )
         // App cards and failed replies are not part of the conversation the model sees.
         val history = c.db.chats().messages(chatId).filter { it.error == null && it.content.isNotBlank() }
         // Counted in tokens (Hindi needs more), and the start moves only at fixed points, so a phone

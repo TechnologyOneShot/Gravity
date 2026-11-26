@@ -112,6 +112,13 @@ class AppContainer(context: Context) {
                     prefs.edit().putBoolean("auto_reasoning", true).apply()
                 }
             }
+            // Version 0.1.9x made the downloaded offline voice (Piper) the default, and users found
+            // the phone's own voice better. Once, it goes back to the phone voice; the offline
+            // voice stays downloaded and can be switched on again in Voice settings.
+            if (!prefs.getBoolean("phone_voice_default", false)) {
+                com.gravity.ide.voice.NeuralVoices.setEnabled(appContext, false)
+                prefs.edit().putBoolean("phone_voice_default", true).apply()
+            }
         }
     }
 }

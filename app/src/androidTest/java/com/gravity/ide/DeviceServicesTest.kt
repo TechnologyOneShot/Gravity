@@ -432,6 +432,37 @@ class DeviceServicesTest {
     }
 
     /**
+     * The speed test (Phone Models → Check the phone AI): threads for writing and for reading are
+     * really changed on the loaded model, every run is measured (tokens and time), and the result
+     * is kept for this phone and used at the next load.
+     */
+    @Test
+    fun t12dfa_speedTestMeasuresThreadCounts() {
+        Assume.assumeTrue("llama.cpp runtime is not bundled in this build", c.localHost.runtimeAvailable)
+        val model = runBlocking { c.db.models().all() }.firstOrNull { it.status == ModelStatus.READY.name && it.filePath.contains("0.5b-instruct", ignoreCase = true) }
+        Assume.assumeTrue("Needs the instruct model downloaded by t12d", model != null)
+        runBlocking { c.localHost.unload() }
+        val loaded = runBlocking { c.localHost.load(model!!, 2048, 2) }
+        assertTrue("The engine did not take the thread counts", com.gravity.ide.ai.local.LlamaBridge.setThreads(loaded.handle, 2, 2))
+        val cores = Runtime.getRuntime().availableProcessors()
+        try {
+            val r = runBlocking { com.gravity.ide.ai.local.SpeedTuner(c.localHost, c.providers.local).tune(loaded, 2, cores) { Ci.log("speed-test", it) } }
+            Ci.log("speed-test", "$cores cores; kept writing ${r.write}, reading ${r.read}")
+            assertTrue(r.runs.isNotEmpty())
+            assertTrue("A run read too little: ${r.runs}", r.runs.all { it.readTokens > 100 && it.readMs > 0 && it.wrote > 0 })
+            assertEquals(r.write to r.read, c.localHost.tunedThreads(2))
+            // Used at the next load.
+            runBlocking { c.localHost.unload() }
+            val again = runBlocking { c.localHost.load(model!!, 2048, 2) }
+            val reply = runBlocking { c.providers.local.complete(LlmRequest(again.name, listOf(LlmMessage(Role.USER, "What is 2 + 2? Reply with the number only.")), maxOutputTokens = 6, temperature = 0.1)) }
+            Ci.log("speed-test", "After the test: \"${reply.text.trim()}\"")
+            assertTrue("Wrong answer with the tuned threads: ${reply.text}", reply.text.contains("4"))
+        } finally {
+            c.localHost.clearTunedThreads()
+        }
+    }
+
+    /**
      * What a warm-up read is saved, so the next start of the model does not read the long system
      * prompt again (a 7B model reads it for 40 s or more): after unloading and loading the model,
      * the first question reuses the saved prompt, answers right, and starts much sooner.
@@ -1018,12 +1049,13 @@ class DeviceServicesTest {
     }
 
     /**
-     * Speaking like a person: Android must honour a speed set between phrases (that is how one
-     * word is drawn out and the next said quickly), and an audio file made that way has real
-     * pauses between its phrases. Needs a text-to-speech engine; none is reported, not faked.
+     * Feelings in the voice: Android must honour a speed set between sentences (a sad reply is
+     * slower than a happy one), and an audio file of a sad reply in Expressive mode is slower than
+     * the plain voice, with real pauses between whole sentences. Needs a text-to-speech engine;
+     * none is reported, not faked.
      */
     @Test
-    fun t19_voiceSpeaksLikeAPerson() {
+    fun t19_voiceSpeaksWithFeeling() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val ready = kotlinx.coroutines.CompletableDeferred<Int>()
         val tts = runBlocking(kotlinx.coroutines.Dispatchers.Main) { android.speech.tts.TextToSpeech(ctx.applicationContext) { ready.complete(it) } }
@@ -1054,30 +1086,39 @@ class DeviceServicesTest {
             runBlocking(kotlinx.coroutines.Dispatchers.Main) { tts.shutdown() }
         }
 
-        val text = "Arre, ye toh bahut achha hai! Main aapke liye ek gaana bana sakti hoon, aur phir hum use sun sakte hain. Kya aap taiyaar hain?"
-        val plan = com.gravity.ide.core.HumanSpeech.plan(text)
-        Ci.log("voice", "Plan: " + plan.joinToString(" | ") { "%s (speed %.2f, pitch %.2f, loud %.2f, pause %d ms)".format(it.text, it.rate, it.pitch, it.volume, it.pauseAfterMs) })
-        val was = com.gravity.ide.files.VoicePrefs.natural(ctx)
+        val text = "I am so sorry to hear that. Losing someone you love is very hard, and it is okay to feel sad. " +
+            "Take your time. I am right here with you."
+        val mood = com.gravity.ide.core.EmotionClassifier.classify(text, "My grandmother passed away today")
+        val plan = com.gravity.ide.core.SpeechPlanner.plan(text, mood, com.gravity.ide.core.Expressions.Mode.EXPRESSIVE, false)
+        Ci.log("voice", "Mood ${mood.emotion} (intensity %.2f). Plan: ".format(mood.intensity) +
+            plan.joinToString(" | ") { "%s (speed %.2f, pitch %.2f, loud %.2f, pause %d ms%s)".format(it.text, it.rate, it.pitch, it.volume, it.pauseAfterMs, if (it.breathBefore) ", breath" else "") })
+        val p = com.gravity.ide.files.VoicePrefs
+        val was = Triple(p.natural(ctx), p.mode(ctx), p.breath(ctx))
         try {
-            com.gravity.ide.files.VoicePrefs.setNatural(ctx, false)
+            p.setNatural(ctx, false)
             val flat = runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "flat", text, java.util.Locale.forLanguageTag("en-IN")) }
-            com.gravity.ide.files.VoicePrefs.setNatural(ctx, true)
-            val human = runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "human", text, java.util.Locale.forLanguageTag("en-IN")) }
+            p.setNatural(ctx, true); p.setMode(ctx, com.gravity.ide.core.Expressions.Mode.EXPRESSIVE); p.setBreath(ctx, true)
+            val felt = runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "felt", text, java.util.Locale.forLanguageTag("en-IN")) }
             val (fs, fr) = com.gravity.ide.core.WavJoin.pcmMono16(flat.readBytes())
-            val (hs, hr) = com.gravity.ide.core.WavJoin.pcmMono16(human.readBytes())
-            // The longest stretch of exact silence: the pauses the plan put between phrases.
+            val (hs, hr) = com.gravity.ide.core.WavJoin.pcmMono16(felt.readBytes())
+            // The longest stretch of exact silence: the pauses the plan put between sentences.
             fun longestSilenceMs(x: ShortArray, rate: Int): Int {
                 var best = 0; var run = 0
                 x.forEach { if (it.toInt() == 0) { run++; if (run > best) best = run } else run = 0 }
                 return best * 1000 / rate
             }
-            val planned = plan.dropLast(1).maxOf { it.pauseAfterMs }
-            Ci.log("voice", "Flat file %.2f s, like a person %.2f s; longest pause %d ms (planned up to %d ms)".format(fs.size.toDouble() / fr, hs.size.toDouble() / hr, longestSilenceMs(hs, hr), planned))
-            assertEquals("RIFF", human.readBytes().copyOfRange(0, 4).toString(Charsets.US_ASCII))
+            val planned = plan.dropLast(1).maxOfOrNull { it.pauseAfterMs } ?: 0
+            Ci.log("voice", "Plain voice %.2f s, sad in Expressive mode %.2f s; longest pause %d ms (planned up to %d ms)".format(fs.size.toDouble() / fr, hs.size.toDouble() / hr, longestSilenceMs(hs, hr), planned))
+            assertEquals("RIFF", felt.readBytes().copyOfRange(0, 4).toString(Charsets.US_ASCII))
+            assertTrue("A sad reply should be read as sad, not ${mood.emotion}", mood.emotion in setOf(
+                com.gravity.ide.core.EmotionClassifier.Emotion.SAD, com.gravity.ide.core.EmotionClassifier.Emotion.EMPATHETIC,
+                com.gravity.ide.core.EmotionClassifier.Emotion.APOLOGETIC,
+            ))
             assertTrue("The pauses are missing from the file", longestSilenceMs(hs, hr) >= planned - 20)
-            flat.delete(); human.delete()
+            assertTrue("The sad reply is not slower than the plain voice", hs.size.toDouble() / hr > fs.size.toDouble() / fr * 1.05)
+            flat.delete(); felt.delete()
         } finally {
-            com.gravity.ide.files.VoicePrefs.setNatural(ctx, was)
+            p.setNatural(ctx, was.first); p.setMode(ctx, was.second); p.setBreath(ctx, was.third)
         }
     }
 
@@ -1187,12 +1228,14 @@ class DeviceServicesTest {
         } finally {
             runBlocking(kotlinx.coroutines.Dispatchers.Main) { tts.shutdown() }
         }
-        // An audio file through the app's own path (speak like a person, natural voice).
+        // An audio file through the app's own path (feelings in the voice, offline voice).
         val wav = runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "natural", "Arre, ye toh bahut achha hai! Kya aap taiyaar hain?", java.util.Locale.forLanguageTag("hi-IN")) }
         val (samples, sr) = com.gravity.ide.core.WavJoin.pcmMono16(wav.readBytes())
         Ci.log("natural-voice", "Audio file: %.2f s at %d Hz".format(samples.size.toDouble() / sr, sr))
         assertTrue(samples.size.toDouble() / sr > 2.0)
         wav.delete()
+        // Back to the default: the phone's own voice.
+        nv.setEnabled(ctx, false)
     }
 
     /**

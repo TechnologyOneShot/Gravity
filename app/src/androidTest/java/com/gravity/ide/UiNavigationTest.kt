@@ -321,6 +321,15 @@ class UiNavigationTest {
         waitForTitle("Settings")
         compose.onNodeWithTag("settings-page-voice").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("voice-settings").fetchSemanticsNodes().isNotEmpty() }
+        // Yamini's voice: male (also its Hindi grammar), and the Expressive mode.
+        compose.onNode(androidx.compose.ui.test.hasScrollToNodeAction()).performScrollToNode(androidx.compose.ui.test.hasTestTag("yamini-gender-male"))
+        compose.onNodeWithTag("yamini-gender-male").performClick()
+        compose.onNode(androidx.compose.ui.test.hasScrollToNodeAction()).performScrollToNode(androidx.compose.ui.test.hasTestTag("voice-mode-EXPRESSIVE"))
+        compose.onNodeWithTag("voice-mode-EXPRESSIVE").performClick()
+        compose.onNode(androidx.compose.ui.test.hasScrollToNodeAction()).performScrollToNode(androidx.compose.ui.test.hasTestTag("voice-moods"))
+        compose.onNodeWithTag("voice-moods").performClick()
+        compose.waitForIdle()
+        Ci.screenshot("07_voice_feelings")
         compose.onNode(androidx.compose.ui.test.hasScrollToNodeAction()).performScrollToNode(androidx.compose.ui.test.hasTestTag("voice-style-romantic"))
         compose.onNodeWithTag("voice-style-romantic").performClick()
         Thread.sleep(2000)
@@ -330,8 +339,13 @@ class UiNavigationTest {
         val prefs = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
             .getSharedPreferences("live_voice", android.content.Context.MODE_PRIVATE)
         val saved = prefs.getString("style", null)
-        prefs.edit().remove("style").commit()
+        val gender = prefs.getString("gender", null)
+        val mode = prefs.getString("mode", null)
+        prefs.edit().remove("style").remove("gender").remove("mode").commit()
         org.junit.Assert.assertEquals("romantic", saved)
+        org.junit.Assert.assertEquals("male", gender)
+        org.junit.Assert.assertEquals("EXPRESSIVE", mode)
+        org.junit.Assert.assertTrue(com.gravity.ide.core.ChatPrompt.phone(male = true).contains("sakta"))
     }
 
     /** The first picture request asks where pictures come from; the answer is remembered and the message is sent. */
