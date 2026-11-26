@@ -7,10 +7,11 @@ system = open(sys.argv[1], encoding="utf-8").read()
 questions = open(sys.argv[2], encoding="utf-8").read().split("\u0000")
 url, penalty = sys.argv[3], float(sys.argv[4])
 temperature = float(sys.argv[5]) if len(sys.argv) > 5 else 0.4
+seed = int(sys.argv[6]) if len(sys.argv) > 6 else 7
 for i, q in enumerate(questions):
     body = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": q}], "max_tokens": 2500,
             "temperature": temperature, "top_k": 40, "top_p": 0.95, "min_p": 0.05, "repeat_penalty": penalty, "repeat_last_n": 64,
-            "seed": 7, "samplers": ["penalties", "top_k", "top_p", "min_p", "temperature"], "cache_prompt": False}
+            "seed": seed, "samplers": ["penalties", "top_k", "top_p", "min_p", "temperature"], "cache_prompt": False}
     req = urllib.request.Request(url + "/v1/chat/completions", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     t = time.time()
     with urllib.request.urlopen(req, timeout=1800) as r:

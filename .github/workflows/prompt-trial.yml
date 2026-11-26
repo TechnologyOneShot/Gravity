@@ -12,19 +12,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: v1np_plan_nopenalty
-            penalty: "1.0"
+          - variant: v0_current
+            penalty: "1.05"
             temp: "0.4"
+            seed: "11"
+          - variant: v0_current
+            penalty: "1.05"
+            temp: "0.4"
+            seed: "23"
           - variant: v3_features
             penalty: "1.05"
             temp: "0.4"
-          - variant: v3np_features_nopenalty
-            penalty: "1.0"
+            seed: "11"
+          - variant: v3_features
+            penalty: "1.05"
             temp: "0.4"
-          - variant: v3np02_features_nopenalty_temp02
-            penalty: "1.0"
-            temp: "0.2"
-    name: draw (${{ matrix.variant }})
+            seed: "23"
+    name: draw (${{ matrix.variant }} seed ${{ matrix.seed }})
     steps:
       - uses: actions/checkout@v4
       - name: Build llama-server (llama.cpp b6000)
@@ -38,4 +42,4 @@ jobs:
         run: |
           /tmp/llama-build/bin/llama-server -m /tmp/model.gguf -c 8192 -np 1 -fa -t "$(nproc)" --port 8089 > /tmp/server.log 2>&1 &
           for i in $(seq 1 300); do curl -sf http://127.0.0.1:8089/health > /dev/null && break; sleep 1; done
-          python3 .github/scripts/drawing-trial.py dtrial/variants/${{ matrix.variant }}.txt dtrial/questions.txt http://127.0.0.1:8089 ${{ matrix.penalty }} ${{ matrix.temp }}
+          python3 .github/scripts/drawing-trial.py dtrial/variants/${{ matrix.variant }}.txt dtrial/questions.txt http://127.0.0.1:8089 ${{ matrix.penalty }} ${{ matrix.temp }} ${{ matrix.seed }}
