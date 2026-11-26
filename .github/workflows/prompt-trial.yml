@@ -1,42 +1,37 @@
-name: prompt-trial
-# Which short chat prompt keeps phone models answering in the user's language? Asks 11 cases under
-# each prompt in trial/variants with four phone-sized models (the app's sampler), scores script and content.
+name: drawing-trial
+# Which picture instruction makes a phone model (Gemma 3 4B) draw recognisable SVG pictures?
+# Each version draws five subjects with the app's prompt and sampler; the replies are in the log.
 on:
   push:
     branches: [prompt-trial]
 jobs:
-  trial:
+  draw:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
-          - model: Gemma-3-4B-it-Q4_K_M
-            url: https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf
-          - model: Llama-3.2-3B-Instruct-Q4_K_M
-            url: https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf
-          - model: Qwen2.5-7B-Instruct-Q4_K_M
-            url: https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf
-          - model: Qwen2.5-Coder-7B-Instruct-Q4_K_M
-            url: https://huggingface.co/bartowski/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
-    name: trial (${{ matrix.model }})
+          - variant: v0_current
+            penalty: "1.05"
+          - variant: v1_plan
+            penalty: "1.05"
+          - variant: v2_plan_example
+            penalty: "1.05"
+          - variant: v2np_plan_example_nopenalty
+            penalty: "1.0"
+    name: draw (${{ matrix.variant }})
     steps:
       - uses: actions/checkout@v4
       - name: Build llama-server (llama.cpp b6000)
         run: |
           git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
-          cmake -S /tmp/llama.cpp -B /tmp/llama-build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF
-          cmake --build /tmp/llama-build --target llama-server -j"$(nproc)"
-      - name: Download ${{ matrix.model }}
-        run: curl -fL --retry 3 -o /tmp/model.gguf "${{ matrix.url }}"
-      - name: Ask every case under every prompt
+          cmake -S /tmp/llama.cpp -B /tmp/llama-build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF > /dev/null
+          cmake --build /tmp/llama-build --target llama-server -j"$(nproc)" > /dev/null
+      - name: Download Gemma 3 4B
+        run: curl -fL --retry 3 -o /tmp/model.gguf https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf
+      - name: Draw five pictures
         run: |
-          /tmp/llama-build/bin/llama-server -m /tmp/model.gguf -c 8192 -np 1 -t "$(nproc)" --port 8089 > /tmp/server.log 2>&1 &
+          /tmp/llama-build/bin/llama-server -m /tmp/model.gguf -c 8192 -np 1 -fa -t "$(nproc)" --port 8089 > /tmp/server.log 2>&1 &
           for i in $(seq 1 300); do curl -sf http://127.0.0.1:8089/health > /dev/null && break; sleep 1; done
-          python3 .github/scripts/prompt-trial.py trial/variants trial/cases.json http://127.0.0.1:8089 trial-answers "${{ matrix.model }}"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: trial-${{ matrix.model }}
-          path: trial-answers/
+          python3 .github/scripts/drawing-trial.py dtrial/variants/${{ matrix.variant }}.txt dtrial/questions.txt http://127.0.0.1:8089 ${{ matrix.penalty }}
