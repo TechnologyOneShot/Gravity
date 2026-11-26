@@ -60,7 +60,7 @@ class OfflineReadinessChecker(
         )
         checks += Check(
             "Local inference runtime", localHost.runtimeAvailable, localHost.runtimeError ?: "llama.cpp bundled",
-            if (!localHost.runtimeAvailable) "Install gravity-debug.apk from the latest Gravity release (it includes the on-device AI engine)" else null,
+            if (!localHost.runtimeAvailable) "Install yamini-debug.apk from the latest Yamini release (it includes the on-device AI engine)" else null,
         )
         val loaded = localHost.loadedOrNull()
         val default = installed.firstOrNull { it.isDefault } ?: installed.firstOrNull()
@@ -82,7 +82,7 @@ class OfflineReadinessChecker(
         )
 
         val java = onPath("java")
-        checks += Check("JDK in Gravity's shell", java != null, java ?: "not found", if (java == null) "Android builds need a toolchain: use the Termux companion (Build Center)" else null)
+        checks += Check("JDK in Yamini's shell", java != null, java ?: "not found", if (java == null) "Android builds need a toolchain: use the Termux companion (Build Center)" else null)
         termuxToolchain?.let { t ->
             checks += Check("Termux JDK", t["java"] != null, t["java"] ?: "not found")
             checks += Check("Termux Gradle", t["gradle"] != null, t["gradle"] ?: "not found")

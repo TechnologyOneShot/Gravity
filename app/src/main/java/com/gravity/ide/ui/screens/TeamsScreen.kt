@@ -77,7 +77,7 @@ fun TeamsScreen() {
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
             )
         }
-        if (teams.isEmpty()) item { EmptyState("No teams", "Create e.g. “Gravity Ultimate Coding Team”: Gemini as Architect, a local Qwen as Developer, Gemma as Reviewer.") }
+        if (teams.isEmpty()) item { EmptyState("No teams", "Create e.g. “Yamini Ultimate Coding Team”: Gemini as Architect, a local Qwen as Developer, Gemma as Reviewer.") }
         items(teams, key = { it.id }) { t ->
             val members = TeamCodec.decode(t.members)
             Panel {
@@ -111,7 +111,7 @@ private fun describe(m: TeamMember, providers: List<ProviderEntity>, models: Lis
 
 @Composable
 private fun TeamDialog(existing: TeamEntity?, providers: List<ProviderEntity>, models: List<LocalModelEntity>, onDismiss: () -> Unit, onSave: (TeamEntity) -> Unit) {
-    var name by remember { mutableStateOf(existing?.name ?: "Gravity Ultimate Coding Team") }
+    var name by remember { mutableStateOf(existing?.name ?: "Yamini Ultimate Coding Team") }
     var members by remember {
         mutableStateOf(
             existing?.let { TeamCodec.decode(it.members) } ?: listOf(

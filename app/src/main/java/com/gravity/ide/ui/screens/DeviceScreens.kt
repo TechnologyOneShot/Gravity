@@ -133,7 +133,7 @@ private fun DeviceTab(apkPath: String?, go: (String) -> Unit) {
                     KeyValue("Battery", if (info.batteryPercent >= 0) "${info.batteryPercent}%${if (info.charging) " · charging" else ""}" else "unknown")
                     KeyValue("Thermal", info.thermalStatus)
                     KeyValue("OpenGL ES", info.glEsVersion)
-                    KeyValue("Connection", "Same device (Gravity runs on it) — no ADB required for install/launch")
+                    KeyValue("Connection", "Same device (Yamini runs on it) — no ADB required for install/launch")
                 }
             }
         }
@@ -158,7 +158,7 @@ private fun DeviceTab(apkPath: String?, go: (String) -> Unit) {
                         Button(enabled = apk != null && apkInfo != null && !installing, onClick = {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
                                 context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
-                                toast(context, "Allow Gravity to install apps, then tap Install again")
+                                toast(context, "Allow Yamini to install apps, then tap Install again")
                                 return@Button
                             }
                             installing = true
@@ -188,7 +188,7 @@ private fun DeviceTab(apkPath: String?, go: (String) -> Unit) {
         item {
             MessageBanner(
                 "Force-stop, instrumentation tests (am instrument) and input injection need adb-level privileges that Android does not give to apps. " +
-                    "Gravity detects Shizuku/Wireless Debugging (Build Center → feasibility) but this build does not bridge to them yet; uninstall/launch/app-info use the system UI.",
+                    "Yamini detects Shizuku/Wireless Debugging (Build Center → feasibility) but this build does not bridge to them yet; uninstall/launch/app-info use the system UI.",
             )
         }
     }
@@ -247,7 +247,7 @@ private fun LogcatTab() {
     val shown = lines.filter { order.indexOf(it.level).coerceAtLeast(0) >= order.indexOf(level) }
     val crashes = remember(lines) { c.logcat.findCrashes(lines) }
     Column {
-        if (!readLogs) MessageBanner("Showing Gravity's own log only. To read other apps' logs, grant once from a computer: adb shell pm grant ${c.appContext.packageName} android.permission.READ_LOGS")
+        if (!readLogs) MessageBanner("Showing Yamini's own log only. To read other apps' logs, grant once from a computer: adb shell pm grant ${c.appContext.packageName} android.permission.READ_LOGS")
         Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedTextField(filter, { filter = it }, placeholder = { Text("Filter (tag, package, text)") }, singleLine = true, modifier = Modifier.weight(1f))
             TextButton(onClick = { load() }) { Text("Refresh") }

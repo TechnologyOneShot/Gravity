@@ -37,7 +37,7 @@ object OnlineImages {
             lastCall = System.currentTimeMillis()
             var retryAfter = 0L
             val (code, type, bytes) = withContext(Dispatchers.IO) {
-                com.gravity.ide.ai.Http.client(150).newCall(Request.Builder().url(url).header("User-Agent", "Gravity-Android").build()).execute().use { r ->
+                com.gravity.ide.ai.Http.client(150).newCall(Request.Builder().url(url).header("User-Agent", "Yamini-Android").build()).execute().use { r ->
                     retryAfter = r.header("Retry-After")?.trim()?.toLongOrNull() ?: 0L
                     Triple(r.code, r.header("Content-Type").orEmpty(), r.body?.bytes() ?: ByteArray(0))
                 }

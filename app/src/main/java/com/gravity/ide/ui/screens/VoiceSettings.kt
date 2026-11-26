@@ -82,7 +82,7 @@ internal fun VoiceSettingsPanel() {
                 color = GravityColors.Red, style = MaterialTheme.typography.bodySmall,
             )
         }
-        VoiceCard("Speaking style", "How Gravity talks in live mode and when it reads replies: its words and mood, and the voice's speed, pitch and pauses.") {
+        VoiceCard("Speaking style", "How Yamini talks in live mode and when it reads replies: its words and mood, and the voice's speed, pitch and pauses.") {
             VoiceStyles.all.forEachIndexed { i, st ->
                 if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(
@@ -100,7 +100,7 @@ internal fun VoiceSettingsPanel() {
             }
         }
 
-        VoiceCard("Live mode", "How Gravity talks to you when live mode opens and during the conversation.") {
+        VoiceCard("Live mode", "How Yamini talks to you when live mode opens and during the conversation.") {
             androidx.compose.material3.OutlinedTextField(
                 value = address, onValueChange = { address = it.take(40); VoicePrefs.setAddress(context, address) },
                 label = { Text("Call me…") }, placeholder = { Text("Sir, Boss, your name… (empty = the style decides)") },

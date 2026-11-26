@@ -43,7 +43,7 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
 
         try {
             var existing = if (part.exists()) part.length() else 0L
-            val request = Request.Builder().url(url).header("User-Agent", "Gravity/0.1").apply {
+            val request = Request.Builder().url(url).header("User-Agent", "Yamini/0.1").apply {
                 if (existing > 0) header("Range", "bytes=$existing-")
                 container.secrets.get(com.gravity.ide.security.SecretStore.HF_TOKEN)?.takeIf { it.isNotBlank() && url.contains("huggingface.co") }
                     ?.let { header("Authorization", "Bearer $it") }

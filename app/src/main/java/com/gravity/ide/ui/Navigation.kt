@@ -143,15 +143,15 @@ val devItems = listOf(
     NavItem("Export Center", Routes.EXPORT, Icons.Filled.Upload, "Developer tools"),
     NavItem("Backup and Recovery", Routes.BACKUP, Icons.Filled.Backup, "Developer tools"),
     NavItem("Help and Diagnostics", Routes.HELP, Icons.Filled.Help, "Developer tools"),
-    NavItem("About Gravity", Routes.ABOUT, Icons.Filled.Info, "Developer tools"),
+    NavItem("About Yamini", Routes.ABOUT, Icons.Filled.Info, "Developer tools"),
 )
 
 val drawerItems = mainItems + devItems
 
 fun titleFor(route: String?): String {
-    val base = route?.substringBefore('?')?.substringBefore('/') ?: return "Gravity"
+    val base = route?.substringBefore('?')?.substringBefore('/') ?: return "Yamini"
     return when (base) {
-        "home" -> "Gravity"
+        "home" -> "Yamini"
         "apps" -> "My Apps"
         "app" -> "App"
         "dashboard" -> "Dashboard"
@@ -182,8 +182,8 @@ fun titleFor(route: String?): String {
         "backup" -> "Backup & Recovery"
         "settings" -> "Settings"
         "help" -> "Help & Diagnostics"
-        "about" -> "About Gravity"
+        "about" -> "About Yamini"
         "offline" -> "Offline Readiness"
-        else -> "Gravity"
+        else -> "Yamini"
     }
 }

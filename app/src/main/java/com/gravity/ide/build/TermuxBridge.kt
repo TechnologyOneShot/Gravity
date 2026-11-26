@@ -61,7 +61,7 @@ class TermuxBridge(private val context: Context, private val events: EventLog) {
     suspend fun run(script: String, timeoutMs: Long, workDir: String = HOME): Result {
         val st = status()
         if (!st.installed) throw IllegalStateException("Termux is not installed")
-        if (!st.permissionGranted) throw IllegalStateException("Grant Gravity the \"Run commands in Termux environment\" permission (Build Center → Termux)")
+        if (!st.permissionGranted) throw IllegalStateException("Grant Yamini the \"Run commands in Termux environment\" permission (Build Center → Termux)")
         val id = nextId.incrementAndGet()
         val deferred = CompletableDeferred<Result>()
         pending[id] = deferred

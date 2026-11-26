@@ -76,10 +76,10 @@ object MakeFiles {
      */
     fun instruction(kind: Kind, onlinePictures: Boolean = false): String = when {
         onlinePictures && kind == Kind.IMAGE ->
-            "The user wants a picture. Gravity makes it with an image AI from your description, so do not draw it yourself and write no code. " +
+            "The user wants a picture. Yamini makes it with an image AI from your description, so do not draw it yourself and write no code. " +
                 "Write one line \"Picture: <description>\" and then one short friendly sentence for the user.\n" + PICTURE_DESCRIPTION
         onlinePictures && kind == Kind.VIDEO ->
-            "The user wants a short video. Gravity makes it on the phone as an MP4: one AI picture per scene, your narration read aloud by the " +
+            "The user wants a short video. Yamini makes it on the phone as an MP4: one AI picture per scene, your narration read aloud by the " +
                 "phone's voice. Write 3 to 6 scenes. For each scene write a line \"Scene N: <one or two narration sentences in the user's " +
                 "language>\" and right after it a line \"Picture: <a vivid, detailed description in English of that scene's picture for an image " +
                 "AI, portrait format>\". Keep the same characters and style in every scene. No other text, no code.\n" + PICTURE_DESCRIPTION
@@ -88,14 +88,14 @@ object MakeFiles {
 
     private fun instruction(kind: Kind): String = when (kind) {
         Kind.PDF -> "The user wants a PDF. Write the complete content for it (start with a # title line; use ## headings, " +
-            "- bullet points and short paragraphs). Gravity saves your reply as a PDF file, so do not say you cannot make files."
+            "- bullet points and short paragraphs). Yamini saves your reply as a PDF file, so do not say you cannot make files."
         Kind.ZIP -> "The user wants a ZIP file. Put every file in its own fenced code block, and write its file name on the line " +
-            "just before the block as: File: name.ext. Gravity packs these files into a ZIP, so do not say you cannot make files."
+            "just before the block as: File: name.ext. Yamini packs these files into a ZIP, so do not say you cannot make files."
         // Tested on Gemma 3 4B (five subjects, rendered and compared): asking first for what makes the
         // subject different and for each part's numbers, plus a simple layout, gave recognisable
         // pictures where "one detailed SVG" gave shapeless ones. The examples are deliberately
         // other subjects than the test's (a worked example drawing was copied instead).
-        Kind.IMAGE -> "The user wants a picture. Draw it yourself as SVG code: Gravity turns it into a PNG, so never say you cannot make images.\n" +
+        Kind.IMAGE -> "The user wants a picture. Draw it yourself as SVG code: Yamini turns it into a PNG, so never say you cannot make images.\n" +
             "Write ONE ```svg code block with one complete SVG: <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 400\">.\n" +
             "Start inside it with a comment that plans the picture:\n" +
             "1. The features that make this subject different from similar things (for example a giraffe: yellow with brown patches, a very long " +
@@ -108,12 +108,12 @@ object MakeFiles {
             "10 to 25, stroke-linecap round) for tails, trunks, arms and branches.\n" +
             "Then draw the parts from back to front: background, body, legs and tail, head, ears, face details last.\n" +
             "After the code block write one short sentence about the picture."
-        Kind.VIDEO -> "The user wants a short video. Gravity makes it on the phone as an MP4: one picture per scene, your narration read aloud by the " +
+        Kind.VIDEO -> "The user wants a short video. Yamini makes it on the phone as an MP4: one picture per scene, your narration read aloud by the " +
             "phone's voice. Write 3 to 6 scenes. For each scene write one line \"Scene N: <one or two narration sentences in the user's language>\" " +
             "and right after it ONE complete, colourful SVG drawing of that scene in a ```svg code block (viewBox=\"0 0 720 1280\", portrait, only " +
             "shapes, gradients and text; no external images or fonts). No other text. Do not say you cannot make videos."
         Kind.AUDIO -> "The user wants an audio file. Reply with exactly the words to be spoken (no Markdown, no lists, no emojis). " +
-            "Gravity reads your reply aloud with the phone's voice and saves it as an audio file, so do not say you cannot make audio."
+            "Yamini reads your reply aloud with the phone's voice and saves it as an audio file, so do not say you cannot make audio."
     }
 
     private val fence = Regex("```([A-Za-z0-9_+#.-]*)[^\\n]*\\n([\\s\\S]*?)```")

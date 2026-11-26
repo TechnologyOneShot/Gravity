@@ -201,7 +201,7 @@ fun TerminalScreen(cwd: String?) {
             title = { Text("Android shell") },
             text = {
                 Text(
-                    "This is the device's /system/bin/sh (toybox/mksh) running inside Gravity's app sandbox, not Windows CMD or PowerShell. " +
+                    "This is the device's /system/bin/sh (toybox/mksh) running inside Yamini's app sandbox, not Windows CMD or PowerShell. " +
                         "Commands run with the app's permissions: no root, no adb privileges, and Android 10+ blocks executing binaries written to app storage. " +
                         "Exit codes and output are real. Stop restarts the shell (Android provides no TTY to send Ctrl-C).",
                 )

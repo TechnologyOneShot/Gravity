@@ -85,7 +85,7 @@ class AgentTools(
                 ),
                 ToolSpec("create_directory", "Create a folder (and parents).", obj("path" to str("Relative folder path"), required = listOf("path"))),
                 ToolSpec("move_path", "Move or rename a file or folder.", obj("from" to str("Existing relative path"), "to" to str("New relative path"), required = listOf("from", "to"))),
-                ToolSpec("delete_path", "Delete a file or folder (moved to Gravity's trash; requires user approval).", obj("path" to str("Relative path"), required = listOf("path"))),
+                ToolSpec("delete_path", "Delete a file or folder (moved to Yamini's trash; requires user approval).", obj("path" to str("Relative path"), required = listOf("path"))),
                 ToolSpec(
                     "run_command", "Run a shell command in the project root on the Android device (/system/bin/sh). Returns the real exit code and output.",
                     obj("command" to str("Shell command"), "timeout_sec" to int("Timeout in seconds (default 120, max 1800)"), required = listOf("command"))
@@ -94,7 +94,7 @@ class AgentTools(
         }
         if (!readOnly && builds != null) {
             all += ToolSpec(
-                "build_project", "Build the project with its configured backend (Gravity shell, Termux companion or static web). Returns the real status, exit code, error and log tail.",
+                "build_project", "Build the project with its configured backend (Yamini shell, Termux companion or static web). Returns the real status, exit code, error and log tail.",
                 obj("clean" to bool("Clean build (default false)")),
             )
         }

@@ -10,9 +10,9 @@
         android:strokeWidth="5"
         android:strokeColor="#FF22D3EE"
         android:fillColor="#00000000" />
-    <!-- G stroke -->
+    <!-- Y stroke (Yamini) -->
     <path
-        android:pathData="M64,46 L54,46 A8,8 0,1 0,62 56 L62,54 L55,54"
+        android:pathData="M45,43 L54,55 L63,43 M54,55 L54,66"
         android:strokeWidth="5"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"

@@ -40,7 +40,7 @@ class AppContainer(context: Context) {
     val crashReports = com.gravity.ide.CrashReports(appContext).also { it.install(); runCatching { it.check() } }
 
     val appScope = CoroutineScope(
-        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e -> android.util.Log.e("Gravity", "Uncaught in appScope", e) }
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e -> android.util.Log.e("Yamini", "Uncaught in appScope", e) }
     )
 
     val db: GravityDatabase = GravityDatabase.create(appContext)

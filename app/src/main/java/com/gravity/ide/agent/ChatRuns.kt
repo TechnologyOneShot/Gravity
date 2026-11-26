@@ -52,7 +52,7 @@ class ChatRuns(private val context: Context) {
         )
         val n = NotificationCompat.Builder(context, TaskForegroundService.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
-            .setContentTitle(title.ifBlank { "Gravity replied" })
+            .setContentTitle(title.ifBlank { "Yamini replied" })
             .setContentText(preview.take(120))
             .setAutoCancel(true)
             .setContentIntent(open)

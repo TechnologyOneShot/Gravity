@@ -1,8 +1,10 @@
-# GRAVITY
+# YAMINI
 
-**Gravity** is an autonomous AI development environment for Android, written in Kotlin and Jetpack Compose.
+*(Formerly Gravity. The package name `com.gravity.ide` and this repository keep the old name, so new builds install over earlier ones.)*
 
-**Start here: App Builder.** The home screen asks "What do you want to build?". Type something like *"music player bana do"* and Gravity creates a project, has the AI write a complete mobile web app, and runs it on the same screen. Ask for changes in plain words ("add a shuffle button"), undo the last change, and tap **Install on phone** to get a real APK, packaged and signed on the phone itself (no PC, Java or Termux). Apps are HTML/CSS/JavaScript running in an Android WebView; native Kotlin apps still go through the Build Center and Termux. Gravity has no subscription and no limits of its own; cloud AI providers keep their own quotas (Gemini's free tier has daily limits).
+**Yamini** is an autonomous AI development environment for Android, written in Kotlin and Jetpack Compose.
+
+**Start here: App Builder.** The home screen asks "What do you want to build?". Type something like *"music player bana do"* and Yamini creates a project, has the AI write a complete mobile web app, and runs it on the same screen. Ask for changes in plain words ("add a shuffle button"), undo the last change, and tap **Install on phone** to get a real APK, packaged and signed on the phone itself (no PC, Java or Termux). Apps are HTML/CSS/JavaScript running in an Android WebView; native Kotlin apps still go through the Build Center and Termux. Yamini has no subscription and no limits of its own; cloud AI providers keep their own quotas (Gemini's free tier has daily limits).
 
 Under the hood it combines a project workspace, a code editor, a real device shell, local (llama.cpp) and cloud (Gemini / OpenAI-compatible) models, a tool-using coding agent, multi-agent teams, builds, same-device install and testing, screenshots, backups and exports.
 
@@ -39,7 +41,7 @@ Unit tests: `./gradlew testDebugUnitTest`. These are real tests of the core logi
 | Browser preview (WebViewAssetLoader-served project previews, console capture) | Implemented |
 | Activity log, notifications, export center, backup/restore (optional encryption), trash, version restore, self-test, Offline Readiness Checker | Implemented |
 | Settings (searchable, 30 categories) | Implemented |
-| Git, plugin runtime, Shizuku/Wireless-Debugging bridge, Gradle inside Gravity's own sandbox | **Not in this build.** Shown in-app with the reason. See [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md). |
+| Git, plugin runtime, Shizuku/Wireless-Debugging bridge, Gradle inside Yamini's own sandbox | **Not in this build.** Shown in-app with the reason. See [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md). |
 
 ## Documentation
 

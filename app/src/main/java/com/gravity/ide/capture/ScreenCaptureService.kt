@@ -62,7 +62,7 @@ class ScreenCaptureService : Service() {
         TaskForegroundService.ensureChannel(this)
         val notification = NotificationCompat.Builder(this, TaskForegroundService.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
-            .setContentTitle("Gravity screen capture active")
+            .setContentTitle("Yamini screen capture active")
             .setContentText("Used for app testing screenshots. Stop it from the Testing Center.")
             .setOngoing(true)
             .build()

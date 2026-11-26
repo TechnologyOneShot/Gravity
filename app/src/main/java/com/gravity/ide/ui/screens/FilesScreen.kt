@@ -396,7 +396,7 @@ fun FilesScreen(projectId: String?, go: (String) -> Unit) {
     }
     renaming?.let { f -> TextInputDialog("Rename", "New name", f.name, "Rename", onConfirm = { vm.rename(f, it) }, onDismiss = { renaming = null }) }
     deleting?.let { files ->
-        ConfirmDialog("Delete ${files.size} item(s)?", "Items are moved to Gravity's trash and can be restored.", "Delete", destructive = true, onConfirm = { vm.delete(files) }, onDismiss = { deleting = null })
+        ConfirmDialog("Delete ${files.size} item(s)?", "Items are moved to Yamini's trash and can be restored.", "Delete", destructive = true, onConfirm = { vm.delete(files) }, onDismiss = { deleting = null })
     }
     info?.let { n ->
         AlertDialog(

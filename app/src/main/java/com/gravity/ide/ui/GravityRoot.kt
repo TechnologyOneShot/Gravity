@@ -274,7 +274,7 @@ private fun GravitySidebar(route: String?, go: (String) -> Unit) {
                     Icon(Icons.Filled.AutoAwesome, null, tint = GravityColors.OnAccent, modifier = Modifier.size(17.dp))
                 }
                 Spacer(Modifier.width(10.dp))
-                Text("Gravity", fontFamily = DisplayFamily, fontSize = 24.sp)
+                Text("Yamini", fontFamily = DisplayFamily, fontSize = 24.sp)
             }
             Surface(
                 onClick = { go(Routes.NEW_CHAT) }, shape = RoundedCornerShape(50), color = GravityColors.Accent,

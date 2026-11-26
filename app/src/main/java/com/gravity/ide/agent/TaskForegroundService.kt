@@ -47,7 +47,7 @@ class TaskForegroundService : Service() {
             }
             true
         } catch (e: Exception) {
-            Log.w("Gravity", "Task service could not enter the foreground: ${e.message}")
+            Log.w("Yamini", "Task service could not enter the foreground: ${e.message}")
             false
         }
         startedForeground = shown
@@ -57,7 +57,7 @@ class TaskForegroundService : Service() {
 
     /** Android 15+: data-sync foreground time is capped; stop cleanly instead of crashing. */
     override fun onTimeout(startId: Int, fgsType: Int) {
-        Log.w("Gravity", "Task service reached Android's foreground time limit; tasks keep running in the background")
+        Log.w("Yamini", "Task service reached Android's foreground time limit; tasks keep running in the background")
         stopNow()
     }
 
@@ -98,7 +98,7 @@ class TaskForegroundService : Service() {
         private fun runningText(count: Int) = listOfNotNull(
             desiredCount.takeIf { it > 0 }?.let { "$it agent task${if (it == 1) "" else "s"} running" },
             chatCount.takeIf { it > 0 }?.let { if (it == 1) "Writing a reply…" else "Writing $it replies…" },
-        ).joinToString(" · ").ifEmpty { "Gravity" }
+        ).joinToString(" · ").ifEmpty { "Yamini" }
 
         fun ensureChannel(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -115,7 +115,7 @@ class TaskForegroundService : Service() {
             )
             return NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Gravity")
+                .setContentTitle("Yamini")
                 .setContentText(text)
                 .setOngoing(true)
                 .setContentIntent(open)
@@ -150,7 +150,7 @@ class TaskForegroundService : Service() {
             } catch (e: Exception) {
                 // Android 12+ forbids starting foreground services from the background; the task
                 // still runs (state is persisted) but may be killed if the system needs memory.
-                Log.w("Gravity", "Could not start task service: ${e.message}")
+                Log.w("Yamini", "Could not start task service: ${e.message}")
             }
         }
     }

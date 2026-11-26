@@ -104,8 +104,8 @@ private fun RuntimeBanner() {
         val context = androidx.compose.ui.platform.LocalContext.current
         Column {
             MessageBanner(
-                "This copy of Gravity has no on-device AI engine, so models can be downloaded and checked but not loaded. " +
-                    "Install gravity-debug.apk from the latest release (it includes the engine), then load the model here.",
+                "This copy of Yamini has no on-device AI engine, so models can be downloaded and checked but not loaded. " +
+                    "Install yamini-debug.apk from the latest release (it includes the engine), then load the model here.",
             )
             TextButton(onClick = {
                 runCatching {
@@ -280,7 +280,7 @@ private fun DownloadsTab() {
                     }
                 }
             }, modifier = Modifier.padding(top = 8.dp)) { Icon(Icons.Filled.Download, null); Text(" Download") }
-            Text("Without an expected hash, Gravity still computes and records the file's SHA-256 but cannot verify integrity against the publisher.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Without an expected hash, Yamini still computes and records the file's SHA-256 but cannot verify integrity against the publisher.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item { SectionHeader("Download history") }
         if (downloads.isEmpty()) item { Text("No downloads yet.", style = MaterialTheme.typography.bodySmall) }
@@ -409,7 +409,7 @@ private data class Suggested(val title: String, val repo: String, val file: Stri
 private val suggestedModels = listOf(
     Suggested(
         "Gemma 3 4B (Hindi chat)", "bartowski/google_gemma-3-4b-it-GGUF", "google_gemma-3-4b-it-Q4_K_M.gguf", 2_490_000_000L,
-        "Best phone model for Hindi chat: in Gravity's CI test it wrote the most correct, natural Hindi. To a Hinglish question it often answers in Hindi script (Devanagari) instead of Roman letters. About 6 GB RAM phones. Phone models can still get facts wrong.",
+        "Best phone model for Hindi chat: in Yamini's CI test it wrote the most correct, natural Hindi. To a Hinglish question it often answers in Hindi script (Devanagari) instead of Roman letters. About 6 GB RAM phones. Phone models can still get facts wrong.",
     ),
     Suggested(
         "Llama 3.2 3B (chat, fast)", "bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf", 2_020_000_000L,
@@ -445,7 +445,7 @@ private fun RecommendedModels(installed: List<LocalModelEntity>) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Recommended for this phone", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Q4_K_M builds from Hugging Face, checked with their published SHA-256. Gravity loads a downloaded model by itself when the AI is needed.",
+                "Q4_K_M builds from Hugging Face, checked with their published SHA-256. Yamini loads a downloaded model by itself when the AI is needed.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             for (m in suggestedModels) {

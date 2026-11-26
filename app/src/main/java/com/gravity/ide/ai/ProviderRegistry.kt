@@ -24,7 +24,7 @@ class NoProviderException(message: String, val waitForNetwork: Boolean = false) 
 class QuotaExhaustedException(val providerName: String, val retryIn: String?, cause: LlmException, quota: Boolean = true) : LlmException(
     (if (quota) "$providerName's free limit is used up for now" + (retryIn?.let { " (try again in about $it)" } ?: "")
     else "$providerName's models are busy right now") +
-        ". Gravity tried this key's other models too. Google's free daily limits reset at midnight Pacific time (1:30 PM in India). " +
+        ". Yamini tried this key's other models too. Google's free daily limits reset at midnight Pacific time (1:30 PM in India). " +
         "Until then: use another AI key (Cloud AI → add a provider) or the phone model.",
     httpCode = if (quota) 429 else 503,
 ) {

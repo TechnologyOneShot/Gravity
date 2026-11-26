@@ -138,12 +138,12 @@ private fun numberLabel(n: Int) = "%,d".format(n)
 private val settingItems: List<SettingItem> = listOf(
     // General
     SettingItem(SettingsPage.GENERAL, "Notifications", "When a task finishes and while models download", Control.Toggle({ it.notifications }, { s, v -> s.copy(notifications = v) })),
-    SettingItem(SettingsPage.GENERAL, "Notification settings", "Android's settings for Gravity's notifications", Control.Action("Open") { ctx ->
+    SettingItem(SettingsPage.GENERAL, "Notification settings", "Android's settings for Yamini's notifications", Control.Action("Open") { ctx ->
         ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }),
     SettingItem(
         SettingsPage.GENERAL, "Keep running in the background",
-        "So replies and app builds go on when you leave or swipe Gravity away. Some phones (Xiaomi, POCO, Redmi, Vivo, Oppo) close apps to save battery; Android asks you to allow Gravity",
+        "So replies and app builds go on when you leave or swipe Yamini away. Some phones (Xiaomi, POCO, Redmi, Vivo, Oppo) close apps to save battery; Android asks you to allow Yamini",
         Control.Action("Allow") { ctx ->
             val pm = ctx.getSystemService(android.os.PowerManager::class.java)
             val intent = if (pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true) {
@@ -155,7 +155,7 @@ private val settingItems: List<SettingItem> = listOf(
                 .onFailure { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         },
     ),
-    SettingItem(SettingsPage.GENERAL, "App language", "Android's language setting for Gravity", Control.Action("Open") { ctx ->
+    SettingItem(SettingsPage.GENERAL, "App language", "Android's language setting for Yamini", Control.Action("Open") { ctx ->
         if (Build.VERSION.SDK_INT >= 33) ctx.startActivity(Intent(Settings.ACTION_APP_LOCALE_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         else ctx.startActivity(Intent(Settings.ACTION_LOCALE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }),
@@ -230,7 +230,7 @@ private val settingItems: List<SettingItem> = listOf(
     SettingItem(SettingsPage.DEVELOPER, "Experimental features", "None in this build", Control.Info { "" }),
     // About & help
     SettingItem(SettingsPage.ABOUT, "Self-test & diagnostics", "Run real checks on this phone", Control.Link(Routes.HELP)),
-    SettingItem(SettingsPage.ABOUT, "About Gravity", "Version and build information", Control.Link(Routes.ABOUT)),
+    SettingItem(SettingsPage.ABOUT, "About Yamini", "Version and build information", Control.Link(Routes.ABOUT)),
 )
 
 @Composable
@@ -250,7 +250,7 @@ fun SettingsScreen(go: (String) -> Unit) {
     val defaultModelText by produceState("…", settings.defaultProviderId, settings.defaultModel) {
         val id = settings.defaultProviderId
         value = when {
-            id == null -> "Not set: Gravity picks the best AI available"
+            id == null -> "Not set: Yamini picks the best AI available"
             id == LocalLlamaProvider.ID -> "Phone model" + (settings.defaultModel?.let { " · $it" } ?: "")
             else -> (withContext(Dispatchers.IO) { c.db.providers().get(id)?.name } ?: "Removed provider") + " · " + (settings.defaultModel ?: "its default model")
         }
@@ -519,8 +519,8 @@ fun GitScreen(go: (String) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             MessageBanner(
-                "Git integration is not implemented in this build. Android ships no git binary and Gravity does not yet bundle a Git library (JGit integration is planned — see docs/KNOWN_LIMITATIONS.md). " +
-                    "Until then, Gravity's checkpoints record a version of every file before each save and agent edit, with diff, per-task rollback and restore.",
+                "Git integration is not implemented in this build. Android ships no git binary and Yamini does not yet bundle a Git library (JGit integration is planned — see docs/KNOWN_LIMITATIONS.md). " +
+                    "Until then, Yamini's checkpoints record a version of every file before each save and agent edit, with diff, per-task rollback and restore.",
                 isError = true,
             )
         }
@@ -556,7 +556,7 @@ fun PluginsScreen() {
             "write_file, replace_in_file, create_directory, move_path" to "Project root only; checkpointed; approval for sensitive files",
             "delete_path" to "Always requires approval; moves to trash",
             "run_command" to "Device shell; approval for risky commands",
-            "build_project" to "Runs the project's build backend (Gravity shell, Termux, static web); real exit code",
+            "build_project" to "Runs the project's build backend (Yamini shell, Termux, static web); real exit code",
             "install_apk" to "Requires approval, then the system install dialog",
             "test_app" to "Launch + logcat crash check + screenshot; real PASS/FAIL",
             "web_search, fetch_url" to "Network; results treated as untrusted data",

@@ -55,7 +55,7 @@ class WebSearchService(
         if (!network.isOnline) throw SearchUnavailable("Offline")
         val parsed = try { url.toHttpUrl() } catch (e: IllegalArgumentException) { throw LlmException("Invalid URL: $url") }
         if (parsed.scheme != "https" && parsed.scheme != "http") throw LlmException("Only http(s) URLs can be fetched")
-        val request = Request.Builder().url(parsed).header("User-Agent", "Gravity/0.1 (Android)").get().build()
+        val request = Request.Builder().url(parsed).header("User-Agent", "Yamini/0.1 (Android)").get().build()
         val text = Http.execute(Http.base, request) { response ->
             if (!response.isSuccessful) throw Http.errorFrom(response)
             val type = response.header("Content-Type").orEmpty()

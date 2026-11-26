@@ -126,8 +126,8 @@ fun DashboardScreen(go: (String) -> Unit) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Welcome to Gravity", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                    Text("Describe what to build. Gravity plans, edits, runs and verifies.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Welcome to Yamini", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                    Text("Describe what to build. Yamini plans, edits, runs and verifies.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = { customizing = true }) { Icon(Icons.Filled.Tune, "Customize dashboard") }
             }

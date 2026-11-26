@@ -89,7 +89,7 @@ class BackupManager(
         val staging = File(context.cacheDir, "restore-staging-${System.currentTimeMillis()}")
         zip.inputStream().use { ZipSafety.extract(it, staging) }
         val manifestFile = File(staging, "gravity-backup.json")
-        if (!manifestFile.isFile) throw IOException("Not a Gravity backup (manifest missing)")
+        if (!manifestFile.isFile) throw IOException("Not a Yamini backup (manifest missing)")
         val manifest = JSONObject(manifestFile.readText())
         if (manifest.optString("format") != "gravity-backup") throw IOException("Unknown backup format")
 

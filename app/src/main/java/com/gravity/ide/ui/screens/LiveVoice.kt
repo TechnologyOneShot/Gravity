@@ -166,7 +166,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
             listenNow.value()
         } else {
             phase = LivePhase.IDLE
-            problem = "Gravity needs the microphone to hear you. Allow it when Android asks, or in Android Settings → Apps → Gravity → Permissions."
+            problem = "Yamini needs the microphone to hear you. Allow it when Android asks, or in Android Settings → Apps → Yamini → Permissions."
         }
     }
 
@@ -335,7 +335,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                         if (misses < 2) listen() else problem = "I did not hear anything. Tap the circle and speak."
                     }
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
-                        problem = "Gravity needs the microphone to hear you (Android Settings → Apps → Gravity → Permissions)."
+                        problem = "Yamini needs the microphone to hear you (Android Settings → Apps → Yamini → Permissions)."
                     SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT, SpeechRecognizer.ERROR_SERVER ->
                         problem = "Speech recognition needs the internet on this phone, or an offline ${language.label} speech pack (Google app → Settings → Voice → Offline speech recognition)."
                     SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_RECOGNIZER_BUSY, SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> {

@@ -99,7 +99,7 @@ class UiNavigationTest {
 
     @Test
     fun t01_appLaunchesOnChatHome_andDashboardStillWorks() {
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         compose.waitUntil(15_000) { compose.onAllNodesWithText("How can I help you today?").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("chat-input").assertExists()
         compose.onNodeWithTag("mode-chat").assertExists()
@@ -111,7 +111,7 @@ class UiNavigationTest {
 
         openDrawerEntry("Dashboard")
         waitForTitle("Dashboard")
-        compose.onNodeWithText("Welcome to Gravity").assertExists()
+        compose.onNodeWithText("Welcome to Yamini").assertExists()
         Ci.log("launch", "Dashboard: ${visibleText().take(2000)}")
         compose.onNodeWithText("Offline readiness →").also { runCatching { it.performScrollTo() } }.performClick()
         waitForTitle("Offline Readiness")
@@ -123,7 +123,7 @@ class UiNavigationTest {
 
     @Test
     fun t02_everyDrawerEntryOpens() {
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         val failures = ArrayList<String>()
         drawerItems.forEachIndexed { i, item ->
             val expected = titleFor(item.route)
@@ -146,7 +146,7 @@ class UiNavigationTest {
     }
 
     private fun openNewChat() {
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         openDrawerEntry("New Chat")
         waitForTitle("Chat")
         compose.waitUntil(15_000) { compose.onAllNodesWithText("How can I help you today?").fetchSemanticsNodes().isNotEmpty() }
@@ -185,7 +185,7 @@ class UiNavigationTest {
 
     @Test
     fun t03_chatWithoutProviderFailsHonestlyAndPersists() {
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         val prompt = "hello from CI ${System.currentTimeMillis() % 100000}"
         openDrawerEntry("New Chat")
         waitForTitle("Chat")
@@ -239,7 +239,7 @@ class UiNavigationTest {
     /** Regression: closing tabs used to crash Material's tab indicator (IndexOutOfBounds). */
     @Test
     fun t04_closingTerminalTabsDoesNotCrash() {
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         openDrawerEntry("Terminal")
         waitForTitle("Terminal")
         repeat(2) {
@@ -265,7 +265,7 @@ class UiNavigationTest {
         val c = Ci.container
         val hasModel = c.localHost.runtimeAvailable && runBlocking { c.db.models().all() }.any { it.status == "READY" }
         org.junit.Assume.assumeTrue("Needs the llama.cpp runtime and a downloaded model", hasModel)
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         openDrawerEntry("Phone Models")
         waitForTitle("Phone Models")
         compose.onNode(androidx.compose.ui.test.hasScrollToNodeAction())
@@ -282,7 +282,7 @@ class UiNavigationTest {
     fun t06_liveVoiceModeOpensReportsHonestlyAndCloses() {
         val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
         instrumentation.uiAutomation.grantRuntimePermission(instrumentation.targetContext.packageName, Manifest.permission.RECORD_AUDIO)
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         // With an empty message box the round button is the live (voice) button.
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-button").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("live-button").performClick()
@@ -316,7 +316,7 @@ class UiNavigationTest {
 
     @Test
     fun t07_voiceSettingsShowStylesAndVoices() {
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         openDrawerEntry("Settings")
         waitForTitle("Settings")
         compose.onNodeWithTag("settings-page-voice").performClick()
@@ -338,7 +338,7 @@ class UiNavigationTest {
     @Test
     fun t08_firstPictureRequestAsksOnceThenSends() {
         runBlocking { Ci.container.settings.update { it.copy(pictureMaker = "ask") } }
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         openDrawerEntry("New Chat")
         waitForTitle("Chat")
         val request = "ek bandar ki image banao ${System.currentTimeMillis() % 100000}"
@@ -363,7 +363,7 @@ class UiNavigationTest {
     fun t08b_phonePicturesUnavailableKeepsTheRequest() {
         Assume.assumeTrue("Only for builds without the picture engine (the other case would start a 2.2 GB download)", !BuildConfig.IMAGE_BUNDLED)
         runBlocking { Ci.container.settings.update { it.copy(pictureMaker = "ask") } }
-        waitForTitle("Gravity")
+        waitForTitle("Yamini")
         openDrawerEntry("New Chat")
         waitForTitle("Chat")
         val request = "ek ghode ki photo banao ${System.currentTimeMillis() % 100000}"

@@ -70,13 +70,13 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         }
         if (!crashed) return
         if (engine == EngineKind.FAST) {
-            val reason = "it crashed Gravity on this phone"
+            val reason = "it crashed Yamini on this phone"
             prefs.edit().putString(KEY_FAST_OFF, "${com.gravity.ide.BuildConfig.VERSION_CODE}|$reason").commit()
             LlamaBridge.turnOffFast(reason)
-            crashNotice = "Gravity closed because the fast phone-model engine crashed. It now uses the standard engine (a little slower)."
+            crashNotice = "Yamini closed because the fast phone-model engine crashed. It now uses the standard engine (a little slower)."
         } else {
             prefs.edit().putString(KEY_CRASHED_MODEL, modelId).commit()
-            crashNotice = "Gravity closed while running a phone model. It will not load that model by itself again; load it from Phone Models to retry " +
+            crashNotice = "Yamini closed while running a phone model. It will not load that model by itself again; load it from Phone Models to retry " +
                 "(close other apps first if memory is low), or use Gemini."
         }
         events.log(EventCategory.MODEL, "Phone-model engine crashed last time", crashNotice.orEmpty(), EventLevel.WARN)
@@ -136,7 +136,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
         val need = com.gravity.ide.core.GgufReader.estimateRamBytes(model.sizeBytes, contextSize)
         val avail = availableRamBytes()
         return if (need > avail) {
-            "Estimated need ${need / (1024 * 1024)} MB exceeds currently available ${avail / (1024 * 1024)} MB. Loading may fail or the system may kill Gravity."
+            "Estimated need ${need / (1024 * 1024)} MB exceeds currently available ${avail / (1024 * 1024)} MB. Loading may fail or the system may kill Yamini."
         } else {
             null
         }
@@ -240,7 +240,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
             )
             return@withLock loaded
         }
-        val msg = "${model.name} gives broken answers on this phone in every way Gravity can run it " +
+        val msg = "${model.name} gives broken answers on this phone in every way Yamini can run it " +
             "(${LlamaBridge.engines.joinToString(" and ") { it.label }}; file mapped, read into memory, 1 thread) " +
             "(asked \"What is the capital of France?\", it answered \"${lastAnswer.take(80)}\"). " +
             if (model.sha256Expected == null) {
@@ -365,7 +365,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
             ?: return null
         if (prefs.getString(KEY_CRASHED_MODEL, null) == pick.id) {
             throw ModelUnhealthyException(
-                "Gravity closed while running ${pick.name} last time, so it is not loaded by itself. Load it from Phone Models to try again " +
+                "Yamini closed while running ${pick.name} last time, so it is not loaded by itself. Load it from Phone Models to try again " +
                     "(close other apps first), or use Gemini."
             )
         }

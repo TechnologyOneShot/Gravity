@@ -131,7 +131,7 @@ fun BuildScreen(projectId: String?, go: (String) -> Unit) {
                     }
                     if (project.type == "ANDROID" && kind == BuildKind.COMMAND) {
                         MessageBanner(
-                            "The Gravity shell can only run toolchains that are actually executable inside this app (see feasibility below); on stock Android that excludes JDK/Gradle. " +
+                            "The Yamini shell can only run toolchains that are actually executable inside this app (see feasibility below); on stock Android that excludes JDK/Gradle. " +
                                 "Use the Termux companion backend for same-phone APK builds, or build on a computer/CI and install the APK here.",
                         )
                     }
@@ -182,7 +182,7 @@ fun BuildScreen(projectId: String?, go: (String) -> Unit) {
                 val canGradle = list.firstOrNull { it.id == "jdk" }?.available == true && list.firstOrNull { it.id == "exec_app_storage" }?.available == true
                 MessageBanner(
                     if (canGradle) "A JDK is on PATH and app storage is executable: Gradle builds may work here. Verify with a clean build of the Android template."
-                    else "Verdict: this device cannot run desktop Gradle/AGP inside Gravity's own sandbox. For APKs built on this phone use the Termux companion backend above " +
+                    else "Verdict: this device cannot run desktop Gradle/AGP inside Yamini's own sandbox. For APKs built on this phone use the Termux companion backend above " +
                         "(Termux runs the JDK, Gradle and aapt2). Without it: static web/game builds, any tool that is present, and installing/testing APKs built elsewhere.",
                     isError = !canGradle,
                 )
@@ -251,7 +251,7 @@ private fun TermuxPanel(onChanged: () -> Unit) {
     Panel {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                "Same-phone APK builds: Gravity copies the project to a shared folder, Termux runs Gradle with its own JDK and aapt2, and Gravity imports and verifies the resulting APK. Exit code and output are Termux's real results.",
+                "Same-phone APK builds: Yamini copies the project to a shared folder, Termux runs Gradle with its own JDK and aapt2, and Yamini imports and verifies the resulting APK. Exit code and output are Termux's real results.",
                 style = MaterialTheme.typography.bodySmall,
             )
             KeyValue("Termux", if (status.installed) "installed (${status.version})" else "not installed")

@@ -643,7 +643,7 @@ internal fun ChatComposer(
                         when {
                             appMode && started -> "Describe a change to this app…"
                             appMode -> "Describe the app (📎 add a design picture to copy it)…"
-                            else -> "Message Gravity…"
+                            else -> "Message Yamini…"
                         },
                         color = GravityColors.Muted,
                     )
@@ -772,7 +772,7 @@ internal fun ModelPickerSheet(
                     val attempts = c.localHost.lastAttempts
                     if (attempts.isNotEmpty()) {
                         appendLine()
-                        appendLine("What Gravity tried:")
+                        appendLine("What Yamini tried:")
                         attempts.forEach { appendLine("• $it") }
                     }
                     appendLine()

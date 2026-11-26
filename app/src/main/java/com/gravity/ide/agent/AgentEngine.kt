@@ -704,9 +704,9 @@ class AgentEngine(
         complete(
             task.id,
             if (report.errors.isEmpty()) {
-                "$verb with ${resolved.model}. Gravity opened it and tapped ${report.controlsTapped} button(s): no errors."
+                "$verb with ${resolved.model}. Yamini opened it and tapped ${report.controlsTapped} button(s): no errors."
             } else {
-                "$verb with ${resolved.model}, but Gravity's test still finds ${report.errors.size} error(s), so parts may not work: " +
+                "$verb with ${resolved.model}, but Yamini's test still finds ${report.errors.size} error(s), so parts may not work: " +
                     report.errors.take(3).joinToString("; ") + ". Describe the problem to try a fix" + if (local) ", or use Gemini for a better app." else "."
             },
         )
@@ -767,7 +767,7 @@ class AgentEngine(
         val root = File(project.rootPath)
         val memory = File(root, "GRAVITY.md").takeIf { it.isFile }?.readText()?.take(8000)
         return buildString {
-            appendLine("You are the ${role.label} in Gravity, an autonomous development environment running on an Android phone.")
+            appendLine("You are the ${role.label} in Yamini, an autonomous development environment running on an Android phone.")
             appendLine(role.brief)
             appendLine()
             appendLine("Project: ${project.name} (type ${project.type}). All paths are relative to the project root.")

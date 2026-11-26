@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
 enum class BuildStatus { RUNNING, SUCCEEDED, FAILED, CANCELLED }
 
 enum class BuildKind(val label: String) {
-    COMMAND("Gravity shell"),
+    COMMAND("Yamini shell"),
     STATIC_WEB("Static web build"),
     TERMUX("Termux companion"),
 }

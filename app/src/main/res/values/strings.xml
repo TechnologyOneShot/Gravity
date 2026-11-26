@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Gravity</string>
+    <string name="app_name">Yamini</string>
     <string name="channel_tasks">Agent tasks</string>
     <string name="channel_downloads">Model downloads</string>
     <string name="channel_capture">Screen capture</string>

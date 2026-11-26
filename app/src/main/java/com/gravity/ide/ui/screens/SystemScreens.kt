@@ -184,12 +184,12 @@ fun ExportScreen() {
                 val text = builds.joinToString("\n\n") { b ->
                     "## Build #${b.id} — ${b.status}\n- Project: ${projects.firstOrNull { it.id == b.projectId }?.name}\n- Command: `${b.command}`\n- Exit: ${b.exitCode}\n- Started: ${formatTimeFull(b.startedAt)}\n- Artifact: ${b.artifactPath ?: "—"}\n${b.error?.let { "- Error: $it\n" } ?: ""}\n```\n${b.log.takeLast(4000)}\n```"
                 }
-                o.write(("# Gravity build report\n\n$text").toByteArray())
+                o.write(("# Yamini build report\n\n$text").toByteArray())
             }
             "tests" -> run(uri) { o ->
                 val rows = c.db.testResults().recent(1000)
                 val text = buildString {
-                    append("# Gravity test report\n\nGenerated ${formatTimeFull(System.currentTimeMillis())}\n\n| Suite | Test | Expected | Actual | Result |\n|---|---|---|---|---|\n")
+                    append("# Yamini test report\n\nGenerated ${formatTimeFull(System.currentTimeMillis())}\n\n| Suite | Test | Expected | Actual | Result |\n|---|---|---|---|---|\n")
                     rows.forEach { r -> append("| ${r.suite} | ${r.name} | ${r.expected.replace("|", "/")} | ${r.actual.replace("|", "/").take(200)} | ${r.outcome} |\n") }
                 }
                 o.write(text.toByteArray())
@@ -224,7 +224,7 @@ fun ExportScreen() {
             Button(enabled = latestApk != null, onClick = { apkLauncher.launch(File(latestApk!!.artifactPath!!).name) }) { Text("Export APK") }
             Text(latestWeb?.let { "Latest web build: ${File(it.artifactPath!!).name}" } ?: "No web build yet.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
             Button(enabled = latestWeb != null, onClick = { pending = "web"; zipLauncher.launch(File(latestWeb!!.artifactPath!!).name) }) { Text("Export web build") }
-            Text("AAB export: a bundle needs an Android toolchain (Termux companion or CI). Gravity's own device shell cannot build one (see Build Center).", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            Text("AAB export: a bundle needs an Android toolchain (Termux companion or CI). Yamini's own device shell cannot build one (see Build Center).", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
         item {
             SectionHeader("Conversations & reports")

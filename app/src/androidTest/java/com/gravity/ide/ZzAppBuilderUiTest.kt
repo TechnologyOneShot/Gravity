@@ -75,7 +75,7 @@ class ZzAppBuilderUiTest {
     @Test
     fun a_openExistingAppFromMyApps() {
         val project = runBlocking { Ci.container.workspace.createProject("Tap Test App", com.gravity.ide.workspace.ProjectTemplate.WEB_APP) }
-        waitFor("home screen", 30_000) { title() == "Gravity" }
+        waitFor("home screen", 30_000) { title() == "Yamini" }
         compose.onNodeWithContentDescription("Open navigation").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("nav:My Apps").performScrollTo().performClick()
@@ -94,7 +94,7 @@ class ZzAppBuilderUiTest {
     /** Home chat → App mode → one sentence → app card in the chat → Open app → App screen with the finished app. */
     @Test
     fun b_homeChatBuildsAnAppFromOneSentence() {
-        waitFor("home screen", 30_000) { title() == "Gravity" }
+        waitFor("home screen", 30_000) { title() == "Yamini" }
         waitFor("message box", 30_000) { compose.onAllNodesWithTag("chat-input").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("chat-input").performTextInput("calculator bana do")
         compose.waitForIdle()

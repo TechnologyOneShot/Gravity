@@ -234,7 +234,7 @@ fun ProjectsScreen(openNew: Boolean, go: (String) -> Unit) {
     }
     renaming?.let { p -> TextInputDialog("Rename project", "Name", p.name, "Rename", onConfirm = { vm.rename(p, it) }, onDismiss = { renaming = null }) }
     deleting?.let { p ->
-        ConfirmDialog("Delete ${p.name}?", "The project folder is moved to Gravity's trash and can be restored from Backup & Recovery.", "Delete", destructive = true, onConfirm = { vm.delete(p) }, onDismiss = { deleting = null })
+        ConfirmDialog("Delete ${p.name}?", "The project folder is moved to Yamini's trash and can be restored from Backup & Recovery.", "Delete", destructive = true, onConfirm = { vm.delete(p) }, onDismiss = { deleting = null })
     }
     editing?.let { p -> ProjectSettingsDialog(p, onDismiss = { editing = null }) { vm.update(it) } }
 }

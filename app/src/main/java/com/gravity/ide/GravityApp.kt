@@ -17,7 +17,7 @@ class GravityApp : Application() {
         container.appScope.launch {
             // Crash/process-death recovery: anything that was mid-run is marked resumable.
             container.agent.recoverInterrupted()
-            container.events.log(EventCategory.SYSTEM, "Gravity started", "Version ${BuildConfig.VERSION_NAME} · local runtime ${if (BuildConfig.LLAMA_BUNDLED) "bundled" else "not bundled"}")
+            container.events.log(EventCategory.SYSTEM, "Yamini started", "Version ${BuildConfig.VERSION_NAME} · local runtime ${if (BuildConfig.LLAMA_BUNDLED) "bundled" else "not bundled"}")
             // Keep the activity log bounded (90 days).
             container.db.events().prune(System.currentTimeMillis() - 90L * 24 * 3600 * 1000)
         }

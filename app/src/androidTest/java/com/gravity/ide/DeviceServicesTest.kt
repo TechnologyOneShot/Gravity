@@ -846,7 +846,7 @@ class DeviceServicesTest {
         val r = reports.pending.value
         Ci.log("crash-report", "Report after a saved crash: ${r?.title} | ${r?.details?.take(120)}")
         assertNotNull("No report after a crash", r)
-        assertEquals("Gravity crashed last time", r!!.title)
+        assertEquals("Yamini crashed last time", r!!.title)
         assertTrue(r.details.contains("IllegalStateException: test crash"))
         assertFalse("The saved crash was not cleared", file.exists())
     }
@@ -908,15 +908,15 @@ class DeviceServicesTest {
         val swiped = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_USER_REQUESTED, null, 0, doing, "details")
         val cleaner = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_USER_REQUESTED, "stop by powerkeeper", 0, doing, "details")
         Ci.log("crash-report", "Killed while drawing: ${killed?.title} | ${killed?.explanation}")
-        assertEquals("The phone closed Gravity while it was working", killed?.title)
+        assertEquals("The phone closed Yamini while it was working", killed?.title)
         assertTrue(killed!!.explanation.contains("kill signal") && killed.explanation.contains("It was writing a reply with Gemma 3 4B"))
         assertTrue(lowMem!!.title.contains("memory") && lowMem.explanation.contains("It was writing"))
         assertNotNull("No report when Android kept no exit record", noRecord)
         assertEquals("An idle kill (e.g. by the system) is not reported", null, idleKill)
-        assertEquals("Swiping Gravity away is not reported", null, swiped)
+        assertEquals("Swiping Yamini away is not reported", null, swiped)
         assertNotNull("The phone's cleaner during work is reported", cleaner)
         val dependency = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_DEPENDENCY_DIED, "depends on provider", 0, doing, "details")
-        assertEquals("Android closed Gravity when a system app it used restarted", dependency?.title)
+        assertEquals("Android closed Yamini when a system app it used restarted", dependency?.title)
     }
 
     @Test
@@ -946,7 +946,7 @@ class DeviceServicesTest {
         assertTrue("The circle was not drawn (pixel #${Integer.toHexString(pixel)})", android.graphics.Color.red(pixel) > 200 && android.graphics.Color.green(pixel) < 120)
 
         // Audio needs a text-to-speech engine; emulators may have none, which is reported, not faked.
-        val wav = runCatching { runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "speech", "Hello from Gravity. School starts at eight.", java.util.Locale.forLanguageTag("en-IN")) } }
+        val wav = runCatching { runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "speech", "Hello from Yamini. School starts at eight.", java.util.Locale.forLanguageTag("en-IN")) } }
         wav.onSuccess { f ->
             val head = f.readBytes().copyOfRange(0, 4).toString(Charsets.US_ASCII)
             Ci.log("make", "WAV ${f.length()} bytes ($head)")

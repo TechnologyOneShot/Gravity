@@ -121,7 +121,7 @@ class AppBuilderLocalPathTest {
         val starterHtml = File(starter, "index.html").readText()
         assertTrue("The starter page must be recognised as unbuilt", AppBuilder.isPlaceholder(starterHtml))
         assertEquals(null, AppBuilder.extractHtml("```html\n$starterHtml\n```"))
-        assertTrue(AppBuilder.isPlaceholder("<p>Gravity is building this app…</p>"))
+        assertTrue(AppBuilder.isPlaceholder("<p>Yamini is building this app…</p>"))
         assertFalse(AppBuilder.isPlaceholder(page))
     }
 

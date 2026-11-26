@@ -191,7 +191,7 @@ class DeviceInspector(private val context: Context) {
         list += Capability(
             "wireless_debugging", "Wireless debugging enabled", wifiAdb == 1,
             when (wifiAdb) { -2 -> "setting not readable by apps on this version"; -1 -> "setting absent"; else -> "adb_wifi_enabled=$wifiAdb" },
-            "Gravity does not implement the adb pairing protocol itself in this build; use Shizuku to bridge."
+            "Yamini does not implement the adb pairing protocol itself in this build; use Shizuku to bridge."
         )
 
         val canInstall = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.packageManager.canRequestPackageInstalls() else true
@@ -200,7 +200,7 @@ class DeviceInspector(private val context: Context) {
         val readLogs = context.checkSelfPermission(Manifest.permission.READ_LOGS) == PackageManager.PERMISSION_GRANTED
         list += Capability(
             "read_logs", "Read other apps' logcat (READ_LOGS)", readLogs, if (readLogs) "granted" else "not granted",
-            "Without it, logcat shows only Gravity's own process. Grant once from a computer: adb shell pm grant ${context.packageName} android.permission.READ_LOGS"
+            "Without it, logcat shows only Yamini's own process. Grant once from a computer: adb shell pm grant ${context.packageName} android.permission.READ_LOGS"
         )
 
         val (logCode, logOut) = exec("/system/bin/sh", "-c", "logcat -d -t 5 2>&1 | head -5")

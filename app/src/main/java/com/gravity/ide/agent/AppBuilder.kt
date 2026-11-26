@@ -126,7 +126,8 @@ class AppBuilder(
         const val PLACEHOLDER_MARKER = "gravity:placeholder"
 
         /** True for the starter page (also the wording of starter pages made by older versions). */
-        fun isPlaceholder(html: String) = html.contains(PLACEHOLDER_MARKER) || html.contains("<p>Gravity is building this app…</p>")
+        fun isPlaceholder(html: String) = html.contains(PLACEHOLDER_MARKER) || html.contains("<p>Yamini is building this app…</p>") ||
+            html.contains("<p>Gravity is building this app…</p>") // pages saved before the rename
 
         // trimStart: tasks saved by the earlier versions may begin with spaces (see buildInstruction).
         fun isBuilderInstruction(instruction: String) = instruction.trimStart().let { it.startsWith(BUILD_PREFIX) || it.startsWith(CHANGE_PREFIX) }

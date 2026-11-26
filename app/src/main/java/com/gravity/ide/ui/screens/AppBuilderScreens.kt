@@ -165,7 +165,7 @@ fun HomeScreen(go: (String) -> Unit) {
         item {
             Text("What do you want to build?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
-                "Describe it in your own words, in any language. Gravity writes the whole app, runs it here, and can install it on your phone.",
+                "Describe it in your own words, in any language. Yamini writes the whole app, runs it here, and can install it on your phone.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -216,7 +216,7 @@ fun HomeScreen(go: (String) -> Unit) {
         }
         item {
             Text(
-                "Gravity has no subscription and no limits of its own. Cloud AI providers set their own quotas (Gemini's free tier has daily limits); the on-device model has none but is much weaker.",
+                "Yamini has no subscription and no limits of its own. Cloud AI providers set their own quotas (Gemini's free tier has daily limits); the on-device model has none but is much weaker.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -268,7 +268,7 @@ fun AiSetupDialog(onDismiss: () -> Unit, go: (String) -> Unit) {
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Recommended: a free Google Gemini key.", fontWeight = FontWeight.SemiBold)
-                Text("1. Open Google AI Studio and sign in with your Google account.\n2. Tap \"Create API key\" and copy it.\n3. Paste it here. Gravity checks it and picks the newest model it can use.", style = MaterialTheme.typography.bodySmall)
+                Text("1. Open Google AI Studio and sign in with your Google account.\n2. Tap \"Create API key\" and copy it.\n3. Paste it here. Yamini checks it and picks the newest model it can use.", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick = {
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/apikey")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                         .onFailure { toast(context, "No browser found") }
@@ -282,7 +282,7 @@ fun AiSetupDialog(onDismiss: () -> Unit, go: (String) -> Unit) {
                 if (saving) LinearProgressIndicator(Modifier.fillMaxWidth())
                 Spacer(Modifier.height(4.dp))
                 Text("Offline alternative", fontWeight = FontWeight.SemiBold)
-                Text("Download a model in Phone Models. It runs on the phone with no limits and no internet (Gravity loads it when needed), but small phone models give much weaker answers and apps.", style = MaterialTheme.typography.bodySmall)
+                Text("Download a model in Phone Models. It runs on the phone with no limits and no internet (Yamini loads it when needed), but small phone models give much weaker answers and apps.", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { onDismiss(); go(Routes.models(2)) }) { Text("Open Phone Models") }
             }
         },
@@ -323,7 +323,7 @@ fun MyAppsScreen(go: (String) -> Unit) {
     val projects by c.db.projects().observeActive().collectAsState(initial = emptyList())
     val apps = projects.filter { it.type == "APP" }.sortedByDescending { maxOf(it.updatedAt, it.lastOpenedAt) }
     if (apps.isEmpty()) {
-        EmptyState("No apps yet", "In a chat, switch to App and describe the app you want. Gravity builds it.", action = { TextButton(onClick = { go(Routes.HOME) }) { Text("Start a chat") } })
+        EmptyState("No apps yet", "In a chat, switch to App and describe the app you want. Yamini builds it.", action = { TextButton(onClick = { go(Routes.HOME) }) { Text("Start a chat") } })
         return
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

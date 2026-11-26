@@ -85,8 +85,8 @@ class CrashReports(private val context: Context) {
         val whileLine = if (doing.isEmpty()) "" else "While: " + doing.joinToString("; ") + "\n"
         val report = when {
             saved != null -> Report(
-                "Gravity crashed last time",
-                "A mistake in Gravity's code closed it. The report below shows exactly where; please share it so it can be fixed.",
+                "Yamini crashed last time",
+                "A mistake in Yamini's code closed it. The report below shows exactly where; please share it so it can be fixed.",
                 whileLine + saved,
             )
             exit != null && Build.VERSION.SDK_INT >= 30 -> describe(exit, doing)
@@ -134,46 +134,46 @@ class CrashReports(private val context: Context) {
             val was = doing.firstOrNull()?.let { " It was $it." } ?: ""
             val oem = listOf("powerkeeper", "freez", "lmk", "oom", "low memory", "lowmem").any { it in desc }
             return when (reason) {
-                ApplicationExitInfo.REASON_CRASH -> Report("Gravity crashed last time", "A mistake in Gravity's code closed it.$was Please share the report.", details)
+                ApplicationExitInfo.REASON_CRASH -> Report("Yamini crashed last time", "A mistake in Yamini's code closed it.$was Please share the report.", details)
                 ApplicationExitInfo.REASON_CRASH_NATIVE -> Report(
-                    "Gravity crashed last time (phone-model engine)",
-                    "The on-phone AI engine crashed.$was Gravity switches to the safer engine by itself if it happens again. Please share the report.",
+                    "Yamini crashed last time (phone-model engine)",
+                    "The on-phone AI engine crashed.$was Yamini switches to the safer engine by itself if it happens again. Please share the report.",
                     details,
                 )
-                ApplicationExitInfo.REASON_ANR -> Report("Gravity froze last time", "It stopped responding and Android closed it.$was Please share the report.", details)
+                ApplicationExitInfo.REASON_ANR -> Report("Yamini froze last time", "It stopped responding and Android closed it.$was Please share the report.", details)
                 ApplicationExitInfo.REASON_LOW_MEMORY, ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> Report(
                     "Android closed Gravity: the phone ran out of memory",
                     "Phone models need a lot of memory (a 7B model about 5 GB).$was Use a smaller model (Gemma 3 4B, Llama 3.2 3B), close other apps, or use Gemini. Please share the report.",
                     details,
                 )
-                ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> Report("Gravity could not start last time", "Please share the report.", details)
+                ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> Report("Yamini could not start last time", "Please share the report.", details)
                 ApplicationExitInfo.REASON_DEPENDENCY_DIED -> Report(
-                    "Android closed Gravity when a system app it used restarted",
-                    "Something Gravity was connected to (often Google Play services, which updates itself) stopped, and Android closes the apps " +
+                    "Android closed Yamini when a system app it used restarted",
+                    "Something Yamini was connected to (often Google Play services, which updates itself) stopped, and Android closes the apps " +
                         "connected to it.$was This build no longer uses Play services' fonts, the usual cause. Please share the report if it happens again.",
                     details,
                 )
                 ApplicationExitInfo.REASON_SIGNALED, ApplicationExitInfo.REASON_OTHER, ApplicationExitInfo.REASON_UNKNOWN, -1 -> when {
                     // Phones' own battery savers (MIUI/HyperOS "powerkeeper" and others) show up here.
                     oem && doing.isEmpty() -> Report(
-                        "The phone closed Gravity in the background",
+                        "The phone closed Yamini in the background",
                         "Your phone's battery saver closed it. Allow it in Settings → General → Keep running in the background.",
                         details,
                     )
                     // Closed in the middle of work with no crash: the phone stopped it (signal 9 is a kill).
                     doing.isNotEmpty() || oem -> Report(
-                        "The phone closed Gravity while it was working",
-                        "Android shows no crash, so the phone itself stopped Gravity" + (if (status == 9) " (a kill signal)" else "") +
+                        "The phone closed Yamini while it was working",
+                        "Android shows no crash, so the phone itself stopped Yamini" + (if (status == 9) " (a kill signal)" else "") +
                             ", most often for memory: a phone model needs a lot while it writes.$was Try a smaller phone model, close other apps, " +
-                            "and allow Gravity in Settings → General → Keep running in the background. Please share the report so it can be fixed.",
+                            "and allow Yamini in Settings → General → Keep running in the background. Please share the report so it can be fixed.",
                         details,
                     )
                     else -> null
                 }
                 // The phone's own task cleaners can count as "stopped by the user": only with their name.
                 ApplicationExitInfo.REASON_USER_REQUESTED -> if (oem && doing.isNotEmpty()) Report(
-                    "The phone closed Gravity while it was working",
-                    "The phone's battery saver or cleaner stopped it.$was Allow Gravity in Settings → General → Keep running in the background.",
+                    "The phone closed Yamini while it was working",
+                    "The phone's battery saver or cleaner stopped it.$was Allow Yamini in Settings → General → Keep running in the background.",
                     details,
                 ) else null
                 else -> null // closed normally: swiped away by the user, updated, stopped from Settings…
@@ -194,5 +194,5 @@ class CrashReports(private val context: Context) {
         else -> r.toString()
     }
 
-    private fun header() = "Gravity ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (${Build.VERSION.SDK_INT}) · ${Build.FINGERPRINT}"
+    private fun header() = "Yamini ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (${Build.VERSION.SDK_INT}) · ${Build.FINGERPRINT}"
 }
