@@ -55,6 +55,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -638,10 +639,11 @@ fun HelpScreen(go: (String) -> Unit) {
 fun AboutScreen() {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
-            Text("GRAVITY", style = MaterialTheme.typography.headlineMedium, color = GravityColors.Cyan)
-            Text("Hybrid autonomous AI development environment for Android", style = MaterialTheme.typography.bodyMedium)
+            Text("YAMINI", style = MaterialTheme.typography.headlineMedium, color = GravityColors.Cyan)
+            Text("Your AI assistant and app builder for Android", style = MaterialTheme.typography.bodyMedium)
             Text("Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_TYPE}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        item { UpdateCard() }
         item {
             SectionHeader("Principles")
             Text(
@@ -652,8 +654,88 @@ fun AboutScreen() {
         }
         item {
             SectionHeader("Open-source components")
-            Text("Jetpack Compose, Room, DataStore, WorkManager, AndroidX WebKit & DocumentFile (Apache-2.0) · OkHttp (Apache-2.0) · kotlinx.coroutines (Apache-2.0) · llama.cpp (MIT, optional build).", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "Jetpack Compose, Room, DataStore, WorkManager, AndroidX WebKit & DocumentFile (Apache-2.0) · OkHttp (Apache-2.0) · kotlinx.coroutines (Apache-2.0) · " +
+                    "llama.cpp (MIT) · stable-diffusion.cpp (MIT) · sherpa-onnx and ONNX Runtime (Apache-2.0, MIT) · Piper voices (MIT; voice data CC BY-NC-SA 4.0) · " +
+                    "Apache Commons Compress (Apache-2.0) · Hinglish word list from wordfreq (CC BY-SA 4.0).",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
+    }
+}
+
+/**
+ * "Update Yamini": installs the latest build over this one, so chats, phone models and voices stay
+ * (an uninstall would delete them). Says exactly why if Android refuses.
+ */
+@Composable
+private fun UpdateCard() {
+    val c = LocalAppContainer.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var status by remember { mutableStateOf<String?>(null) }
+    var release by remember { mutableStateOf<com.gravity.ide.device.SelfUpdate.Release?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().testTag("update-card"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        SectionHeader("Update")
+        Text(
+            "Installs the newest Yamini over this one: your chats, phone models and voices stay. (Uninstalling first would delete the downloaded models.)",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(enabled = !busy, onClick = {
+                busy = true
+                status = "Checking…"
+                scope.launch {
+                    runCatching { com.gravity.ide.device.SelfUpdate.latest() }
+                        .onSuccess { r ->
+                            release = r
+                            status = if (com.gravity.ide.device.SelfUpdate.isNewer(r)) "Version ${r.versionName} is ready (${r.size / 1_000_000} MB). You have ${BuildConfig.VERSION_NAME}."
+                            else "You have the newest version (${BuildConfig.VERSION_NAME})."
+                        }
+                        .onFailure { status = "Could not check: ${it.message}" }
+                    busy = false
+                }
+            }, modifier = Modifier.testTag("update-check")) { Text("Check for update") }
+            val r = release
+            if (r != null && com.gravity.ide.device.SelfUpdate.isNewer(r)) {
+                Button(enabled = !busy, onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:${context.packageName}"))
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                        status = "Allow Yamini to install apps, then tap Update again."
+                        return@Button
+                    }
+                    busy = true
+                    scope.launch {
+                        try {
+                            val apk = com.gravity.ide.device.SelfUpdate.download(context, r) { got, total ->
+                                status = "Downloading… ${if (total > 0) got * 100 / total else 0}%"
+                            }
+                            val problem = withContext(Dispatchers.IO) { com.gravity.ide.device.SelfUpdate.problem(context, apk) }
+                            if (problem != null) {
+                                status = problem
+                            } else {
+                                status = "Installing… Android asks you to confirm; Yamini closes and you open it again."
+                                status = when (val o = c.installer.install(apk)) {
+                                    is com.gravity.ide.device.AppInstaller.InstallOutcome.Success -> "Updated."
+                                    is com.gravity.ide.device.AppInstaller.InstallOutcome.Failure -> "Android did not install it: ${o.message}"
+                                }
+                            }
+                        } catch (e: Exception) {
+                            status = e.message ?: "Update failed"
+                        } finally {
+                            busy = false
+                        }
+                    }
+                }, modifier = Modifier.testTag("update-install")) { Text("Update") }
+            }
+        }
+        status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted) }
     }
 }
 

@@ -53,6 +53,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:largeHeap="true"
+        android:hasFragileUserData="true"
         android:allowNativeHeapPointerTagging="false"
         android:supportsRtl="true"
         android:theme="@style/Theme.Gravity"
