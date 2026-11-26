@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import com.gravity.ide.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
@@ -56,6 +57,60 @@ object SelfUpdate {
     }
 
     fun isNewer(r: Release) = r.versionCode > BuildConfig.VERSION_CODE
+
+    /** What the update is doing, for the About screen (kept while the screen is closed). */
+    val status = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val busy = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val found = kotlinx.coroutines.flow.MutableStateFlow<Release?>(null)
+
+    /** Looks for a newer build (in [scope], so leaving the screen does not stop it). */
+    fun check(scope: kotlinx.coroutines.CoroutineScope) {
+        if (busy.value) return
+        busy.value = true
+        status.value = "Checking…"
+        scope.launch {
+            try {
+                val r = latest()
+                found.value = r
+                status.value = if (isNewer(r)) "Version ${r.versionName} is ready (${r.size / 1_000_000} MB). You have ${BuildConfig.VERSION_NAME}."
+                else "You have the newest version (${BuildConfig.VERSION_NAME})."
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                status.value = "Could not check: ${e.message}"
+            } finally {
+                busy.value = false
+            }
+        }
+    }
+
+    /**
+     * Downloads [r], checks it and installs it over this app with [installer] (in [scope], so the
+     * download goes on when the screen is left).
+     */
+    fun install(scope: kotlinx.coroutines.CoroutineScope, context: Context, installer: AppInstaller, r: Release) {
+        if (busy.value) return
+        busy.value = true
+        scope.launch {
+            try {
+                val apk = download(context, r) { got, total -> status.value = "Downloading… ${if (total > 0) got * 100 / total else 0}%" }
+                val problem = withContext(Dispatchers.IO) { problem(context, apk) }
+                if (problem != null) {
+                    status.value = problem
+                } else {
+                    status.value = "Installing… Android asks you to confirm; Yamini closes and you open it again."
+                    status.value = when (val o = installer.install(apk)) {
+                        is AppInstaller.InstallOutcome.Success -> "Updated."
+                        is AppInstaller.InstallOutcome.Failure -> "Android did not install it: ${o.message}"
+                    }
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                status.value = e.message ?: "Update failed"
+            } finally {
+                busy.value = false
+            }
+        }
+    }
 
     /** Downloads [r] into the app's cache (resumes a partial download). */
     suspend fun download(context: Context, r: Release, progress: (Long, Long) -> Unit): File = withContext(Dispatchers.IO) {

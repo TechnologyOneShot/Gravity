@@ -303,7 +303,7 @@ private fun NaturalVoiceCard(onHear: (hindi: Boolean) -> Unit) {
                         "downloading" -> Unit
                         else -> TextButton(onClick = {
                             problem = null
-                            scope.launch {
+                            c.appScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                                 runCatching {
                                     rows.filter { it.name == pack.archiveName }.forEach { c.models.delete(it.id) }
                                     c.models.enqueueDownload(pack.url, pack.archiveName, pack.sha256, pack.size, "k2-fsa/sherpa-onnx", nv.LICENSE_NOTE, role = "voice")

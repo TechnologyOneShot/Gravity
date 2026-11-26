@@ -643,7 +643,7 @@ private fun NaturalVoiceOffer(lang: String) {
             style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, modifier = Modifier.weight(1f),
         )
         TextButton(onClick = {
-            scope.launch {
+            c.appScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                 runCatching {
                     rows.filter { it.name == pack.archiveName }.forEach { c.models.delete(it.id) }
                     c.models.enqueueDownload(pack.url, pack.archiveName, pack.sha256, pack.size, "k2-fsa/sherpa-onnx", nv.LICENSE_NOTE, role = "voice")

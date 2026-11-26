@@ -382,7 +382,7 @@ private fun HubSearch() {
                                 style = MaterialTheme.typography.labelSmall, color = if (tooBig) GravityColors.Red else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             TextButton(enabled = !tooBig, onClick = {
-                                scope.launch {
+                                c.appScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                                     try {
                                         c.models.enqueueHubDownload(m.repoId, file, m.license)
                                         toast(context, "Download queued — see Downloads")
@@ -466,7 +466,7 @@ private fun RecommendedModels(installed: List<LocalModelEntity>) {
                         busy == m.repo -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         else -> TextButton(onClick = {
                             busy = m.repo
-                            scope.launch {
+                            c.appScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                                 try {
                                     val file = c.models.listHubFiles(m.repo).firstOrNull { it.path.equals(m.file, ignoreCase = true) }
                                         ?: throw IllegalStateException("${m.file} is no longer in ${m.repo}")
@@ -548,6 +548,17 @@ private fun PhoneAiCheck() {
         c.localHost.lastAttempts.forEach { sb.appendLine("Load: $it") }
         sb.appendLine("Model: ${model.name} · ${model.quantization ?: "?"} · ${formatBytes(model.sizeBytes)} · ${java.io.File(model.filePath).name}")
         sb.appendLine("Context ${loaded.contextSize} · threads $threads · loaded: ${c.localHost.loadMode(model.id)} · ${bridge.systemInfo(bridge.engineOf(loaded.handle)).trim()}")
+        // A very large context costs memory (Android closes apps that use too much) and time when
+        // a chat starts: say how much, and what is enough.
+        runCatching { bridge.modelInfo(loaded.handle) }.getOrNull()?.takeIf { it.size >= 5 && it[3] > 0 }?.let { v ->
+            val kvBytes = 2L * v[1] * loaded.contextSize * (v[2].toLong() / v[3] * v[4]) * 2
+            if (loaded.contextSize > 8192) {
+                sb.appendLine(
+                    "Note: context ${loaded.contextSize} keeps up to ${"%.1f".format(kvBytes / 1e9)} GB of memory for this model. 8192 is enough for chats " +
+                        "(Yamini makes it bigger by itself for long files) and starts chats faster: Settings → Phone AI → Memory for answers (context).",
+                )
+            }
+        }
         val questions = listOf("What is the capital of France? Answer with one word." to "paris", "What is 12 + 30? Reply with the number only." to "42")
 
         suspend fun round(label: String, handleName: String): Boolean {
@@ -677,10 +688,14 @@ private fun PictureModelCard() {
                     Text("Not available: ${st.why}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 com.gravity.ide.ai.image.PhonePictures.State.NotDownloaded ->
                     Button(onClick = {
-                        scope.launch {
+                        // In the app's scope: a screen's scope ends when the list re-lays out (that
+                        // stopped this halfway: "rememberCoroutineScope left the composition").
+                        c.appScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                             try {
                                 c.phonePictures.download()
                                 toast(context, "Downloading the picture model")
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
                             } catch (e: Exception) {
                                 toast(context, "Download failed: ${e.message}")
                             }
@@ -695,7 +710,15 @@ private fun PictureModelCard() {
                     LinearProgressIndicator(progress = { st.percent / 100f }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (st.failed != null) OutlinedButton(onClick = {
-                            scope.launch { runCatching { c.phonePictures.download() }.onFailure { toast(context, "Download failed: ${it.message}") } }
+                            c.appScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                try {
+                                    c.phonePictures.download()
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    toast(context, "Download failed: ${e.message}")
+                                }
+                            }
                         }) { Text("Try again") }
                         OutlinedButton(onClick = { confirmDelete = true }) { Text("Cancel and delete") }
                     }

@@ -672,10 +672,10 @@ fun AboutScreen() {
 private fun UpdateCard() {
     val c = LocalAppContainer.current
     val context = androidx.compose.ui.platform.LocalContext.current
-    val scope = rememberCoroutineScope()
-    var status by remember { mutableStateOf<String?>(null) }
-    var release by remember { mutableStateOf<com.gravity.ide.device.SelfUpdate.Release?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    val up = com.gravity.ide.device.SelfUpdate
+    val status by up.status.collectAsState()
+    val busy by up.busy.collectAsState()
+    val release by up.found.collectAsState()
     Column(Modifier.fillMaxWidth().testTag("update-card"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionHeader("Update")
         Text(
@@ -683,22 +683,9 @@ private fun UpdateCard() {
             style = MaterialTheme.typography.bodySmall,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(enabled = !busy, onClick = {
-                busy = true
-                status = "Checking…"
-                scope.launch {
-                    runCatching { com.gravity.ide.device.SelfUpdate.latest() }
-                        .onSuccess { r ->
-                            release = r
-                            status = if (com.gravity.ide.device.SelfUpdate.isNewer(r)) "Version ${r.versionName} is ready (${r.size / 1_000_000} MB). You have ${BuildConfig.VERSION_NAME}."
-                            else "You have the newest version (${BuildConfig.VERSION_NAME})."
-                        }
-                        .onFailure { status = "Could not check: ${it.message}" }
-                    busy = false
-                }
-            }, modifier = Modifier.testTag("update-check")) { Text("Check for update") }
+            OutlinedButton(enabled = !busy, onClick = { up.check(c.appScope) }, modifier = Modifier.testTag("update-check")) { Text("Check for update") }
             val r = release
-            if (r != null && com.gravity.ide.device.SelfUpdate.isNewer(r)) {
+            if (r != null && up.isNewer(r)) {
                 Button(enabled = !busy, onClick = {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
                         runCatching {
@@ -707,31 +694,10 @@ private fun UpdateCard() {
                                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
                             )
                         }
-                        status = "Allow Yamini to install apps, then tap Update again."
+                        up.status.value = "Allow Yamini to install apps, then tap Update again."
                         return@Button
                     }
-                    busy = true
-                    scope.launch {
-                        try {
-                            val apk = com.gravity.ide.device.SelfUpdate.download(context, r) { got, total ->
-                                status = "Downloading… ${if (total > 0) got * 100 / total else 0}%"
-                            }
-                            val problem = withContext(Dispatchers.IO) { com.gravity.ide.device.SelfUpdate.problem(context, apk) }
-                            if (problem != null) {
-                                status = problem
-                            } else {
-                                status = "Installing… Android asks you to confirm; Yamini closes and you open it again."
-                                status = when (val o = c.installer.install(apk)) {
-                                    is com.gravity.ide.device.AppInstaller.InstallOutcome.Success -> "Updated."
-                                    is com.gravity.ide.device.AppInstaller.InstallOutcome.Failure -> "Android did not install it: ${o.message}"
-                                }
-                            }
-                        } catch (e: Exception) {
-                            status = e.message ?: "Update failed"
-                        } finally {
-                            busy = false
-                        }
-                    }
+                    up.install(c.appScope, context.applicationContext, c.installer, r)
                 }, modifier = Modifier.testTag("update-install")) { Text("Update") }
             }
         }

@@ -84,6 +84,8 @@ class PhonePictures(
         val total = PARTS.indices.sumOf { i -> mine[i]?.sizeBytes ?: 0L }.coerceAtLeast(1)
         val done = PARTS.indices.sumOf { i -> mine[i]?.let { if (it.status == ModelStatus.READY.name) it.sizeBytes else it.downloadedBytes } ?: 0L }
         val failed = mine.firstOrNull { it?.status == ModelStatus.FAILED.name }?.error
+            // Some parts never started (the start was interrupted): offer Try again.
+            ?: if (mine.any { it == null }) "${PARTS.count { p -> rows.none { matches(it, p) } }} of ${PARTS.size} parts did not start" else null
         return State.Downloading((done * 100 / total).toInt().coerceIn(0, 100), failed)
     }
 
