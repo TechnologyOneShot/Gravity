@@ -956,4 +956,68 @@ class DeviceServicesTest {
         listOf(pdf, zip, png).forEach { it.delete() }
         wav.getOrNull()?.delete()
     }
+
+    /**
+     * Speaking like a person: Android must honour a speed set between phrases (that is how one
+     * word is drawn out and the next said quickly), and an audio file made that way has real
+     * pauses between its phrases. Needs a text-to-speech engine; none is reported, not faked.
+     */
+    @Test
+    fun t19_voiceSpeaksLikeAPerson() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val ready = kotlinx.coroutines.CompletableDeferred<Int>()
+        val tts = runBlocking(kotlinx.coroutines.Dispatchers.Main) { android.speech.tts.TextToSpeech(ctx.applicationContext) { ready.complete(it) } }
+        try {
+            val status = runBlocking { kotlinx.coroutines.withTimeoutOrNull(15_000) { ready.await() } }
+            if (status != android.speech.tts.TextToSpeech.SUCCESS) { Ci.log("voice", "No working text-to-speech engine on this device (status $status)"); return }
+            tts.setLanguage(java.util.Locale.US)
+            fun seconds(rate: Float): Double {
+                val f = java.io.File.createTempFile("rate-", ".wav", ctx.cacheDir)
+                val done = java.util.concurrent.CountDownLatch(1)
+                tts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) { done.countDown() }
+                    @Deprecated("Deprecated in Java") override fun onError(utteranceId: String?) { done.countDown() }
+                })
+                tts.setSpeechRate(rate)
+                assertEquals(android.speech.tts.TextToSpeech.SUCCESS, tts.synthesizeToFile("one two three four five six seven eight nine ten", android.os.Bundle(), f, "rate-$rate"))
+                assertTrue("speech at $rate did not finish", done.await(60, java.util.concurrent.TimeUnit.SECONDS))
+                val (samples, sr) = com.gravity.ide.core.WavJoin.pcmMono16(f.readBytes())
+                f.delete()
+                return samples.size.toDouble() / sr
+            }
+            val slow = seconds(0.7f)
+            val quick = seconds(1.4f)
+            Ci.log("voice", "Same words at speed 0.7: %.2f s, at 1.4: %.2f s (engine ${tts.defaultEngine})".format(slow, quick))
+            assertTrue("The engine ignores a speed set between phrases (%.2f s vs %.2f s)".format(slow, quick), slow > quick * 1.3)
+        } finally {
+            runBlocking(kotlinx.coroutines.Dispatchers.Main) { tts.shutdown() }
+        }
+
+        val text = "Arre, ye toh bahut achha hai! Main aapke liye ek gaana bana sakti hoon, aur phir hum use sun sakte hain. Kya aap taiyaar hain?"
+        val plan = com.gravity.ide.core.HumanSpeech.plan(text)
+        Ci.log("voice", "Plan: " + plan.joinToString(" | ") { "%s (speed %.2f, pitch %.2f, loud %.2f, pause %d ms)".format(it.text, it.rate, it.pitch, it.volume, it.pauseAfterMs) })
+        val was = com.gravity.ide.files.VoicePrefs.natural(ctx)
+        try {
+            com.gravity.ide.files.VoicePrefs.setNatural(ctx, false)
+            val flat = runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "flat", text, java.util.Locale.forLanguageTag("en-IN")) }
+            com.gravity.ide.files.VoicePrefs.setNatural(ctx, true)
+            val human = runBlocking { com.gravity.ide.files.FileMaker.audio(ctx, "human", text, java.util.Locale.forLanguageTag("en-IN")) }
+            val (fs, fr) = com.gravity.ide.core.WavJoin.pcmMono16(flat.readBytes())
+            val (hs, hr) = com.gravity.ide.core.WavJoin.pcmMono16(human.readBytes())
+            // The longest stretch of exact silence: the pauses the plan put between phrases.
+            fun longestSilenceMs(x: ShortArray, rate: Int): Int {
+                var best = 0; var run = 0
+                x.forEach { if (it.toInt() == 0) { run++; if (run > best) best = run } else run = 0 }
+                return best * 1000 / rate
+            }
+            val planned = plan.dropLast(1).maxOf { it.pauseAfterMs }
+            Ci.log("voice", "Flat file %.2f s, like a person %.2f s; longest pause %d ms (planned up to %d ms)".format(fs.size.toDouble() / fr, hs.size.toDouble() / hr, longestSilenceMs(hs, hr), planned))
+            assertEquals("RIFF", human.readBytes().copyOfRange(0, 4).toString(Charsets.US_ASCII))
+            assertTrue("The pauses are missing from the file", longestSilenceMs(hs, hr) >= planned - 20)
+            flat.delete(); human.delete()
+        } finally {
+            com.gravity.ide.files.VoicePrefs.setNatural(ctx, was)
+        }
+    }
 }

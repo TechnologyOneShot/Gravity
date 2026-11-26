@@ -65,6 +65,7 @@ internal fun VoiceSettingsPanel() {
     var accent by remember { mutableStateOf(VoicePrefs.accent(context)) }
     var address by remember { mutableStateOf(VoicePrefs.address(context)) }
     var greet by remember { mutableStateOf(VoicePrefs.greet(context)) }
+    var natural by remember { mutableStateOf(VoicePrefs.natural(context)) }
     val voices = remember(ready, hindiTab, accent) { if (ready == true) VoicePicker.voices(tts, VoicePrefs.locale(context, hindiTab)) else emptyList() }
     val shown = voices.filter { gender == "all" || VoicePicker.gender(it) == gender }
     val chosen = if (hindiTab) hindiVoice else englishVoice
@@ -83,6 +84,22 @@ internal fun VoiceSettingsPanel() {
             )
         }
         VoiceCard("Speaking style", "How Yamini talks in live mode and when it reads replies: its words and mood, and the voice's speed, pitch and pauses.") {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Speak like a person", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Speed, pitch and loudness change from phrase to phrase: feeling words are drawn out (\"bahut achha\"), small words go quicker, " +
+                            "questions rise, excited lines are brighter, asides softer, with natural pauses. Off: every sentence the same.",
+                        style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted,
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = natural,
+                    onCheckedChange = { natural = it; VoicePrefs.setNatural(context, it); preview(VoiceStyles.byId(styleId), hindiTab) },
+                    modifier = Modifier.testTag("voice-natural"),
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             VoiceStyles.all.forEachIndexed { i, st ->
                 if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(

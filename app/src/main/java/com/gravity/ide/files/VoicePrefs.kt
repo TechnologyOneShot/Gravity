@@ -37,6 +37,14 @@ object VoicePrefs {
     fun setAddress(context: Context, v: String) = prefs(context).edit().putString("address", v.trim().take(40)).apply()
 
     /** Live mode greets the user when it opens (on by default). */
+    /** Speak like a person (HumanSpeech): speed, pitch and loudness vary per phrase. On by default. */
+    fun natural(context: Context): Boolean = prefs(context).getBoolean("natural", true)
+    fun setNatural(context: Context, on: Boolean) = prefs(context).edit().putBoolean("natural", on).apply()
+
+    /** What [apply] set on each speaker: its speed and pitch, and whether to speak like a person. */
+    private data class Base(val rate: Float, val pitch: Float, val natural: Boolean)
+    private val bases = java.util.WeakHashMap<TextToSpeech, Base>()
+
     fun greet(context: Context): Boolean = prefs(context).getBoolean("greet", true)
     fun setGreet(context: Context, on: Boolean) = prefs(context).edit().putBoolean("greet", on).apply()
 
@@ -59,8 +67,10 @@ object VoicePrefs {
         val locale = locale(context, hindi)
         val result = tts.setLanguage(locale)
         (voice ?: VoicePicker.choose(tts, locale, voiceName(context, hindi)))?.let { tts.setVoice(it) }
-        tts.setSpeechRate(VoiceStyles.rate(style, rate(context)))
-        tts.setPitch(VoiceStyles.pitch(style, pitch(context)))
+        val base = Base(VoiceStyles.rate(style, rate(context)), VoiceStyles.pitch(style, pitch(context)), natural(context))
+        tts.setSpeechRate(base.rate)
+        tts.setPitch(base.pitch)
+        synchronized(bases) { bases[tts] = base }
         return result
     }
 
@@ -69,6 +79,11 @@ object VoicePrefs {
      * last piece gets [lastId] (for "finished" callbacks). [flush] clears what was playing first.
      */
     fun speak(tts: TextToSpeech, text: String, style: VoiceStyles.Style, idPrefix: String, lastId: String, flush: Boolean) {
+        val base = synchronized(bases) { bases[tts] }
+        if (base?.natural == true && text.isNotBlank()) {
+            speakLikeAPerson(tts, text, style, base, idPrefix, lastId, flush)
+            return
+        }
         val pieces = if (style.pauseMs > 0) VoiceStyles.sentences(text) else listOf(text)
         val all = pieces.flatMap { com.gravity.ide.core.SpeechText.chunks(it, 3500) }.filter { it.isNotBlank() }
         if (all.isEmpty()) {
@@ -79,6 +94,32 @@ object VoicePrefs {
             val mode = if (flush && i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
             tts.speak(piece, mode, null, if (i == all.lastIndex) lastId else "$idPrefix-$i")
             if (style.pauseMs > 0 && i < all.lastIndex) tts.playSilentUtterance(style.pauseMs.toLong(), TextToSpeech.QUEUE_ADD, "$idPrefix-p$i")
+        }
+    }
+
+    /**
+     * Speaks [text] phrase by phrase with its own speed, pitch, loudness and pause (HumanSpeech).
+     * Android takes the speed and pitch set when each phrase is queued, so they are set before
+     * each one and put back after.
+     */
+    private fun speakLikeAPerson(
+        tts: TextToSpeech, text: String, style: VoiceStyles.Style, base: Base, idPrefix: String, lastId: String, flush: Boolean,
+    ) {
+        val plan = com.gravity.ide.core.HumanSpeech.plan(text, sentencePauseMs = maxOf(style.pauseMs, 260))
+            .flatMap { p -> com.gravity.ide.core.SpeechText.chunks(p.text, 3500).map { p.copy(text = it) } }
+            .filter { it.text.isNotBlank() }
+        try {
+            plan.forEachIndexed { i, p ->
+                tts.setSpeechRate(base.rate * p.rate)
+                tts.setPitch(base.pitch * p.pitch)
+                val params = android.os.Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, p.volume) }
+                val mode = if (flush && i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                tts.speak(p.text, mode, params, if (i == plan.lastIndex) lastId else "$idPrefix-$i")
+                if (p.pauseAfterMs > 0 && i < plan.lastIndex) tts.playSilentUtterance(p.pauseAfterMs.toLong(), TextToSpeech.QUEUE_ADD, "$idPrefix-p$i")
+            }
+        } finally {
+            tts.setSpeechRate(base.rate)
+            tts.setPitch(base.pitch)
         }
     }
 

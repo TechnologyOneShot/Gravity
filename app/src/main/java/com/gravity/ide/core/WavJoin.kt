@@ -45,6 +45,22 @@ object WavJoin {
         return out.toByteArray()
     }
 
+    /** A 16-bit mono PCM WAV of [samples] at [rate] Hz. */
+    fun wavMono16(samples: ShortArray, rate: Int): ByteArray {
+        val data = ByteBuffer.allocate(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        samples.forEach { data.putShort(it) }
+        val fmt = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(1).putShort(1).putInt(rate).putInt(rate * 2).putShort(2).putShort(16).array()
+        val out = ByteArrayOutputStream(44 + samples.size * 2)
+        fun int(v: Int) = out.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(v).array())
+        out.write("RIFF".toByteArray(Charsets.US_ASCII)); int(4 + 8 + 16 + 8 + samples.size * 2)
+        out.write("WAVE".toByteArray(Charsets.US_ASCII))
+        out.write("fmt ".toByteArray(Charsets.US_ASCII)); int(16); out.write(fmt)
+        out.write("data".toByteArray(Charsets.US_ASCII)); int(samples.size * 2)
+        out.write(data.array())
+        return out.toByteArray()
+    }
+
     /** 16-bit PCM samples of a WAV (channels mixed to mono) and its sample rate. */
     fun pcmMono16(bytes: ByteArray): Pair<ShortArray, Int> {
         val w = parse(bytes)
