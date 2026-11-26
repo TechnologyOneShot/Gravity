@@ -105,9 +105,12 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
             }
             if (target.exists()) target.delete()
             if (!part.renameTo(target)) throw IOException("Could not finalise file")
-            val verified = manager.withGgufMetadata(
-                model.copy(sha256Actual = sha, sizeBytes = target.length(), downloadedBytes = target.length())
-            )
+            val done = model.copy(sha256Actual = sha, sizeBytes = target.length(), downloadedBytes = target.length())
+            // Picture model files are .safetensors, not GGUF: check their header instead.
+            val verified = if (model.role == "picture") {
+                if (isSafetensors(target)) done.copy(status = ModelStatus.READY.name, error = null, updatedAt = System.currentTimeMillis())
+                else done.copy(status = ModelStatus.FAILED.name, error = "The downloaded file is not a safetensors model file.", updatedAt = System.currentTimeMillis())
+            } else manager.withGgufMetadata(done)
             db.models().upsert(verified)
             events.log(
                 EventCategory.MODEL,
@@ -126,6 +129,18 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
             return Result.failure()
         }
     }
+
+    /** A safetensors file: an 8-byte little-endian header length, then a JSON header starting with '{'. */
+    private fun isSafetensors(file: File): Boolean = runCatching {
+        java.io.RandomAccessFile(file, "r").use { f ->
+            if (f.length() < 16) return@use false
+            val b = ByteArray(9)
+            f.readFully(b)
+            var n = 0L
+            for (i in 7 downTo 0) n = (n shl 8) or (b[i].toLong() and 0xff)
+            n in 2 until f.length() && b[8] == '{'.code.toByte()
+        }
+    }.getOrDefault(false)
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")

@@ -38,8 +38,13 @@ data class AppSettings(
     val terminalFontSize: Int = 12,
     val showHiddenFiles: Boolean = false,
     val webSearchProvider: String = "none",
-    /** Pictures and video scenes: "ask" (first time), "online" (free online image AI, Pollinations), "draw" (drawn by the chat's AI). */
+    /**
+     * Pictures and video scenes: "ask" (first time), "online" (free online image AI, Pollinations),
+     * "phone" (realistic, made on the phone by Stable Diffusion), "draw" (drawn as code by the chat's AI).
+     */
     val pictureMaker: String = "ask",
+    /** Size of pictures made on the phone: 512 (better) or 384 (about twice as fast). */
+    val phonePictureSize: Int = 512,
     val localThreads: Int = 4,
     val localContextSize: Int = 4096,
     val lowMemoryMode: Boolean = false,
@@ -81,6 +86,7 @@ class SettingsRepository(private val context: Context) {
         val hidden = booleanPreferencesKey("show_hidden")
         val webSearch = stringPreferencesKey("web_search_provider")
         val pictureMaker = stringPreferencesKey("picture_maker")
+        val phonePictureSize = intPreferencesKey("phone_picture_size")
         val threads = intPreferencesKey("local_threads")
         val ctx = intPreferencesKey("local_ctx")
         val lowMem = booleanPreferencesKey("low_memory")
@@ -122,6 +128,7 @@ class SettingsRepository(private val context: Context) {
             showHiddenFiles = this[Keys.hidden] ?: d.showHiddenFiles,
             webSearchProvider = this[Keys.webSearch] ?: d.webSearchProvider,
             pictureMaker = this[Keys.pictureMaker] ?: d.pictureMaker,
+            phonePictureSize = this[Keys.phonePictureSize] ?: d.phonePictureSize,
             localThreads = this[Keys.threads] ?: d.localThreads,
             localContextSize = this[Keys.ctx] ?: d.localContextSize,
             lowMemoryMode = this[Keys.lowMem] ?: d.lowMemoryMode,
@@ -159,6 +166,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.hidden] = s.showHiddenFiles
             prefs[Keys.webSearch] = s.webSearchProvider
             prefs[Keys.pictureMaker] = s.pictureMaker
+            prefs[Keys.phonePictureSize] = s.phonePictureSize
             prefs[Keys.threads] = s.localThreads.coerceIn(1, 16)
             prefs[Keys.ctx] = s.localContextSize.coerceIn(512, 32768)
             prefs[Keys.lowMem] = s.lowMemoryMode

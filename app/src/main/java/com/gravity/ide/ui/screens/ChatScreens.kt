@@ -366,23 +366,50 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         val wants = com.gravity.ide.core.MakeFiles.detect(text)
         if (wants == com.gravity.ide.core.MakeFiles.Kind.IMAGE || wants == com.gravity.ide.core.MakeFiles.Kind.VIDEO) {
             viewModelScope.launch {
-                // The first picture: ask whether the description may go to the free online image AI.
-                if (c.settings.current().pictureMaker == "ask") askPictures.value = text else sendNow(text)
+                // The first picture: ask where pictures come from. Also ask again if "on this phone" was
+                // chosen but its picture model is not downloaded (any more).
+                val maker = c.settings.current().pictureMaker
+                val phoneMissing = maker == "phone" && c.phonePictures.state() != com.gravity.ide.ai.image.PhonePictures.State.Ready
+                if (maker == "ask" || phoneMissing) askPictures.value = text else sendNow(text)
             }
             return
         }
         sendNow(text)
     }
 
-    /** The user's answer for pictures (remembered; Settings → AI → Pictures and videos changes it). */
-    fun answerPictures(online: Boolean) {
+    /**
+     * The user's answer for pictures: "online", "phone" or "draw" (remembered; Settings → AI →
+     * Pictures and videos changes it). "phone" without its picture model starts the download and
+     * gives the request back to send again when it is done.
+     */
+    fun answerPictures(choice: String) {
         val text = askPictures.value ?: return
         askPictures.value = null
         viewModelScope.launch {
-            c.settings.update { it.copy(pictureMaker = if (online) "online" else "draw") }
+            c.settings.update { it.copy(pictureMaker = choice) }
+            if (choice == "phone") {
+                when (val st = c.phonePictures.state()) {
+                    com.gravity.ide.ai.image.PhonePictures.State.Ready -> Unit
+                    is com.gravity.ide.ai.image.PhonePictures.State.Unavailable -> {
+                        c.settings.update { it.copy(pictureMaker = "ask") }
+                        error.value = "Pictures cannot be made on this phone: ${st.why}. Choose the online image AI or code drawing."
+                        returnedInput.value = text
+                        return@launch
+                    }
+                    else -> {
+                        runCatching { c.phonePictures.download() }.onFailure { error.value = "The picture model could not be downloaded: ${it.message}" }
+                        notice.value = "Downloading the picture model (${com.gravity.ide.ai.image.PhonePictures.DOWNLOAD_LABEL}, see Phone Models). Send your request again when it is ready."
+                        returnedInput.value = text
+                        return@launch
+                    }
+                }
+            }
             sendNow(text)
         }
     }
+
+    /** Text to put back in the message box (a request that has to wait). */
+    val returnedInput = MutableStateFlow<String?>(null)
 
     private fun sendNow(text: String) {
         if (busy.value || (text.isBlank() && attachments.value.isEmpty())) return
@@ -492,7 +519,8 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 }
                 val llm = mutableListOf<LlmMessage>()
                 val extra = buildString {
-                    pendingMake?.let { append("\n\n").append(com.gravity.ide.core.MakeFiles.instruction(it, onlinePictures = settings.pictureMaker == "online")) }
+                    // Online and on-phone image AIs both make the picture from the chat AI's description.
+                    pendingMake?.let { append("\n\n").append(com.gravity.ide.core.MakeFiles.instruction(it, onlinePictures = settings.pictureMaker == "online" || settings.pictureMaker == "phone")) }
                     liveLanguage.value?.let { lang ->
                         append(
                             "\n\nThis is a live voice conversation, like a phone call: the user speaks and your reply is read aloud at once. " +
@@ -507,7 +535,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 // context costs a lot of memory mid-chat, and phones closed Gravity for it. A video
                 // (several drawings) gets a bigger one only if memory clearly allows.
                 val live = liveLanguage.value != null
-                val drawing = !live && resolved.provider.isLocal && settings.pictureMaker != "online" &&
+                val drawing = !live && resolved.provider.isLocal && settings.pictureMaker == "draw" &&
                     (pendingMake == com.gravity.ide.core.MakeFiles.Kind.IMAGE || pendingMake == com.gravity.ide.core.MakeFiles.Kind.VIDEO)
                 val loadedCtx = c.localHost.loadedOrNull()?.contextSize?.takeIf { it > 0 } ?: settings.localContextSize
                 val drawContext = if (drawing && pendingMake == com.gravity.ide.core.MakeFiles.Kind.VIDEO) {
@@ -517,7 +545,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 // The same start as the warm-up built (see warmUp), so a phone model reuses what it already read.
                 val (system, recent) = conversationStart(
                     resolved, settings, project, extra, live, drawTokens,
-                    pictureLines = settings.pictureMaker == "online" &&
+                    pictureLines = (settings.pictureMaker == "online" || settings.pictureMaker == "phone") &&
                         (pendingMake == com.gravity.ide.core.MakeFiles.Kind.IMAGE || pendingMake == com.gravity.ide.core.MakeFiles.Kind.VIDEO),
                     out = ::out,
                 )
@@ -676,8 +704,17 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         val ctx = c.appContext
         notice.value = "Making the ${kind.label}…"
         var videoNote: String? = null
-        val online = c.settings.current().pictureMaker == "online"
-        val workId = c.crashReports.begin("making the ${kind.label}" + (if (kind == com.gravity.ide.core.MakeFiles.Kind.IMAGE || kind == com.gravity.ide.core.MakeFiles.Kind.VIDEO) (if (online) " with the online image AI" else " from the AI's drawing") else ""))
+        val maker = c.settings.current().pictureMaker
+        val online = maker == "online"
+        // Realistic pictures made on this phone (Stable Diffusion), from the chat AI's description.
+        val onPhone = maker == "phone"
+        val workId = c.crashReports.begin(
+            "making the ${kind.label}" + (
+                if (kind == com.gravity.ide.core.MakeFiles.Kind.IMAGE || kind == com.gravity.ide.core.MakeFiles.Kind.VIDEO) {
+                    when { onPhone -> " with the phone's picture model"; online -> " with the online image AI"; else -> " from the AI's drawing" }
+                } else ""
+                ),
+        )
         try {
             val name = com.gravity.ide.core.MakeFiles.baseName(request.ifBlank { msg.content.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty() }, kind.name.lowercase())
             val file = withContext(Dispatchers.IO) {
@@ -695,7 +732,24 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                     com.gravity.ide.core.MakeFiles.Kind.IMAGE -> {
                         val described = com.gravity.ide.core.MakeFiles.picturePrompt(msg.content)
                         val svg = com.gravity.ide.core.MakeFiles.svg(msg.content)
-                        if (described != null || (online && svg == null)) {
+                        if (onPhone && (described != null || svg == null)) {
+                            // A realistic picture made on this phone, without internet.
+                            val desc = inEnglish(described ?: request.ifBlank { msg.content.take(300) })
+                            val size = c.settings.current().phonePictureSize
+                            val started = System.currentTimeMillis()
+                            notice.value = "Making the picture on this phone (about ${if (size <= 384) "1–2" else "2–3"} minutes)…"
+                            val bmp = c.phonePictures.make(desc, size, size) { step, steps ->
+                                notice.value = "Making the picture on this phone: step $step of $steps, ${(System.currentTimeMillis() - started) / 1000} s…"
+                            }
+                            val f = com.gravity.ide.files.FileMaker.unique(com.gravity.ide.files.FileMaker.dir(ctx), com.gravity.ide.files.FileMaker.clean(name) + ".jpg")
+                            try {
+                                java.io.FileOutputStream(f).use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) }
+                            } finally {
+                                bmp.recycle()
+                            }
+                            videoNote = "Made on this phone by Stable Diffusion (Realistic Vision 5.1, ${size} px, ${(System.currentTimeMillis() - started) / 1000} s) from: \"${desc.take(160)}\""
+                            f
+                        } else if (described != null || (online && svg == null)) {
                             // A real AI picture from the online image AI (the user chose it).
                             val desc = inEnglish(described ?: request.ifBlank { msg.content.take(300) })
                             notice.value = "Making the picture with the free online image AI…"
@@ -721,12 +775,21 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                         val hindi = text.count { it in '\u0900'..'\u097F' } * 10 > text.count { it.isLetter() }.coerceAtLeast(1) * 3
                         val locale = java.util.Locale.forLanguageTag(if (hindi) "hi-IN" else "en-IN")
                         val made = if (described.isNotEmpty()) {
-                            // Each scene's picture from the online image AI (one per 45 s on the free service).
+                            // Each scene's picture from the online image AI (one per 45 s on the free service),
+                            // or made on this phone (portrait 384x640, filled to the video's size).
                             val pictures = ArrayList<android.graphics.Bitmap>()
                             try {
                                 described.forEachIndexed { i, (_, desc) ->
-                                    notice.value = "Making picture ${i + 1} of ${described.size} with the free online image AI (one per 45 s on the free service)…"
-                                    pictures += com.gravity.ide.files.OnlineImages.bitmap("${inEnglish(desc)}, vertical portrait composition", com.gravity.ide.files.VideoMaker.W, com.gravity.ide.files.VideoMaker.H)
+                                    pictures += if (onPhone) {
+                                        notice.value = "Making picture ${i + 1} of ${described.size} on this phone (about 1–2 minutes each)…"
+                                        val raw = c.phonePictures.make("${inEnglish(desc)}, vertical portrait composition", 384, 640) { step, steps ->
+                                            notice.value = "Picture ${i + 1} of ${described.size} on this phone: step $step of $steps…"
+                                        }
+                                        com.gravity.ide.files.OnlineImages.cover(raw, com.gravity.ide.files.VideoMaker.W, com.gravity.ide.files.VideoMaker.H)
+                                    } else {
+                                        notice.value = "Making picture ${i + 1} of ${described.size} with the free online image AI (one per 45 s on the free service)…"
+                                        com.gravity.ide.files.OnlineImages.bitmap("${inEnglish(desc)}, vertical portrait composition", com.gravity.ide.files.VideoMaker.W, com.gravity.ide.files.VideoMaker.H)
+                                    }
                                 }
                             } catch (e: Exception) {
                                 pictures.forEach { it.recycle() }
@@ -738,7 +801,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                             com.gravity.ide.files.VideoMaker.make(ctx, name, drawn, locale) { step -> notice.value = step }
                         }
                         videoNote = "Made a ${"%.0f".format(made.seconds)}-second video on this phone: ${made.scenes} scene(s), " +
-                            (if (described.isNotEmpty()) "pictures by the free online image AI" else "pictures drawn by the chat's AI") +
+                            (if (described.isEmpty()) "pictures drawn by the chat's AI" else if (onPhone) "realistic pictures made on this phone" else "pictures by the free online image AI") +
                             (if (made.withVoice) ", narration read by the phone's voice." else ", without voice (this phone's text-to-speech did not work).") +
                             " It is picture by picture, not AI-moving video (that needs a paid video AI)."
                         made.file
@@ -1054,18 +1117,30 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
     askPictures?.let { pending ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { vm.askPictures.value = null; input = pending },
-            title = { Text("Real AI pictures?") },
+            title = { Text("Where should pictures come from?") },
             text = {
                 Text(
-                    "Gravity can make real AI pictures with Pollinations.ai, a free online image AI (no account needed). Only the picture's " +
-                        "description is sent there. Without an account it makes one picture at a time, at least 45 seconds apart (a video with 5 scenes takes about 4 minutes), and may add a small watermark.\n\n" +
-                        "Or the chat's AI draws it on this phone: works offline, but the drawings are simple (especially with phone models).\n\n" +
+                    "Online: Pollinations.ai, a free online image AI (no account). Only the picture's description is sent there; one picture " +
+                        "at a time, at least 45 seconds apart, and it may add a small watermark.\n\n" +
+                        "On this phone: realistic pictures by Stable Diffusion, without internet. Needs its picture model once " +
+                        "(${com.gravity.ide.ai.image.PhonePictures.DOWNLOAD_LABEL}); about 1–3 minutes a picture.\n\n" +
+                        "Code drawing: the chat's AI draws simple pictures as code.\n\n" +
                         "You can change this any time in Settings → AI → Pictures and videos."
                 )
             },
-            confirmButton = { TextButton(onClick = { vm.answerPictures(true) }, modifier = Modifier.testTag("pictures-online")) { Text("Use the online image AI") } },
-            dismissButton = { TextButton(onClick = { vm.answerPictures(false) }, modifier = Modifier.testTag("pictures-draw")) { Text("Draw on this phone") } },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { vm.answerPictures("online") }, modifier = Modifier.testTag("pictures-online")) { Text("Online image AI") }
+                    TextButton(onClick = { vm.answerPictures("phone") }, modifier = Modifier.testTag("pictures-phone")) { Text("On this phone (realistic)") }
+                    TextButton(onClick = { vm.answerPictures("draw") }, modifier = Modifier.testTag("pictures-draw")) { Text("Code drawing (simple)") }
+                }
+            },
         )
+    }
+    // A request that has to wait (the picture model is downloading) goes back into the message box.
+    val returned by vm.returnedInput.collectAsState()
+    LaunchedEffect(returned) {
+        returned?.let { input = it; vm.returnedInput.value = null }
     }
 }
 

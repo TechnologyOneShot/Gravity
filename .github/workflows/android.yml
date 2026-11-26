@@ -208,6 +208,55 @@ jobs:
           name: phone-model-chat-${{ matrix.model }}
           path: chat-answers/
 
+  arm64-image-check:
+    # The on-phone picture engine (engine-image/src/main/cpp/gravity_image_core.cpp, the same code as
+    # the app) with stable-diffusion.cpp at the pinned commit, built for Armv8.2 like the phone library
+    # and run natively on an Arm machine (4 threads, like a phone's fast cores) with the real picture
+    # model the app downloads (Realistic Vision 5.1 + LCM LoRA + TAESD): time, peak memory, and each
+    # picture as a small JPEG in the log so it can be looked at.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the picture engine check for Arm
+        run: |
+          lscpu | grep -E "Model name|^CPU\\(s\\)"
+          bash .github/scripts/fetch-sd.sh /tmp/sd
+          cmake -S tools/image-check -B /tmp/ib -DCMAKE_BUILD_TYPE=Release -DSD_DIR=/tmp/sd \
+            -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16 > /tmp/cmake.log
+          cmake --build /tmp/ib --target gravity-image-cli -j"$(nproc)" > /tmp/build.log 2>&1 || (tail -40 /tmp/build.log; exit 1)
+          pip install --quiet pillow
+      - name: Download the picture model (as the app does)
+        run: |
+          mkdir -p /tmp/m
+          curl -fL --retry 3 -o /tmp/m/model.safetensors https://huggingface.co/SG161222/Realistic_Vision_V5.1_noVAE/resolve/main/Realistic_Vision_V5.1_fp16-no-ema.safetensors
+          curl -fL --retry 3 -o /tmp/m/lcm.safetensors https://huggingface.co/latent-consistency/lcm-lora-sdv1-5/resolve/main/pytorch_lora_weights.safetensors
+          curl -fL --retry 3 -o /tmp/m/taesd.safetensors https://huggingface.co/madebyollin/taesd/resolve/main/diffusion_pytorch_model.safetensors
+          ls -la /tmp/m
+      - name: Make pictures with the app's settings
+        run: |
+          set +e
+          NEG="cartoon, drawing, painting, blurry, deformed, disfigured, extra limbs, extra fingers, text, watermark, nsfw, nudity"
+          failed=0
+          run() {  # name width height cfg prompt
+            echo "=====PICTURE $1"
+            /tmp/ib/gravity-image-cli /tmp/m/model.safetensors /tmp/m/lcm.safetensors /tmp/m/taesd.safetensors 4 q8_0 "$2" "$3" 4 "$4" 42 lcm /tmp/$1.ppm "$5" "$NEG" > /tmp/$1.log 2>&1
+            code=$?
+            grep -E "^(STEP|PICTURE|LOAD FAILED|GENERATE FAILED)" /tmp/$1.log
+            echo "EXIT $code"
+            if [ "$code" = 0 ]; then python3 .github/scripts/thumb.py /tmp/$1.ppm; else tail -20 /tmp/$1.log; fi
+            return $code
+          }
+          P1="A photorealistic image of a playful brown monkey sitting on a branch of a mango tree in a lush green forest, looking at the viewer with a curious expression, full-body shot at eye level, soft golden-hour sunlight through the leaves, sharp focus, natural colours, detailed fur"
+          P2="A young woman standing on a city street in the rain holding a red umbrella, smiling, full-body shot, wet road with reflections, shops in the background at dusk, photorealistic, sharp focus, natural colours"
+          run app-512 512 512 1.5 "$P1" || failed=1
+          run app-384 384 384 1.5 "$P2" || failed=1
+          # Video scenes are made portrait at 384x640.
+          run app-video-384x640 384 640 1.5 "$P2, vertical portrait composition" || failed=1
+          # Not used by the app yet: no second guidance pass (cfg 1), about half the time.
+          run cfg1-512 512 512 1.0 "$P1"
+          exit $failed
+
   arm64-real-model-check:
     # A user's report: "monkey image banao" on a phone model, then the app closed. The app's engine
     # code (gravity_core.cpp: flash attention, context rebuilt for a new size) and llama.cpp b6000,
@@ -384,6 +433,9 @@ jobs:
       - name: Fetch llama.cpp
         run: git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp app/src/main/cpp/llama.cpp
 
+      - name: Fetch stable-diffusion.cpp (on-phone picture engine)
+        run: bash .github/scripts/fetch-sd.sh
+
       - name: Install NDK and CMake
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
 
@@ -495,6 +547,9 @@ jobs:
 
       - name: Fetch llama.cpp
         run: git clone --depth 1 --branch "${{ inputs.llama_tag || 'b6000' }}" https://github.com/ggml-org/llama.cpp app/src/main/cpp/llama.cpp
+
+      - name: Fetch stable-diffusion.cpp (on-phone picture engine)
+        run: bash .github/scripts/fetch-sd.sh
 
       - name: Install NDK and CMake
         run: |

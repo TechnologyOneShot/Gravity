@@ -177,8 +177,18 @@ private val settingItems: List<SettingItem> = listOf(
     SettingItem(SettingsPage.AI, "Brave Search API key", "Needed for Brave Search; stored encrypted", Control.Secret(SecretStore.BRAVE_KEY)),
     SettingItem(
         SettingsPage.AI, "Pictures and videos",
-        "Online: real AI pictures from Pollinations.ai (free, no account; your picture description is sent there; one picture at a time, at least 45 s apart, may carry a small watermark). Draw: the chat's AI draws it on this phone (works offline, simpler pictures)",
-        Control.Choice(listOf("ask" to "Ask me the first time", "online" to "Free online image AI", "draw" to "Draw on this phone"), { it.pictureMaker }, { s, v -> s.copy(pictureMaker = v) }),
+        "Online: real AI pictures from Pollinations.ai (free, no account; your picture description is sent there; one picture at a time, at least 45 s apart, may carry a small watermark). " +
+            "On this phone: realistic pictures by Stable Diffusion, without internet (download the picture model first, below; about 1–3 minutes a picture). " +
+            "Code drawing: the chat's AI draws simple pictures as code",
+        Control.Choice(
+            listOf("ask" to "Ask me the first time", "online" to "Free online image AI", "phone" to "On this phone (realistic)", "draw" to "Code drawing (simple)"),
+            { it.pictureMaker }, { s, v -> s.copy(pictureMaker = v) },
+        ),
+    ),
+    SettingItem(SettingsPage.AI, "Picture model on this phone", "Download or delete the realistic picture model (about 2.2 GB)", Control.Link(Routes.models(0))),
+    SettingItem(
+        SettingsPage.AI, "Picture size on this phone", "512 px looks better; 384 px is about twice as fast",
+        Control.Choice(listOf("512" to "512 px (better)", "384" to "384 px (faster)"), { it.phonePictureSize.toString() }, { s, v -> s.copy(phonePictureSize = v.toInt()) }),
     ),
     SettingItem(SettingsPage.AI, "AI teams", "Architect, developer and reviewer working together", Control.Link(Routes.TEAMS)),
     SettingItem(SettingsPage.AI, "Offline readiness", "Check what works without the internet", Control.Link(Routes.OFFLINE)),

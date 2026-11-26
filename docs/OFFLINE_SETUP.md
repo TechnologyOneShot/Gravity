@@ -6,8 +6,15 @@ The default APK does not include llama.cpp. Build one that does:
 
 ```bash
 git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp app/src/main/cpp/llama.cpp
+bash .github/scripts/fetch-sd.sh   # stable-diffusion.cpp for realistic pictures on the phone (optional)
 ./gradlew assembleDebug -Pgravity.llama=true
 ```
+
+The on-phone picture engine (module `:engine-image`, stable-diffusion.cpp at the commit pinned in
+`.github/scripts/fetch-sd.sh`) is built when its checkout exists; `-Pgravity.image=false` leaves it out.
+On arm64 it is built for Armv8.2 (dot product, fp16) and only used on CPUs that report those. Its
+model (Realistic Vision 5.1 + LCM LoRA + TAESD, about 2.2 GB) is downloaded in the app from
+Phone Models → "Picture model on this phone".
 
 CI does this on every push to `main` (job *llama-apk-and-emulator-tests*): it builds the runtime for arm64-v8a and x86_64, runs the emulator suite with it, and attaches the result to the `debug-latest` pre-release as `gravity-debug.apk` (also under its old name `gravity-debug-llama.apk`).
 

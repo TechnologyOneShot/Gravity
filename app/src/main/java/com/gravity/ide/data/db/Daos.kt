@@ -105,11 +105,19 @@ interface ProviderDao {
 
 @Dao
 interface LocalModelDao {
-    @Query("SELECT * FROM local_models ORDER BY isDefault DESC, updatedAt DESC")
+    // Chat models only: the picture model's files (role 'picture') are listed by the queries below.
+    @Query("SELECT * FROM local_models WHERE role IS NULL OR role != 'picture' ORDER BY isDefault DESC, updatedAt DESC")
     fun observe(): Flow<List<LocalModelEntity>>
 
-    @Query("SELECT * FROM local_models ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM local_models WHERE role IS NULL OR role != 'picture' ORDER BY updatedAt DESC")
     suspend fun all(): List<LocalModelEntity>
+
+    /** The on-phone picture model's files (see PhonePictures). */
+    @Query("SELECT * FROM local_models WHERE role = 'picture' ORDER BY createdAt ASC")
+    suspend fun pictureFiles(): List<LocalModelEntity>
+
+    @Query("SELECT * FROM local_models WHERE role = 'picture' ORDER BY createdAt ASC")
+    fun observePictureFiles(): Flow<List<LocalModelEntity>>
 
     @Query("SELECT * FROM local_models WHERE id = :id")
     suspend fun get(id: String): LocalModelEntity?

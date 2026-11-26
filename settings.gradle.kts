@@ -31,3 +31,10 @@ val llamaAbis = providers.gradleProperty("gravity.abis").orNull ?: "arm64-v8a,x8
 if (llamaBuild && "arm64-v8a" in llamaAbis && providers.gradleProperty("gravity.fastEngine").orNull != "false") {
     include(":engine-fast")
 }
+// On-phone picture engine (stable-diffusion.cpp), with the native runtime unless -Pgravity.image=false.
+// Needs engine-image/src/main/cpp/stable-diffusion.cpp (pinned commit, cloned with submodules).
+if (llamaBuild && providers.gradleProperty("gravity.image").orNull != "false" &&
+    file("engine-image/src/main/cpp/stable-diffusion.cpp/CMakeLists.txt").exists()
+) {
+    include(":engine-image")
+}

@@ -9,6 +9,7 @@
 .externalNativeBuild/
 .cxx/
 /app/src/main/cpp/llama.cpp/
+/engine-image/src/main/cpp/stable-diffusion.cpp/
 *.apk
 *.aab
 *.keystore

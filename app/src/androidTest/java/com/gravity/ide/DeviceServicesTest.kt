@@ -851,6 +851,52 @@ class DeviceServicesTest {
         assertFalse("The saved crash was not cleared", file.exists())
     }
 
+    /**
+     * The on-phone picture engine without its 2.2 GB model (CI has none; the arm64-image-check job runs
+     * the same engine code with the real model): the library loads where it is bundled, the model's
+     * files never show up as chat models, a missing model gives a clear message, and the JNI calls
+     * fail cleanly instead of crashing.
+     */
+    @Test
+    fun t18_phonePictureEngineWithoutItsModel() {
+        val pictures = c.phonePictures
+        val state = runBlocking { pictures.state() }
+        Ci.log("phone-picture", "Bundled: ${BuildConfig.IMAGE_BUNDLED}; state: $state; library: ${com.gravity.ide.ai.image.NativeImage.loadError ?: "loaded"}")
+        if (!BuildConfig.IMAGE_BUNDLED) {
+            assertTrue("Without the engine it must say so: $state", state is com.gravity.ide.ai.image.PhonePictures.State.Unavailable)
+            return
+        }
+        assertEquals("The picture engine library did not load", null, com.gravity.ide.ai.image.NativeImage.loadError)
+        assertEquals(com.gravity.ide.ai.image.PhonePictures.State.NotDownloaded, state)
+        // A picture-model file row is not a chat model.
+        val row = com.gravity.ide.data.db.LocalModelEntity(
+            id = "test-picture-row", name = "diffusion_pytorch_model.safetensors", repoId = "madebyollin/taesd", filePath = "/nonexistent",
+            status = com.gravity.ide.models.ModelStatus.QUEUED.name, role = "picture", createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis(),
+        )
+        runBlocking { c.db.models().upsert(row) }
+        try {
+            val chatModels = runBlocking { c.db.models().all() }
+            val pictureFiles = runBlocking { c.db.models().pictureFiles() }
+            assertTrue("A picture file was listed as a chat model", chatModels.none { it.id == row.id })
+            assertTrue("The picture file was not listed as one", pictureFiles.any { it.id == row.id })
+            assertTrue("A half-downloaded model must show as downloading", runBlocking { pictures.state() } is com.gravity.ide.ai.image.PhonePictures.State.Downloading)
+        } finally {
+            runBlocking { c.db.models().delete(row.id) }
+        }
+        // Making a picture without the model: a plain message, no crash.
+        val missing = runCatching { runBlocking { pictures.make("a red apple", 384, 384) { _, _ -> } } }.exceptionOrNull()
+        assertTrue("Wrong message: ${missing?.message}", missing?.message?.contains("not downloaded") == true)
+        // The JNI calls with files that do not exist: they fail cleanly with an error message.
+        val n = com.gravity.ide.ai.image.NativeImage
+        val handle = n.load("/nonexistent/model.safetensors", "", "", 2, "q8_0")
+        val out = if (handle != 0L) n.generate(handle, "a red apple", "", 64, 64, 1, 1.0f, 1, "lcm", 1.0f) { _, _ -> } else null
+        val err = n.lastError()
+        if (handle != 0L) n.unload(handle)
+        Ci.log("phone-picture", "Missing model: handle=${handle != 0L}, picture=${out != null}, error=\"$err\"")
+        assertEquals("A picture came out of a missing model", null, out)
+        assertTrue("No error message for a missing model", err.isNotBlank())
+    }
+
     /** Gravity closed in the middle of work with no crash (a phone killing it for memory): the next start says so. */
     @Test
     fun t17b_closingDuringWorkIsReported() {

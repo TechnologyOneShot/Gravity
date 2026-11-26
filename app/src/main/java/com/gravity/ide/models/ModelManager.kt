@@ -79,8 +79,8 @@ class ModelManager(
         }
     }
 
-    /** Lists .gguf files with their real size and LFS SHA-256 (used as the expected checksum). */
-    suspend fun listHubFiles(repoId: String): List<HubFile> {
+    /** Lists [extension] files (.gguf by default) with their real size and LFS SHA-256 (used as the expected checksum). */
+    suspend fun listHubFiles(repoId: String, extension: String = ".gguf"): List<HubFile> {
         val url = "https://huggingface.co/api/models/$repoId/tree/main?recursive=true"
         return Http.execute(Http.base, hubRequest(url).get().build()) { response ->
             if (!response.isSuccessful) throw Http.errorFrom(response)
@@ -88,7 +88,7 @@ class ModelManager(
             (0 until arr.length()).mapNotNull { i ->
                 val o = arr.getJSONObject(i)
                 val path = o.optString("path")
-                if (o.optString("type") != "file" || !path.endsWith(".gguf", ignoreCase = true)) return@mapNotNull null
+                if (o.optString("type") != "file" || !path.endsWith(extension, ignoreCase = true)) return@mapNotNull null
                 val lfs = o.optJSONObject("lfs")
                 HubFile(path, lfs?.optLong("size") ?: o.optLong("size"), lfs?.optString("oid")?.takeIf { it.length == 64 })
             }.sortedBy { it.size }
@@ -107,6 +107,8 @@ class ModelManager(
         expectedSize: Long = 0,
         repoId: String? = null,
         license: String? = null,
+        /** "picture" for the on-phone picture model's files (not chat models). */
+        role: String? = null,
     ): LocalModelEntity = withContext(Dispatchers.IO) {
         val parsed = try { url.toHttpUrl() } catch (e: IllegalArgumentException) { throw IOException("Invalid URL") }
         if (parsed.scheme != "https") throw IOException("Model downloads require HTTPS")
@@ -117,7 +119,7 @@ class ModelManager(
         val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
         val entity = LocalModelEntity(
             id = id, name = name, sourceUrl = url, repoId = repoId, filePath = File(modelsDir, "$id-$safeName").absolutePath,
-            sizeBytes = expectedSize, sha256Expected = sha256?.lowercase(), status = ModelStatus.QUEUED.name, license = license,
+            sizeBytes = expectedSize, sha256Expected = sha256?.lowercase(), status = ModelStatus.QUEUED.name, license = license, role = role,
             createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis(),
         )
         db.models().upsert(entity)

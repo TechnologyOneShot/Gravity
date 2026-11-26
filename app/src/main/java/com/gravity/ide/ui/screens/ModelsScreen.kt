@@ -156,6 +156,7 @@ private fun InstalledModels() {
         item { RuntimeBanner() }
         item { RecommendedModels(models) }
         item { PhoneAiCheck() }
+        item { PictureModelCard() }
         item {
             Panel {
                 Column {
@@ -645,4 +646,77 @@ private fun sha256Of(file: java.io.File): String {
         }
     }
     return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+
+/**
+ * The on-phone picture model (realistic pictures without internet): its state, Download and Delete.
+ * Its files are kept apart from chat models (role "picture").
+ */
+@Composable
+private fun PictureModelCard() {
+    val c = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val files by c.db.models().observePictureFiles().collectAsState(initial = emptyList())
+    var state by remember { mutableStateOf<com.gravity.ide.ai.image.PhonePictures.State?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    LaunchedEffect(files) { state = c.phonePictures.state() }
+    Panel {
+        Column {
+            Text("Picture model on this phone", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Realistic pictures made on this phone, without internet: Stable Diffusion 1.5 (Realistic Vision 5.1) with the LCM " +
+                    "speed-up. ${com.gravity.ide.ai.image.PhonePictures.DOWNLOAD_LABEL} once. A picture takes about 1–3 minutes on a fast " +
+                    "phone and about 2.5 GB of memory. Licences: CreativeML OpenRAIL-M (model), OpenRAIL++ (LCM), MIT (TAESD).",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            when (val st = state) {
+                null -> Unit
+                is com.gravity.ide.ai.image.PhonePictures.State.Unavailable ->
+                    Text("Not available: ${st.why}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                com.gravity.ide.ai.image.PhonePictures.State.NotDownloaded ->
+                    Button(onClick = {
+                        scope.launch {
+                            try {
+                                c.phonePictures.download()
+                                toast(context, "Downloading the picture model")
+                            } catch (e: Exception) {
+                                toast(context, "Download failed: ${e.message}")
+                            }
+                        }
+                    }, modifier = Modifier.padding(top = 6.dp)) { Text("Download (${com.gravity.ide.ai.image.PhonePictures.DOWNLOAD_LABEL})") }
+                is com.gravity.ide.ai.image.PhonePictures.State.Downloading -> {
+                    Text(
+                        if (st.failed != null) "Download stopped: ${st.failed}" else "Downloading… ${st.percent}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (st.failed != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    )
+                    LinearProgressIndicator(progress = { st.percent / 100f }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (st.failed != null) OutlinedButton(onClick = {
+                            scope.launch { runCatching { c.phonePictures.download() }.onFailure { toast(context, "Download failed: ${it.message}") } }
+                        }) { Text("Try again") }
+                        OutlinedButton(onClick = { confirmDelete = true }) { Text("Cancel and delete") }
+                    }
+                }
+                com.gravity.ide.ai.image.PhonePictures.State.Ready -> {
+                    Text("Ready. Choose \"On this phone (realistic)\" in Settings → AI → Pictures and videos.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = { confirmDelete = true }, modifier = Modifier.padding(top = 4.dp)) { Text("Delete (frees ${com.gravity.ide.ai.image.PhonePictures.DOWNLOAD_LABEL})") }
+                }
+            }
+        }
+    }
+    if (confirmDelete) AlertDialog(
+        onDismissRequest = { confirmDelete = false },
+        title = { Text("Delete the picture model?") },
+        text = { Text("Its files (${com.gravity.ide.ai.image.PhonePictures.DOWNLOAD_LABEL}) are removed from this phone. You can download them again later.") },
+        confirmButton = {
+            TextButton(onClick = {
+                confirmDelete = false
+                scope.launch { c.phonePictures.delete(); state = c.phonePictures.state() }
+            }) { Text("Delete") }
+        },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Keep") } },
+    )
 }

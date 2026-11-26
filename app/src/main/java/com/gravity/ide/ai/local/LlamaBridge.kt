@@ -60,6 +60,10 @@ object LlamaBridge {
     /** CPU features the kernel reports (0 if unknown or not arm64). */
     fun cpuHwcap(): Long = if (isAvailable) runCatching { NativeBase.cpuHwcap() }.getOrDefault(0L) else 0L
 
+    /** True on an arm64 CPU with Armv8.2 dot product and fp16 (what the fast and picture engines are built for). */
+    fun armv82(): Boolean = android.os.Build.SUPPORTED_ABIS.firstOrNull() == "arm64-v8a" &&
+        cpuHwcap().let { (it and HWCAP_ASIMDDP) != 0L && (it and HWCAP_ASIMDHP) != 0L && (it and HWCAP_FPHP) != 0L }
+
     /** Why the fast engine is not used on this phone, or null if it can be used. */
     val fastUnavailableReason: String? by lazy {
         when {

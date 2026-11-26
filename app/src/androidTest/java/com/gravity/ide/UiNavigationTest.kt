@@ -26,8 +26,10 @@ import com.gravity.ide.data.db.MessageEntity
 import com.gravity.ide.ui.drawerItems
 import com.gravity.ide.ui.titleFor
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.FixMethodOrder
 import org.junit.Rule
 import org.junit.Test
@@ -351,5 +353,32 @@ class UiNavigationTest {
         runBlocking { Ci.container.settings.update { it.copy(pictureMaker = "ask") } }
         assertTrue("The choice was not saved: $setting", setting == "draw")
         assertNotNull("The message was not sent after the choice", sent)
+    }
+
+    /**
+     * "On this phone" without the picture engine in the build: the request is not lost (it goes back
+     * into the message box), a clear message says why, and the choice is asked again next time.
+     */
+    @Test
+    fun t08b_phonePicturesUnavailableKeepsTheRequest() {
+        Assume.assumeTrue("Only for builds without the picture engine (the other case would start a 2.2 GB download)", !BuildConfig.IMAGE_BUNDLED)
+        runBlocking { Ci.container.settings.update { it.copy(pictureMaker = "ask") } }
+        waitForTitle("Gravity")
+        openDrawerEntry("New Chat")
+        waitForTitle("Chat")
+        val request = "ek ghode ki photo banao ${System.currentTimeMillis() % 100000}"
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput(request)
+        compose.onNodeWithContentDescription("Send").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("pictures-phone").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("pictures-phone").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("cannot be made on this phone", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        Ci.screenshot("08b_phone_pictures_unavailable")
+        val back = compose.onAllNodes(hasSetTextAction()).onFirst().fetchSemanticsNode().config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText)?.text
+        val setting = runBlocking { Ci.container.settings.current().pictureMaker }
+        val sent = runBlocking { Ci.container.db.chats().all().firstOrNull { it.title == request } }
+        Ci.log("pictures", "Phone unavailable: back in the box=${back == request}, setting=$setting, sent=${sent != null}")
+        assertEquals("The request was not put back", request, back)
+        assertEquals("The choice must be asked again", "ask", setting)
+        assertEquals("The request must not be sent", null, sent)
     }
 }

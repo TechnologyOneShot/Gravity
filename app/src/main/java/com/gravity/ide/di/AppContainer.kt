@@ -69,6 +69,12 @@ class AppContainer(context: Context) {
     val termux = com.gravity.ide.build.TermuxBridge(appContext, events)
     val builds = BuildEngine(appContext, db, terminals, events, workspace, settings, termux)
     val device = DeviceInspector(appContext)
+    /** Realistic pictures made on the phone (Stable Diffusion), when its model is downloaded. */
+    val phonePictures by lazy {
+        com.gravity.ide.ai.image.PhonePictures(appContext, db, models, localHost, crashReports) {
+            com.gravity.ide.device.PerformanceManager.threads(settings.current(), device.info())
+        }
+    }
     val installer = AppInstaller(appContext, events)
     val logcat = LogcatReader()
     val screenshots = ScreenshotStore(appContext, db, events)

@@ -71,11 +71,16 @@ object OnlineImages {
     suspend fun bitmap(prompt: String, width: Int, height: Int): Bitmap {
         val bytes = generate(prompt, width, height)
         val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: throw IllegalStateException("not a picture")
-        if (decoded.width == width && decoded.height == height) return decoded
         // Fill the frame (crop the middle) if the service sent another size.
-        val scale = maxOf(width.toFloat() / decoded.width, height.toFloat() / decoded.height)
-        val scaled = Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(width), (decoded.height * scale).toInt().coerceAtLeast(height), true)
-        if (scaled != decoded) decoded.recycle()
+        return cover(decoded, width, height)
+    }
+
+    /** [bmp] scaled to fill [width]x[height], the middle kept (recycles [bmp] if it made a new one). */
+    fun cover(bmp: Bitmap, width: Int, height: Int): Bitmap {
+        if (bmp.width == width && bmp.height == height) return bmp
+        val scale = maxOf(width.toFloat() / bmp.width, height.toFloat() / bmp.height)
+        val scaled = Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt().coerceAtLeast(width), (bmp.height * scale).toInt().coerceAtLeast(height), true)
+        if (scaled != bmp) bmp.recycle()
         val out = Bitmap.createBitmap(scaled, (scaled.width - width) / 2, (scaled.height - height) / 2, width, height)
         if (out != scaled) scaled.recycle()
         return out
