@@ -92,8 +92,26 @@ object LanguageHint {
         Lang.UNKNOWN -> ""
     }
 
+    private val followUp = Regex("^(?:(?:and|aur|or|ok|okay|please|pls|thoda|kuch|ek|some|few|10|5)\\s+)*(?:more|aur|continue|aage|zyada|jyada|next|again|dobara|phir se)\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * True for a short follow-up that asks for more of the last answer ("more and hindi text",
+     * "aur do", "continue"). Phone models read it alone (they answer the latest message only) and
+     * replied "Tell me, how can I help you?" instead of more GK questions.
+     */
+    fun isFollowUp(text: String): Boolean {
+        val t = text.trim()
+        return t.split(Regex("\\s+")).size <= 8 && followUp.containsMatchIn(t)
+    }
+
     /** [text] with its reply instruction on a new line (unchanged when the language is unclear). */
-    fun withHint(text: String): String = hint(text).let { if (it.isEmpty()) text else "$text\n\n$it" }
+    fun withHint(text: String): String {
+        val parts = listOfNotNull(
+            "(This asks for more of your previous answer: continue it with new items, do not repeat them.)".takeIf { isFollowUp(text) },
+            hint(text).ifEmpty { null },
+        )
+        return if (parts.isEmpty()) text else text + "\n\n" + parts.joinToString(" ")
+    }
 
     /**
      * For a request whose reply has "Picture:" lines for the online image AI: those lines in English

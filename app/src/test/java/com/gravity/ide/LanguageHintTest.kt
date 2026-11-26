@@ -74,9 +74,13 @@ class LanguageHintTest {
         asked(Lang.HINGLISH, "hinglish me likho", "reply in Hinglish")
         asked(null, "What is the Hindi word for apple?", "Name three planets.", "hindi and english both", "kya haal hai")
         assertEquals(
-            "more and hindi text\n\n(The user asks for Hindi: reply only in Hindi, written in Devanagari, with no English translation.)",
+            "more and hindi text\n\n(This asks for more of your previous answer: continue it with new items, do not repeat them.) " +
+                "(The user asks for Hindi: reply only in Hindi, written in Devanagari, with no English translation.)",
             LanguageHint.withHint("more and hindi text"),
         )
+        listOf("more", "aur do", "continue", "10 more please", "aur batao", "more questions in hindi").forEach { assertEquals(it, true, LanguageHint.isFollowUp(it)) }
+        listOf("What is photosynthesis? Explain in 2 lines.", "mere liye ek gana gao", "Name three planets.", "more people live in cities than villages, why is that so?")
+            .forEach { assertEquals(it, false, LanguageHint.isFollowUp(it)) }
     }
 }
 
