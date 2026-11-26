@@ -39,7 +39,7 @@ def picture(prompt):
 def main():
     import sys
     url = sys.argv[1]
-    for variant in ["old", "new"]:
+    for variant in ["new"]:
         system = open(f"otrial/{variant}.txt", encoding="utf-8").read()
         for i, q in enumerate(questions):
             reply = ask(url, system, q)
