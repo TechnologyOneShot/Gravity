@@ -1,34 +1,14 @@
-name: drawing-trial
-# Which picture instruction makes a phone model (Gemma 3 4B) draw recognisable SVG pictures?
-# Each version draws five subjects with the app's prompt and sampler; the replies are in the log.
+name: picture-trial
+# Realistic pictures: (1) online, Gemma's picture description with the old vs new instruction, made by
+# the app's Flux service; (2) on the phone, stable-diffusion.cpp with realistic SD 1.5 models + LCM on
+# an Arm CPU (4 threads, like a phone's big cores): time, memory, and the picture.
 on:
   push:
     branches: [prompt-trial]
 jobs:
-  draw:
+  online:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - variant: v0_current
-            penalty: "1.05"
-            temp: "0.4"
-            seed: "11"
-          - variant: v0_current
-            penalty: "1.05"
-            temp: "0.4"
-            seed: "23"
-          - variant: v3_features
-            penalty: "1.05"
-            temp: "0.4"
-            seed: "11"
-          - variant: v3_features
-            penalty: "1.05"
-            temp: "0.4"
-            seed: "23"
-    name: draw (${{ matrix.variant }} seed ${{ matrix.seed }})
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Build llama-server (llama.cpp b6000)
@@ -36,10 +16,61 @@ jobs:
           git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
           cmake -S /tmp/llama.cpp -B /tmp/llama-build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF > /dev/null
           cmake --build /tmp/llama-build --target llama-server -j"$(nproc)" > /dev/null
+          pip install --quiet pillow
       - name: Download Gemma 3 4B
         run: curl -fL --retry 3 -o /tmp/model.gguf https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf
-      - name: Draw five pictures
+      - name: Describe and make five pictures, old vs new instruction
         run: |
           /tmp/llama-build/bin/llama-server -m /tmp/model.gguf -c 8192 -np 1 -fa -t "$(nproc)" --port 8089 > /tmp/server.log 2>&1 &
           for i in $(seq 1 300); do curl -sf http://127.0.0.1:8089/health > /dev/null && break; sleep 1; done
-          python3 .github/scripts/drawing-trial.py dtrial/variants/${{ matrix.variant }}.txt dtrial/questions.txt http://127.0.0.1:8089 ${{ matrix.penalty }} ${{ matrix.temp }} ${{ matrix.seed }}
+          python3 .github/scripts/online-trial.py http://127.0.0.1:8089
+  on-phone:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: DreamShaper8-LCM
+            url: https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors
+          - name: RealisticVision51-LCM
+            url: https://huggingface.co/SG161222/Realistic_Vision_V5.1_noVAE/resolve/main/Realistic_Vision_V5.1_fp16-no-ema.safetensors
+    name: on-phone (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build stable-diffusion.cpp for Arm (like the phone engine)
+        run: |
+          lscpu | grep -E "Model name|^CPU\\(s\\)"
+          git clone --depth 1 --recursive https://github.com/leejet/stable-diffusion.cpp /tmp/sd
+          git -C /tmp/sd log -1 --format="stable-diffusion.cpp %h %cd"
+          cmake -S /tmp/sd -B /tmp/sdb -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16 > /tmp/cmake.log
+          cmake --build /tmp/sdb -j"$(nproc)" > /tmp/build.log 2>&1 || (tail -30 /tmp/build.log; exit 1)
+          find /tmp/sdb/bin -maxdepth 1 -type f -executable | head
+          pip install --quiet pillow
+      - name: Download the model, LCM LoRA and TAESD
+        run: |
+          mkdir -p /tmp/m /tmp/lora
+          curl -fL --retry 3 -o /tmp/m/model.safetensors "${{ matrix.url }}"
+          curl -fL --retry 3 -o /tmp/lora/lcm.safetensors https://huggingface.co/latent-consistency/lcm-lora-sdv1-5/resolve/main/pytorch_lora_weights.safetensors
+          curl -fL --retry 3 -o /tmp/m/taesd.safetensors https://huggingface.co/madebyollin/taesd/resolve/main/diffusion_pytorch_model.safetensors
+          ls -la /tmp/m /tmp/lora
+      - name: Make realistic pictures (512x512, 6 steps, 4 threads)
+        run: |
+          set +e
+          SD=$(ls /tmp/sdb/bin/sd-cli /tmp/sdb/bin/sd 2>/dev/null | head -1)
+          $SD --help 2>&1 | head -5
+          i=0
+          while IFS= read -r P; do
+            i=$((i+1))
+            echo "=====SD $i | $P"
+            /usr/bin/time -v $SD -m /tmp/m/model.safetensors --type q8_0 --taesd /tmp/m/taesd.safetensors --lora-model-dir /tmp/lora \
+              -p "$P <lora:lcm:1>" -n "cartoon, drawing, painting, blurry, deformed, extra limbs, text, watermark" \
+              --sampling-method lcm --steps 6 --cfg-scale 1.5 -W 512 -H 512 -t 4 -s 42 -o /tmp/out-$i.png > /tmp/sd-$i.log 2> /tmp/time-$i.txt
+            echo "EXIT $?"
+            grep -iE "loading|load.*taken|sampling completed|decode.*taken|generate.*taken|completed in|txt2img completed|error" /tmp/sd-$i.log | tail -8
+            grep -E "Elapsed|Maximum resident" /tmp/time-$i.txt
+            [ -f /tmp/out-$i.png ] && python3 .github/scripts/thumb.py /tmp/out-$i.png || (tail -15 /tmp/sd-$i.log; tail -5 /tmp/time-$i.txt)
+          done <<'PROMPTS'
+          a photo of a brown monkey sitting on a tree branch in a lush green jungle, holding a banana, curious expression, full-body shot at eye level, soft golden-hour sunlight through the leaves, photorealistic, sharp focus, natural colours, detailed fur
+          a young Indian woman standing on a city street in the rain holding a red umbrella, smiling, full-body shot, wet road with reflections, shops in the background at dusk, photorealistic, sharp focus, natural colours
+          PROMPTS
