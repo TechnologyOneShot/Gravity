@@ -10,9 +10,12 @@ namespace {
 // sd.cpp's step callback is global: one picture at a time (the app never makes two at once).
 std::mutex g_step_mutex;
 const std::function<void(int, int)> *g_on_step = nullptr;
+int g_sampling_steps = 0;
 
+// sd.cpp also reports loading weights and decoding through this callback (e.g. 196/196, 67/67):
+// only the sampling steps the caller asked for are passed on.
 void step_cb(int step, int steps, float, void *) {
-    if (g_on_step && *g_on_step) (*g_on_step)(step, steps);
+    if (steps == g_sampling_steps && g_on_step && *g_on_step) (*g_on_step)(step, steps);
 }
 
 std::string last_error(const char *what) {
@@ -81,6 +84,7 @@ bool generate(Session *s, const std::string &prompt, const std::string &negative
     {
         std::lock_guard<std::mutex> lock(g_step_mutex);
         g_on_step = &on_step;
+        g_sampling_steps = steps;
         sd_set_progress_callback(step_cb, nullptr);
         status = sd_generate_image(s->ctx, opt, &result);
         sd_set_progress_callback(nullptr, nullptr);
