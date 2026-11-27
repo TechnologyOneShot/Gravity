@@ -234,7 +234,10 @@ private fun InstalledModels() {
                     }
                     KeyValue("License", m.license ?: "unknown — check the model card")
                     KeyValue("SHA-256", (m.sha256Actual ?: "—").take(20) + if (m.sha256Expected != null) " (verified)" else "", mono = true)
-                    val needRam = com.gravity.ide.core.GgufReader.estimateRamBytes(m.sizeBytes, settings.localContextSize)
+                    val gguf by androidx.compose.runtime.produceState<com.gravity.ide.core.GgufReader.Info?>(null, m.filePath, m.sizeBytes) {
+                        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.gravity.ide.core.GgufReader.cached(java.io.File(m.filePath)) }
+                    }
+                    val needRam = com.gravity.ide.core.GgufReader.estimateRamBytes(m.sizeBytes, settings.localContextSize, gguf)
                     KeyValue(
                         "Est. RAM",
                         formatBytes(needRam) + if (needRam > c.device.recommendedMaxModelBytes()) " — too big for this phone (slow or may be closed by Android)" else "",

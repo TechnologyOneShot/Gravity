@@ -145,7 +145,7 @@ class LocalModelHost(private val context: Context, private val events: EventLog)
 
     /** Returns a warning when the model probably does not fit in currently free RAM. */
     fun memoryWarning(model: LocalModelEntity, contextSize: Int): String? {
-        val need = com.gravity.ide.core.GgufReader.estimateRamBytes(model.sizeBytes, contextSize)
+        val need = com.gravity.ide.core.GgufReader.estimateRamBytes(model.sizeBytes, contextSize, com.gravity.ide.core.GgufReader.cached(java.io.File(model.filePath)))
         val avail = availableRamBytes()
         return if (need > avail) {
             "Estimated need ${need / (1024 * 1024)} MB exceeds currently available ${avail / (1024 * 1024)} MB. Loading may fail or the system may kill Yamini."

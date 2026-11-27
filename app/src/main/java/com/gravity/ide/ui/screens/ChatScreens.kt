@@ -699,7 +699,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             }
             // A chat AI that says it made a picture when none was asked for (none is being made):
             // say so in the reply, so a pretend picture is not taken for a real one.
-            if (pendingMake == null && com.gravity.ide.core.MakeFiles.claimsPicture(text.toString())) {
+            if (pendingMake == null && com.gravity.ide.core.MakeFiles.claimsPicture(text.toString(), phoneModel = providerId == LocalLlamaProvider.ID)) {
                 text.append("\n\n").append(com.gravity.ide.core.MakeFiles.NO_PICTURE_NOTE)
             }
             val savedId = saveAssistant(text.toString(), resolvedModel, providerId, inTok, outTok, sources, null)

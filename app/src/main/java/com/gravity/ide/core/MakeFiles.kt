@@ -21,9 +21,13 @@ object MakeFiles {
     private val zipWord = "(zip|ज़िप|जिप)"
     private val pdf = Regex("(?i)${B}$pdfWord${B}.*${B}$make|${B}$make.*${B}$pdfWord${B}|${B}as\\s+(a\\s+)?pdf${B}|${B}$pdfWord\\s+(me|mein|में|file|फाइल|फ़ाइल)${B}")
     private val zip = Regex("(?i)${B}$zipWord${B}.*${B}$make|${B}$make.*${B}$zipWord${B}|${B}as\\s+(a\\s+)?zip${B}|${B}$zipWord\\s+(me|mein|में|file|फाइल|फ़ाइल)${B}")
-    private val imageWord = "(image|images|photo|photos|picture|pic|tasveer|tasvir|chitra|poster|logo|drawing|wallpaper|icon|banner|sticker|illustration|" +
+    private val imageWord = "(image|images|photo|photos|picture|pic|png|jpg|jpeg|tasveer|tasvir|chitra|poster|logo|drawing|wallpaper|icon|banner|sticker|illustration|" +
         "तस्वीर|फोटो|फ़ोटो|फोटू|चित्र|पोस्टर|लोगो|इमेज|पिक्चर|ड्रॉइंग|ड्राइंग|वॉलपेपर|वालपेपर|बैनर|स्टिकर|आइकन)"
-    private val image = Regex("(?i)${B}$imageWord${B}.*${B}$make|${B}$make.*${B}$imageWord${B}")
+    // Also "image do", "png do", "photo dijiye" (asked for a user's chat: the phone model answered
+    // "image do" with Python code and "tum png do" with a made-up image link).
+    private val image = Regex(
+        "(?i)${B}$imageWord${B}.*${B}$make|${B}$make.*${B}$imageWord${B}|${B}$imageWord\\s+(do|de|dena|dijiye|dijie|dikha\\s*do)${B}",
+    )
     private val audioWord = "(audio|mp3|wav|voice\\s*file|awaaz|awaz|aawaz|आवाज़|आवाज|ऑडियो|sound\\s*file|recording|voice\\s*note|रिकॉर्डिंग)"
     private val audio = Regex("(?i)${B}$audioWord${B}.*${B}$make|${B}$make.*${B}$audioWord${B}|${B}$audioWord\\s+(me|mein|में)${B}")
     private val videoWord = "(video|videos|clip|reel|reels|mp4|animation|वीडियो|विडियो|वीडियोज़|क्लिप|रील|एनिमेशन)"
@@ -82,8 +86,16 @@ object MakeFiles {
             "(यह|ये)\\s+(दूसरी\\s+|नई\\s+|आपकी\\s+)?तस्वीर\\s+है|यहाँ\\s+.{0,40}तस्वीर\\s+है|तस्वीर\\s+बना\\s+(दी|ली)",
     )
 
-    /** True when a reply claims a picture although none was made for its message. */
-    fun claimsPicture(reply: String): Boolean = claimsPictureRe.containsMatchIn(reply)
+    // A picture shown as a link to nowhere: ![Elephant eating fruits](https://example.com/…).
+    private val madeUpImageLink = Regex("(?i)!\\[[^\\]]*]\\(\\s*(https?://)?(www\\.)?(example\\.(com|org|net)|placeholder|via\\.placeholder|your-image|image-url|link-to)")
+    private val imageLink = Regex("!\\[[^\\]]*]\\(\\s*https?://")
+
+    /**
+     * True when a reply claims a picture although none was made for its message: words that say so,
+     * or a made-up image link. [phoneModel]: any image link counts (a phone model has no internet).
+     */
+    fun claimsPicture(reply: String, phoneModel: Boolean = false): Boolean =
+        claimsPictureRe.containsMatchIn(reply) || madeUpImageLink.containsMatchIn(reply) || (phoneModel && imageLink.containsMatchIn(reply))
 
     /** The note added to such a reply, so it is not taken for a real picture. */
     const val NO_PICTURE_NOTE =

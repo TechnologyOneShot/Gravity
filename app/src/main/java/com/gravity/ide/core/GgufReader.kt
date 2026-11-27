@@ -25,6 +25,11 @@ object GgufReader {
         val sizeLabel: String?,
         val hasChatTemplate: Boolean,
         val metadataKeys: Int,
+        /** Layers, width and attention heads (for the memory a context needs); null if not in the file. */
+        val blockCount: Int? = null,
+        val embeddingLength: Int? = null,
+        val headCount: Int? = null,
+        val headCountKv: Int? = null,
     )
 
     class NotGgufException(message: String) : IOException(message)
@@ -59,7 +64,8 @@ object GgufReader {
                 skipValue(input, type)
                 continue
             }
-            val wanted = key.startsWith("general.") || key.endsWith(".context_length")
+            val wanted = key.startsWith("general.") || key.endsWith(".context_length") || key.endsWith(".block_count") ||
+                key.endsWith(".embedding_length") || key.endsWith(".attention.head_count") || key.endsWith(".attention.head_count_kv")
             if (wanted && type != TYPE_ARRAY) values[key] = readValue(input, type) else skipValue(input, type)
         }
         val arch = values["general.architecture"] as? String
@@ -76,7 +82,19 @@ object GgufReader {
             sizeLabel = values["general.size_label"] as? String,
             hasChatTemplate = hasTemplate,
             metadataKeys = kvCount.toInt(),
+            blockCount = arch?.let { (values["$it.block_count"] as? Number)?.toInt() },
+            embeddingLength = arch?.let { (values["$it.embedding_length"] as? Number)?.toInt() },
+            headCount = arch?.let { (values["$it.attention.head_count"] as? Number)?.toInt() },
+            headCountKv = arch?.let { (values["$it.attention.head_count_kv"] as? Number)?.toInt() },
         )
+    }
+
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Info>()
+
+    /** [read] once per file (the header of a 4 GB model is a few MB to skip through). Null if unreadable. */
+    fun cached(file: File): Info? {
+        val key = "${file.path}:${file.length()}"
+        return cache[key] ?: runCatching { read(file) }.getOrNull()?.also { cache[key] = it }
     }
 
     private const val TYPE_UINT8 = 0
@@ -151,9 +169,16 @@ object GgufReader {
      * Rough working-memory estimate for CPU inference: weights are memory-mapped, plus the
      * KV cache (approximation) and runtime overhead. Shown to the user as an estimate only.
      */
-    fun estimateRamBytes(fileSize: Long, contextTokens: Int): Long {
-        val kvApprox = contextTokens.toLong() * 160L * 1024L // ~160 KiB/token for 1–8B models at f16 KV
-        return (fileSize * 1.05).toLong() + kvApprox + 300L * 1024 * 1024
+    fun estimateRamBytes(fileSize: Long, contextTokens: Int, info: Info? = null): Long {
+        // From the model's own layers and heads when known: Qwen2.5 7B needs about 112 KiB a token
+        // (few key/value heads), not the 160 KiB guessed for any model, which called it "too big"
+        // for a 12 GB phone at an 8192 context.
+        val perToken = if (info?.blockCount != null && info.embeddingLength != null && info.headCount != null) {
+            ContextPlanner.bytesPerToken(info.blockCount, info.embeddingLength, info.headCount, info.headCountKv ?: 0)
+        } else {
+            160L * 1024L // ~160 KiB/token for 1–8B models at f16 KV
+        }
+        return (fileSize * 1.05).toLong() + contextTokens.toLong() * perToken + 300L * 1024 * 1024
     }
 
     private class LeInput(private val input: InputStream) {

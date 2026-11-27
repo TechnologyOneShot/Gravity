@@ -27,6 +27,12 @@ class MakeFilesTest {
         assertEquals(Kind.AUDIO, MakeFiles.detect("ऑडियो बना दो"))
         assertEquals(null, MakeFiles.detect("image kya hota hai"))
         assertEquals(Kind.AUDIO, MakeFiles.detect("make an mp3 of this poem"))
+        // From a user's chat: these went to the phone model, which wrote Python code or a fake link.
+        assertEquals(Kind.IMAGE, MakeFiles.detect("image do"))
+        assertEquals(Kind.IMAGE, MakeFiles.detect("tum png do"))
+        assertEquals(Kind.IMAGE, MakeFiles.detect("ek photo dijiye sher ki"))
+        assertEquals(null, MakeFiles.detect("do you like this photo"))
+        assertEquals(null, MakeFiles.detect("how do I resize an image?"))
     }
 
     @Test fun ordinaryQuestionsAreNotFileRequests() {
@@ -64,6 +70,10 @@ class MakeFilesTest {
         assertTrue(MakeFiles.claimsPicture("मैं खुद ही तस्वीर बनाऊँगी।\n... (Processing - simulating image generation) ...\nHere is a picture of a 10-year-old boy studying."))
         assertTrue(MakeFiles.claimsPicture("यह दूसरी तस्वीर है। (Yah doosri tasveer hai.)"))
         assertFalse(MakeFiles.claimsPicture("Photosynthesis is how plants make food from sunlight."))
+        // A made-up image link (a user's chat: "tum png do" → this).
+        assertTrue(MakeFiles.claimsPicture("[![Elephant eating fruits](https://example.com/elephant.png)](https://example.com)"))
+        assertTrue(MakeFiles.claimsPicture("![Elephant](https://upload.wikimedia.org/x.png)", phoneModel = true))
+        assertFalse(MakeFiles.claimsPicture("![Elephant](https://upload.wikimedia.org/x.png)"))
         assertFalse(MakeFiles.claimsPicture("Aap photo ke liye \"ek photo banao\" likh sakte hain."))
     }
 }
