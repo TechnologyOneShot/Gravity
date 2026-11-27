@@ -14,7 +14,8 @@ object SpeechText {
 
     /** Markdown, code, links and the "(generation stopped)" note removed; what remains reads naturally. */
     fun clean(text: String): String {
-        var t = text.replace("_(generation stopped)_", "")
+        // "*smiles*" → "(smiles)": stage directions are said as a manner, not read out (StageDirections).
+        var t = StageDirections.asParens(text.replace("_(generation stopped)_", ""))
         t = codeBlock.replace(t, " (code not read aloud) ")
         t = inlineCode.replace(t, "$1")
         t = link.replace(t, "$1")

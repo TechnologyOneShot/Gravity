@@ -317,7 +317,9 @@ internal fun ChatBubble(
     }
     Column(Modifier.fillMaxWidth()) {
         if (m.content.isNotBlank()) {
-            SelectionContainer { RichText(m.content) }
+            // Stage directions ("(A long pause…)") are not shown: the voice says the text in that manner.
+            val shown = remember(m.content) { com.gravity.ide.core.StageDirections.strip(m.content) }
+            SelectionContainer { RichText(shown) }
             val sources = remember(m.sources) { runCatching { JSONArray(m.sources) }.getOrNull() }
             if (sources != null && sources.length() > 0) {
                 Text("Sources", style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted, modifier = Modifier.padding(top = 8.dp))
@@ -554,7 +556,7 @@ private fun SmallAction(icon: ImageVector, description: String, onClick: () -> U
 @Composable
 internal fun StreamingBubble(text: String, activity: com.gravity.ide.agent.ChatRuns.Activity? = null) {
     Column(Modifier.fillMaxWidth()) {
-        if (text.isEmpty()) TypingDots(activity) else RichText("$text ▍")
+        if (text.isEmpty()) TypingDots(activity) else RichText(com.gravity.ide.core.StageDirections.strip(text) + " ▍")
     }
 }
 

@@ -83,9 +83,14 @@ object ReplySpeaker {
         // Gemini's online voice when the user switched it on; the phone's voice if it cannot.
         if (VoicePrefs.online(ctx)) {
             runCatching { t.stop() }
-            val style = com.gravity.ide.voice.OnlineVoice.style(VoicePrefs.moodFor(ctx, clean), VoicePrefs.mode(ctx))
+            // A stage direction ("(whispering)") sets the style; its words are not read out.
+            val segs = com.gravity.ide.core.StageDirections.segments(clean)
+            val directed = segs.firstNotNullOfOrNull { it.mood }?.takeIf { VoicePrefs.natural(ctx) }
+            val style = com.gravity.ide.voice.OnlineVoice.style(
+                directed?.let { com.gravity.ide.core.EmotionClassifier.Result(it, 1f, 0.8f) } ?: VoicePrefs.moodFor(ctx, clean), VoicePrefs.mode(ctx),
+            )
             // Hinglish sentences in Devanagari, so Hindi words are said the Hindi way.
-            val words = com.gravity.ide.core.HinglishReader.forVoice(ctx, clean).text
+            val words = com.gravity.ide.core.HinglishReader.forVoice(ctx, segs.joinToString("\n") { (if (it.laugh) "haha, " else "") + it.text }).text
             com.gravity.ide.voice.OnlineVoicePlayer.speak(ctx, words, style, VoicePrefs.onlineVoice(ctx)) { outcome ->
                 when (outcome) {
                     is com.gravity.ide.voice.OnlineVoicePlayer.Outcome.Failed -> main.post {

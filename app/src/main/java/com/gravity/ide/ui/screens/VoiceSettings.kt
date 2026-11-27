@@ -228,6 +228,24 @@ internal fun VoiceSettingsPanel() {
         TalkMemoryCard()
 
         VoiceCard("Speaking style", "How Yamini talks in live mode and when it reads replies: its words and mood, and the voice's speed, pitch and pauses.") {
+            // One tap for the film-style AI butler: calm, polite, "Sir", a British man's English voice.
+            // (A real actor's voice cannot be copied; this is the closest the phone's voices allow.)
+            androidx.compose.material3.OutlinedButton(
+                onClick = {
+                    styleId = "butler"; VoicePrefs.setStyle(context, "butler")
+                    VoicePrefs.setGender(context, "male"); yaminiGender = "male"; gender = "male"
+                    accent = "GB"; VoicePrefs.setAccent(context, "GB")
+                    hindiVoice = VoicePrefs.voiceName(context, true); englishVoice = VoicePrefs.voiceName(context, false)
+                    hindiTab = false
+                    preview(VoiceStyles.byId("butler"), false)
+                },
+                modifier = Modifier.testTag("voice-preset-butler"),
+            ) { Text("🤵 Movie AI-butler voice (British, male, calm)") }
+            Text(
+                "Sets the AI Butler style, a male voice and British English. It speaks like a film's AI butler; the actor's own voice is not copied.",
+                style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             VoiceStyles.all.forEachIndexed { i, st ->
                 if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(

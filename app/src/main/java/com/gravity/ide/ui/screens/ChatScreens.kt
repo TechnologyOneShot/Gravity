@@ -1153,7 +1153,7 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
             items(messages, key = { it.id }) { m ->
                 ChatBubble(
                     m, isLast = m.id == lastId, busy = busy,
-                    onCopy = { clipboard.setText(AnnotatedString(m.content)); toast(context, "Copied") },
+                    onCopy = { clipboard.setText(AnnotatedString(com.gravity.ide.core.StageDirections.strip(m.content))); toast(context, "Copied") },
                     onRetry = { vm.regenerate() },
                     onShare = { share(m.content) },
                     onDelete = { vm.deleteMessage(m.id) },

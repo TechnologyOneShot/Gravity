@@ -226,7 +226,20 @@ object VoicePrefs {
         }
         if (keepMood && base.feelings && mood == null) base.mood = felt
         val mode = if (base.feelings) base.mode else Expressions.Mode.NORMAL
-        val utterances = SpeechPlanner.plan(said, felt, mode, base.hindiHome) { HinglishReader.read(it, base.words).wasHinglish }
+        // Stage directions ("(A pause)", "(whispering)") are not read out: the words after them are
+        // said in that manner, after that pause.
+        val utterances = com.gravity.ide.core.StageDirections.segments(said).flatMap { seg ->
+            val segMood = seg.mood?.takeIf { base.feelings && mood == null }?.let { EmotionClassifier.Result(it, 1f, 0.8f) } ?: felt
+            val words = (if (seg.laugh && base.feelings) "haha, " else "") + seg.text
+            SpeechPlanner.plan(words, segMood, mode, base.hindiHome) { HinglishReader.read(it, base.words).wasHinglish }
+                .mapIndexed { i, u -> if (i == 0) u to seg.pauseBeforeMs else u to 0 }
+        }.let { list ->
+            // A direction's pause goes after the piece before it.
+            list.mapIndexed { i, (u, _) ->
+                val next = list.getOrNull(i + 1)?.second ?: 0
+                if (next > u.pauseAfterMs && i < list.lastIndex) u.copy(pauseAfterMs = next) else u
+            }
+        }
         // A sentence goes to the other language's voice only if the phone has one (the offline
         // voice switches by language); else the reply's own voice reads it.
         val nat = isNatural(tts)

@@ -23,8 +23,10 @@ object ChatPrompt {
         "Answer the user's latest message only. Earlier messages are context: do not copy the style or format of your earlier " +
         "replies (e.g. a poem) unless asked again. Use correct, common words; " +
         "never invent words. " +
-        "Write poems, songs, stories and letters as normal text (not in code blocks), original and natural, " +
-        "with fresh lines and no repeated filler. Use Markdown, and put code in fenced code blocks. If you are not sure, say so instead of guessing; " +
+        "Write poems, songs, stories and letters as normal text (not in code blocks), original, " +
+        "with fresh lines and no filler. Put code in fenced code blocks. " +
+        // Gemma wrote "(A long pause, filled with unspoken sorrow)" and "मैं तुम्हें प्यार करती हूँ" in a chat.
+        "Write no stage directions like (sighs); claim no human feelings. If you are not sure, say so instead of guessing; " +
         "in GK lists and quizzes, write only facts you are sure of."
 
     /** The closing rule for "what can and can't you do?", shared by both prompts. */
@@ -60,7 +62,6 @@ object ChatPrompt {
         "Write and fix code; build small apps in App mode.",
         "Read attached PDF, ZIP, text and code files.",
         "The app makes PDF, ZIP, picture, audio and video files from replies.",
-        "Talk in live voice mode.",
     )
 
     /** What a phone model is told Gravity cannot do. */
