@@ -196,6 +196,17 @@ class AppBuilderPromptExportTest {
         assertEquals(4, dir.listFiles { f -> f.name.endsWith(".json") }!!.size)
     }
 
+    @Test fun aRequestForAWholeAppIsWrittenAnew() {
+        for (r in listOf(
+            "Music Player App Banao", "music player app bana do", "ek calculator app banaiye", "make a music player app",
+            "Build me a new app for notes", "naya app chahiye", "start over", "shuru se banao", "म्यूज़िक प्लेयर ऐप बनाओ",
+        )) assertTrue(r, AppBuilder.asksForNewApp(r))
+        for (r in listOf(
+            "is app ko bada bana do", "make the buttons bigger", "make the app dark", "app mein ek button add karo",
+            "play button ko gol bana do", "make it look like this design", "change the color", "app ka naam badlo",
+        )) assertFalse(r, AppBuilder.asksForNewApp(r))
+    }
+
     companion object {
         /** DesignReader's starting page for a real now-playing screenshot (see DesignReaderTest for how it is measured). */
         val MEASURED_PLAYER = """

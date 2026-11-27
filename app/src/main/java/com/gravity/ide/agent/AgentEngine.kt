@@ -547,9 +547,21 @@ class AgentEngine(
         val root = File(project.rootPath)
         val index = File(root, "index.html")
         val isChange = AppBuilder.isChangeInstruction(task.instruction)
-        val current = if (isChange && index.isFile) index.readText().takeUnless { AppBuilder.isPlaceholder(it) } else null
-        // Design pictures the user attached: a cloud AI sees them; a phone model gets their text and positions.
+        // Design pictures the user attached: a cloud AI sees them; a phone model gets them measured.
         val designFiles = AppBuilder.designsFrom(task.instruction).map { File(root, it) }.filter { it.isFile }
+        // In an app's chat, a request for a whole app ("music player app banao"), or a design picture for the phone
+        // model, is written anew instead of as edits to the old page: small edits cannot turn it into another app,
+        // and the phone model builds a design from its starting page. The old page stays in the history (Undo).
+        val rebuild = isChange && index.isFile && (AppBuilder.asksForNewApp(AppBuilder.requestFrom(task.instruction)) || (local && designFiles.isNotEmpty()))
+        val current = if (isChange && !rebuild && index.isFile) index.readText().takeUnless { AppBuilder.isPlaceholder(it) } else null
+        if (rebuild) {
+            events.log(
+                EventCategory.AGENT, "Writing the app anew",
+                if (designFiles.isNotEmpty() && local) "A design picture was attached: the phone model builds it from the design's starting page, not as edits to the old page."
+                else "The request asks for a whole app, so it is written from the start rather than changed.",
+                taskId = task.id,
+            )
+        }
         var designImages = emptyList<com.gravity.ide.ai.ImagePart>()
         var designText: String? = null
         var designLayout: String? = null
@@ -645,7 +657,8 @@ class AgentEngine(
                     events.log(EventCategory.AGENT, "AI reply (${reply.outputTokens} tokens, no edits)", reply.text.take(20_000), EventLevel.WARN, taskId = task.id, model = resolved.model)
                     throw IllegalStateException(
                         "The phone model did not write any usable edits, so nothing was changed. Try again, ask for one smaller change at a time, " +
-                            "or use Gemini for this app. The reply is under Details."
+                            "say \"app banao\" to have it written anew, or use Gemini for this app. A Coder model (Qwen2.5 Coder) makes edits " +
+                            "far more reliably than a chat model. The reply is under Details."
                     )
                 }
             }
@@ -725,7 +738,11 @@ class AgentEngine(
                 }
             }
         }
-        val verb = if (current != null) "Applied your change" + (if (useEdits) " (as small edits, to fit the phone model's memory)" else "") else "Built the app"
+        val verb = when {
+            current != null -> "Applied your change" + (if (useEdits) " (as small edits, to fit the phone model's memory)" else "")
+            rebuild -> "Built the app anew (the earlier version: Undo last change on the app's screen)"
+            else -> "Built the app"
+        }
         complete(
             task.id,
             if (report.errors.isEmpty()) {

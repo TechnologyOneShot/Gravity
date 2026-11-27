@@ -651,6 +651,20 @@ internal fun ChatComposer(
                     }
                 }
             }
+            // App mode with a phone chat model: a Coder model writes apps much better.
+            var hideAppHint by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+            if (appMode && !hideAppHint && modelLabel != null && modelLabel.isLocal && !modelLabel.text.contains("coder", ignoreCase = true)) {
+                Row(Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp).testTag("app-coder-hint"), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "For apps, a Coder model writes much better code than ${modelLabel.text}. Tap here and pick Qwen2.5 Coder (Phone Models → Recommended) or Gemini.",
+                        style = MaterialTheme.typography.labelSmall, color = GravityColors.Amber,
+                        modifier = Modifier.weight(1f).clickable(onClick = onPickModel),
+                    )
+                    IconButton(onClick = { hideAppHint = true }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.Close, "Hide", modifier = Modifier.size(14.dp), tint = GravityColors.Muted)
+                    }
+                }
+            }
             if (attachments.isNotEmpty()) {
                 LazyRow(Modifier.padding(start = 6.dp, top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(attachments) { a ->

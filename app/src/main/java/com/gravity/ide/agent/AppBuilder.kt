@@ -156,6 +156,23 @@ class AppBuilder(
         }
         fun isChangeInstruction(instruction: String) = instruction.trimStart().startsWith(CHANGE_PREFIX)
 
+        private val newAppWords = listOf(
+            // "music player app banao", "ek app bana do": app right before make (not "is app ko … bana do").
+            Regex("(?i)\\bapps?\\s+(banao|banado|bana\\s*do|bana\\s*de|banaiye|banaye|banayein|banaen|banana|bana\\s*dijiye|bnao|bna\\s*do)\\b"),
+            Regex("(ऐप|एप)\\s*(बनाओ|बना\\s*दो|बना\\s*दें|बनाइए|बनाइये|बनाएं|बनाये)"),
+            // "make a music player app", "build me a new app".
+            Regex("(?i)\\b(make|create|build|design)\\s+(me\\s+|us\\s+)?(a|an|new|another|one)\\b[^.\\n]{0,40}\\bapps?\\b"),
+            Regex("(?i)\\b(naya|nayi|new|fresh)\\s+(app|ui|design)\\b|\\bfrom\\s+scratch\\b|\\bstart\\s+(over|again)\\b|" +
+                "\\b(shuru|phir|fir|dobara|dubara)\\s+se\\s+(bana|banao|likho)"),
+        )
+
+        /**
+         * A message in an app's chat that asks for a whole app ("music player app banao", "make a new app",
+         * "start over") rather than a change to the one there: it is written anew (the old version stays
+         * in the history, "Undo last change" brings it back).
+         */
+        fun asksForNewApp(request: String): Boolean = newAppWords.any { it.containsMatchIn(request) }
+
         /** Where the rules start after the request (tasks from earlier versions have them indented). */
         private val rulesStart = Regex("\\n\\s*\\n\\s*(Deliver a complete|Read the relevant files first)")
 
