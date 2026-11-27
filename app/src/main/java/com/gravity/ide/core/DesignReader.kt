@@ -511,12 +511,12 @@ object DesignReader {
     internal fun svgOf(shape: String?, size: Int): String {
         val d = when (shape?.firstOrNull()) {
             '⏸' -> "<rect x=\"5\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"/><rect x=\"14\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"/>"
-            '▶' -> "<path d=\"M6 3l15 9-15 9z\"/>"
-            '◀' -> "<path d=\"M18 3L3 12l15 9z\"/>"
-            '⏩' -> "<path d=\"M2 4l10 8-10 8zM12 4l10 8-10 8z\"/>"
-            '⏪' -> "<path d=\"M22 4l-10 8 10 8zM12 4L2 12l10 8z\"/>"
-            '⏭' -> "<path d=\"M3 4l12 8-12 8zM17 4h3v16h-3z\"/>"
-            '⏮' -> "<path d=\"M21 4L9 12l12 8zM4 4h3v16H4z\"/>"
+            '▶' -> "<path d=\"M6 3L21 12L6 21Z\"/>"
+            '◀' -> "<path d=\"M18 3L3 12L18 21Z\"/>"
+            '⏩' -> "<path d=\"M2 4L12 12L2 20ZM12 4L22 12L12 20Z\"/>"
+            '⏪' -> "<path d=\"M22 4L12 12L22 20ZM12 4L2 12L12 20Z\"/>"
+            '⏭' -> "<path d=\"M3 4L15 12L3 20ZM17 4H20V20H17Z\"/>"
+            '⏮' -> "<path d=\"M21 4L9 12L21 20ZM4 4H7V20H4Z\"/>"
             '⋯' -> "<circle cx=\"5\" cy=\"12\" r=\"2.2\"/><circle cx=\"12\" cy=\"12\" r=\"2.2\"/><circle cx=\"19\" cy=\"12\" r=\"2.2\"/>"
             '⋮' -> "<circle cx=\"12\" cy=\"5\" r=\"2.2\"/><circle cx=\"12\" cy=\"12\" r=\"2.2\"/><circle cx=\"12\" cy=\"19\" r=\"2.2\"/>"
             '☰' -> "<rect x=\"3\" y=\"5\" width=\"18\" height=\"2.4\" rx=\"1\"/><rect x=\"3\" y=\"11\" width=\"18\" height=\"2.4\" rx=\"1\"/><rect x=\"3\" y=\"17\" width=\"18\" height=\"2.4\" rx=\"1\"/>"

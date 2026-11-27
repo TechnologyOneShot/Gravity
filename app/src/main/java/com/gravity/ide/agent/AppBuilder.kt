@@ -182,6 +182,29 @@ class AppBuilder(
         /** True when the app works with the user's own media or documents (e.g. a music player). */
         fun usesUserFiles(request: String) = fileWords.containsMatchIn(request)
 
+        private val audioWords = Regex("(?i)\\b(music|songs?|audio|mp3|playlists?|podcasts?|gaan[ae]?|gana|gane|geet)\\b|गाना|गाने|संगीत|(?<!video )player")
+        private val videoWords = Regex("(?i)\\b(videos?|movies?|films?)\\b|वीडियो")
+        private val photoWords = Regex("(?i)\\b(photos?|pictures?|images?|gallery|tasve?er)\\b|फ़ोटो|फोटो|तस्वीर")
+
+        /**
+         * A starting page made from a design gets a way to choose the user's files when the app needs
+         * them (a music player's songs): a hidden file input and a pill button that opens it, in the
+         * page's own colors, so small models need not invent one.
+         */
+        fun withFilePicker(layout: String, request: String): String {
+            if (!usesUserFiles(request) || layout.contains("type=\"file\"") || !layout.contains("</body>")) return layout
+            val (accept, label) = when {
+                videoWords.containsMatchIn(request) -> "video/*" to "Choose videos"
+                audioWords.containsMatchIn(request) -> "audio/*" to "Choose songs"
+                photoWords.containsMatchIn(request) -> "image/*" to "Choose photos"
+                else -> "" to "Choose files"
+            }
+            val picker = "<div style=\"display:flex;justify-content:center;margin-top:20px\"><label for=\"files\" id=\"pick\" style=\"padding:10px 22px;" +
+                "border-radius:999px;border:1px solid currentColor;font-size:15px;cursor:pointer\">$label</label></div>\n" +
+                "<input type=\"file\" id=\"files\"${if (accept.isEmpty()) "" else " accept=\"$accept\""} multiple style=\"display:none\">\n"
+            return layout.replace("</body>", "$picker</body>")
+        }
+
         /**
          * Prompt for on-device models: one self-contained HTML file in a single reply. Small
          * models cannot follow the multi-step tool protocol, but many can write one file.
@@ -228,7 +251,8 @@ class AppBuilder(
                         "show the real data there in the same style. If the request text and the picture disagree, follow the request text."
                 !designLayout.isNullOrBlank() ->
                     "\n\nThe user attached a design picture of how the app must look. You cannot see it, so Yamini measured it and made this " +
-                        "starting page with the same parts, sizes, colors and places (the icon names in aria-label are guesses):\n```html\n$designLayout\n```\n" +
+                        "starting page with the same parts, sizes, colors and places (the icon names in aria-label are guesses):\n```html\n" +
+                        "${withFilePicker(designLayout, request)}\n```\n" +
                         "Build the app on this page: keep its look (the styles, sizes, colors and order of the parts) and add what the request needs. " +
                         "Give the parts ids and make every button really work. Keep the photo box as it is (a box of the photo's colors) unless the app " +
                         "shows a real picture there. Texts on the page are samples: titles and labels stay, but names, times and numbers show the " +

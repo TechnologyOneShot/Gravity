@@ -24,6 +24,17 @@ class AppDesignTest {
         assertFalse(plain.contains("design picture"))
     }
 
+    @Test fun aStartingPageGetsAFilePickerWhenTheAppUsesFiles() {
+        val page = "<!DOCTYPE html>\n<html><body>\n<div>x</div>\n</body></html>"
+        val music = AppBuilder.withFilePicker(page, "music player is design jaisa bana do")
+        assertTrue(music, music.contains("<input type=\"file\" id=\"files\" accept=\"audio/*\" multiple style=\"display:none\">") && music.contains(">Choose songs</label>"))
+        assertTrue(AppBuilder.withFilePicker(page, "video player").contains("accept=\"video/*\""))
+        assertTrue(AppBuilder.withFilePicker(page, "photo gallery app").contains("accept=\"image/*\""))
+        assertEquals("No picker for an app without files", page, AppBuilder.withFilePicker(page, "calculator"))
+        val (_, prompt) = AppBuilder.directPrompt("music player", null, designLayout = page)
+        assertTrue(prompt, prompt.contains("Choose songs") && prompt.contains("You cannot see it"))
+    }
+
     @Test fun attachedFilesAreAddedWithinALimit() {
         val r = AppBuilder.withReferences("quiz app", listOf("questions.txt" to "Q1?\nQ2?", "big.txt" to "x".repeat(20_000)), maxChars = 1000)
         assertTrue(r.startsWith("quiz app") && r.contains("Attached file questions.txt") && r.contains("Q1?"))
