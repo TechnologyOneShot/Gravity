@@ -91,10 +91,16 @@ class DeviceInspector(private val context: Context) {
         )
     }
 
+    // Total memory never changes: read once (the Models screen asked for it for every model card
+    // on every redraw, and the full device check reads several system files).
+    private val totalRam: Long by lazy {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem
+    }
+
     fun recommendedMaxModelBytes(): Long {
-        val i = info()
         // Leave ~40% of total RAM for Android, Gravity and the KV cache.
-        return (i.totalRamBytes * 0.6).toLong() - 512L * 1024 * 1024
+        return (totalRam * 0.6).toLong() - 512L * 1024 * 1024
     }
 
     @Suppress("DEPRECATION")

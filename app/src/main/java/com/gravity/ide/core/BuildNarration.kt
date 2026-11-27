@@ -42,6 +42,8 @@ object BuildNarration {
             }
         }
         noPage.find(t)?.let { return "The AI stopped before finishing the page (${it.groupValues[1]} tokens)." }
+        // The agent's own file and shell tools, said as what it does.
+        toolLine(t, detail)?.let { return it }
         noEdits.find(t)?.let { return "The AI answered without any edits I could apply (${it.groupValues[1]} tokens)." }
         return when {
             t.startsWith("Reading your design picture") -> "I'm studying your design picture: layout, positions, colors and text…"
@@ -72,6 +74,39 @@ object BuildNarration {
             else -> null
         }
     }
+
+    private val created = Regex("^Created (?!folder )(.+)$")
+    private val updated = Regex("^Updated (.+)$")
+    private val edited = Regex("^Edited (.+)$")
+    private val reading = Regex("^Reading (?!your design)(.+)$")
+    private val listing = Regex("^Listing (.+)$")
+    private val searched = Regex("^Searched \"(.+)\"$")
+    private val running = Regex("^Running: (.+)$")
+    private val exit = Regex("^Exit (-?\\d+): (.+)$")
+    private val folder = Regex("^Created folder (.+)$")
+    private val moved = Regex("^Moved (.+) → (.+)$")
+
+    /** Lines for the agent's tools (AgentTools): reading, creating, modifying files, running commands. */
+    private fun toolLine(t: String, detail: String): String? {
+        created.find(t)?.let { return "Created ${it.groupValues[1]}" + chars(detail) + "." }
+        updated.find(t)?.let { return "Modified ${it.groupValues[1]} (rewrote it" + chars(detail).replace(" (", ", ").removeSuffix(")") + ")." }
+        edited.find(t)?.let { return "Modified ${it.groupValues[1]}: ${detail.lowercase().ifBlank { "changed a part" }}." }
+        folder.find(t)?.let { return "Created the folder ${it.groupValues[1]}." }
+        moved.find(t)?.let { return "Moved ${it.groupValues[1]} to ${it.groupValues[2]}." }
+        reading.find(t)?.let { return "Reading ${it.groupValues[1]}…" }
+        listing.find(t)?.let { return "Looking at the files in ${it.groupValues[1].ifBlank { "the project" }}…" }
+        searched.find(t)?.let { return "Searching the code for \"${it.groupValues[1]}\"" + (detail.takeIf { d -> d.isNotBlank() }?.let { d -> ": $d" } ?: "") + "." }
+        running.find(t)?.let { return "Running: ${it.groupValues[1]}" }
+        exit.find(t)?.let {
+            val code = it.groupValues[1].toInt()
+            return if (code == 0) "Finished: ${it.groupValues[2]} (OK)." else "Failed (exit $code): ${it.groupValues[2]}."
+        }
+        return null
+    }
+
+    /** " (1,234 characters)" from a tool log detail "1234 chars". */
+    private fun chars(detail: String): String =
+        Regex("^(\\d+) chars").find(detail.trim())?.let { " (" + "%,d".format(it.groupValues[1].toLong()) + " characters)" } ?: ""
 
     /** All lines for a task's log, without immediate repeats. */
     fun lines(entries: List<Entry>): List<String> {

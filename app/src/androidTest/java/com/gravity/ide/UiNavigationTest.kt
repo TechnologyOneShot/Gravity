@@ -125,11 +125,17 @@ class UiNavigationTest {
     fun t02_everyDrawerEntryOpens() {
         waitForTitle("Yamini")
         val failures = ArrayList<String>()
+        val openMs = ArrayList<Pair<String, Long>>()
         drawerItems.forEachIndexed { i, item ->
             val expected = titleFor(item.route)
             try {
+                // How long opening the menu, tapping and showing the screen takes (on this emulator,
+                // which is slower than a phone; includes the menu's animation).
+                val t0 = android.os.SystemClock.uptimeMillis()
                 openDrawerEntry(item.label)
                 waitForTitle(expected, 20_000)
+                compose.waitForIdle()
+                openMs += item.label to (android.os.SystemClock.uptimeMillis() - t0)
                 Thread.sleep(1200) // let database / device-probe content arrive
                 compose.waitForIdle()
                 Ci.log("screen", "OK ${i + 1}/${drawerItems.size} ${item.label} → '${title()}' :: ${visibleText().take(1800)}")
@@ -142,6 +148,7 @@ class UiNavigationTest {
             }
         }
         Ci.log("screen", "Drawer entries opened: ${drawerItems.size - failures.size}/${drawerItems.size}")
+        Ci.log("screen-speed", "Menu + tap + screen shown (emulator, ms), slowest first: " + openMs.sortedByDescending { it.second }.joinToString { "${it.first} ${it.second}" })
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 

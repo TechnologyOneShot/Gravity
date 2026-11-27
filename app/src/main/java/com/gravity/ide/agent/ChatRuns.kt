@@ -20,9 +20,18 @@ class ChatRuns(private val context: Context) {
     class Run {
         /** The reply so far (null when none is being written). */
         val streaming = MutableStateFlow<String?>(null)
+        /**
+         * What is happening before the reply's first words, shown in the chat with a running time:
+         * "Loading Qwen2.5 7B into memory…", "Reading your message and the chat so far…",
+         * "Asking gemini-3-flash…", "Searching the web…". Null when nothing is being written.
+         */
+        val activity = MutableStateFlow<Activity?>(null)
         val busy = MutableStateFlow(false)
         @Volatile var job: Job? = null
     }
+
+    /** A step of a reply and when it started (for "12 s" in the chat). */
+    data class Activity(val text: String, val since: Long = System.currentTimeMillis())
 
     private val runs = ConcurrentHashMap<String, Run>()
     private val active = ConcurrentHashMap.newKeySet<String>()

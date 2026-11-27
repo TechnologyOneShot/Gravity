@@ -103,6 +103,14 @@ class ZzAppBuilderUiTest {
         compose.onNodeWithContentDescription("Send").performClick()
         waitFor("app card", 60_000) { compose.onAllNodesWithTag("app-card").fetchSemanticsNodes().isNotEmpty() }
         Ci.screenshot("07a_app_card_building")
+        // What the AI is writing, live (file, part, last lines). The scripted server here can answer
+        // faster than a screen check, so this is logged when seen, not required.
+        val seen = (0 until 40).firstNotNullOfOrNull {
+            compose.onAllNodesWithTag("app-card-activity").fetchSemanticsNodes().firstOrNull()
+                ?.config?.getOrNull(SemanticsProperties.Text)?.joinToString("") { t -> t.text }
+                ?: run { Thread.sleep(100); null }
+        }
+        Ci.log("builder-ui", "Live activity in the app card: ${seen ?: "(the reply came too fast to see it)"}")
         waitFor("app ready", 180_000) {
             compose.onAllNodesWithText("Ready").fetchSemanticsNodes().isNotEmpty() || compose.onAllNodesWithText("Didn't work").fetchSemanticsNodes().isNotEmpty()
         }

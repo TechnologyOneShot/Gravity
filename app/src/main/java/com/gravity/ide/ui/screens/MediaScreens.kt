@@ -106,7 +106,7 @@ fun ScreenshotsScreen() {
         }
         LazyVerticalGrid(GridCells.Adaptive(110.dp), contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(shots, key = { it.id }) { s ->
-                val bmp = remember(s.filePath) { BitmapFactory.decodeFile(s.filePath, BitmapFactory.Options().apply { inSampleSize = 6 })?.asImageBitmap() }
+                val bmp = com.gravity.ide.ui.components.rememberFileImage(s.filePath, 360)
                 val isPicked = picked.any { it.id == s.id }
                 Column(
                     Modifier.clickable {
@@ -143,7 +143,7 @@ fun ScreenshotsScreen() {
 
     open?.let { s ->
         var analysing by remember { mutableStateOf(false) }
-        val bmp = remember(s.filePath) { BitmapFactory.decodeFile(s.filePath)?.asImageBitmap() }
+        val bmp = com.gravity.ide.ui.components.rememberFileImage(s.filePath, 1600)
         AlertDialog(
             onDismissRequest = { open = null },
             title = { Text(s.label) },

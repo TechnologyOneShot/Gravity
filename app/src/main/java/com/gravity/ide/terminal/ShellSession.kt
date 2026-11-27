@@ -133,10 +133,33 @@ class ShellSession(
         }
     }
 
+    // Output comes in batches: one screen update every 30 ms however many lines arrive, not one
+    // copy of the whole terminal per line (a command printing thousands of lines froze the screen).
+    private val incoming = ArrayList<TermLine>()
+    private var flushQueued = false
+
     private fun append(line: TermLine) {
-        // Called from both the stdout and stderr pump threads: update atomically.
+        // Called from both the stdout and stderr pump threads.
+        synchronized(incoming) {
+            incoming += line
+            if (flushQueued) return
+            flushQueued = true
+        }
+        scope.launch(Dispatchers.Default) {
+            kotlinx.coroutines.delay(30)
+            flush()
+        }
+    }
+
+    private fun flush() {
+        val batch = synchronized(incoming) {
+            flushQueued = false
+            if (incoming.isEmpty()) return
+            ArrayList(incoming).also { incoming.clear() }
+        }
         _lines.update { current ->
-            if (current.size >= maxLines) current.drop(current.size - maxLines + 1) + line else current + line
+            val all = current.size + batch.size
+            if (all > maxLines) (current + batch).takeLast(maxLines) else current + batch
         }
     }
 
@@ -184,7 +207,7 @@ class ShellSession(
             sendInput(command)
             return
         }
-        scope.launch { run(command, timeoutMs = 24L * 3600 * 1000) }
+        scope.launch(Dispatchers.IO) { run(command, timeoutMs = 24L * 3600 * 1000) }
     }
 
     /** Sends a line to the running program's stdin (interactive programs). */
@@ -225,6 +248,7 @@ class ShellSession(
     }
 
     fun clear() {
+        synchronized(incoming) { incoming.clear() }
         _lines.value = emptyList()
     }
 
@@ -245,7 +269,10 @@ class ShellSession(
         _alive.value = false
     }
 
-    fun transcript(): String = _lines.value.joinToString("\n") { it.text }
+    fun transcript(): String {
+        flush()
+        return _lines.value.joinToString("\n") { it.text }
+    }
 
     companion object {
         const val MARKER_PREFIX = "__GRAVITY_END_"

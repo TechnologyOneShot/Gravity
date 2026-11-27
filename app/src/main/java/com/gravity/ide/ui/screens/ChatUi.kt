@@ -468,8 +468,23 @@ private fun AppTaskCard(projectId: String, taskId: String, isChange: Boolean, on
                 Column(Modifier.padding(top = 8.dp).testTag("app-card-steps"), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     shown.forEachIndexed { i, line -> BuildStep(line, current = i == shown.lastIndex) }
                 }
-                live[taskId]?.takeIf { it.isNotBlank() }?.let {
-                    Text("Written so far: ${"%,d".format(it.length)} characters", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, modifier = Modifier.padding(top = 4.dp))
+                // What the AI is writing right now, from its text so far: the file, the part, the last lines.
+                live[taskId]?.takeIf { it.isNotBlank() }?.let { written ->
+                    val act = remember(written.length / 40) { com.gravity.ide.core.LiveActivity.of(written, change = isChange) }
+                    Text(
+                        "✏️ " + act.headline(),
+                        style = MaterialTheme.typography.labelMedium, color = GravityColors.Accent,
+                        modifier = Modifier.padding(top = 6.dp).testTag("app-card-activity"),
+                    )
+                    if (act.tail.isNotEmpty()) {
+                        Surface(shape = RoundedCornerShape(8.dp), color = CodeBg, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                            Text(
+                                act.tail.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 15.sp,
+                                color = Color(0xFFE2E8F0), maxLines = 4, softWrap = false, modifier = Modifier.padding(8.dp),
+                            )
+                        }
+                    }
+                    Text("${"%,d".format(written.length)} characters written", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, modifier = Modifier.padding(top = 2.dp))
                 }
             } else if (steps.isNotEmpty()) {
                 TextButton(onClick = { showSteps = !showSteps }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp), modifier = Modifier.testTag("app-card-show-steps")) {
@@ -537,14 +552,19 @@ private fun SmallAction(icon: ImageVector, description: String, onClick: () -> U
 
 /** The reply while it is being generated: animated dots until the first words arrive. */
 @Composable
-internal fun StreamingBubble(text: String) {
+internal fun StreamingBubble(text: String, activity: com.gravity.ide.agent.ChatRuns.Activity? = null) {
     Column(Modifier.fillMaxWidth()) {
-        if (text.isEmpty()) TypingDots() else RichText("$text ▍")
+        if (text.isEmpty()) TypingDots(activity) else RichText("$text ▍")
     }
 }
 
 @Composable
-private fun TypingDots() {
+private fun TypingDots(activity: com.gravity.ide.agent.ChatRuns.Activity? = null) {
+    // A running time, so a long wait (a phone model reading a long chat) is visibly going on.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(activity?.since) {
+        while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) }
+    }
     val transition = rememberInfiniteTransition(label = "typing")
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
         repeat(3) { i ->
@@ -556,7 +576,11 @@ private fun TypingDots() {
             Box(Modifier.padding(end = 5.dp).size(8.dp).alpha(a).clip(CircleShape).background(GravityColors.Cyan))
         }
         Spacer(Modifier.width(4.dp))
-        Text("Thinking…", style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted)
+        val seconds = activity?.let { ((now - it.since) / 1000).coerceAtLeast(0) }
+        Text(
+            (activity?.text ?: "Thinking…") + (seconds?.takeIf { it >= 2 }?.let { " $it s" } ?: ""),
+            style = MaterialTheme.typography.labelMedium, color = GravityColors.Muted, modifier = Modifier.testTag("chat-activity"),
+        )
     }
 }
 
@@ -1076,25 +1100,48 @@ fun RichText(text: String) {
     }
 }
 
+/** A parsed line of a reply (worked out once per text, not on every redraw). */
+private sealed interface MdLine {
+    data object Blank : MdLine
+    data class Heading(val level: Int, val text: AnnotatedString) : MdLine
+    data class Bullet(val indent: Int, val text: AnnotatedString) : MdLine
+    data class Plain(val text: AnnotatedString) : MdLine
+}
+
+private val bulletLine = Regex("^(\\s*)[-*•]\\s+(.*)$")
+
+private fun parseMarkdown(md: String): List<MdLine> = md.lines().map { raw ->
+    val line = raw.trimEnd()
+    val b = bulletLine.find(line)
+    when {
+        line.isBlank() -> MdLine.Blank
+        line.startsWith("### ") -> MdLine.Heading(3, inlineMarkdown(line.removePrefix("### ")))
+        line.startsWith("## ") -> MdLine.Heading(2, inlineMarkdown(line.removePrefix("## ")))
+        line.startsWith("# ") -> MdLine.Heading(1, inlineMarkdown(line.removePrefix("# ")))
+        b != null -> MdLine.Bullet(b.groupValues[1].length, inlineMarkdown(b.groupValues[2]))
+        else -> MdLine.Plain(inlineMarkdown(line))
+    }
+}
+
 @Composable
 private fun MarkdownText(md: String) {
-    val lines = remember(md) { md.lines() }
-    val bullet = remember { Regex("^(\\s*)[-*•]\\s+(.*)$") }
+    // Keyed on the accent colour too: inline code is drawn in it (day and night themes differ).
+    val lines = remember(md, GravityColors.Accent) { parseMarkdown(md) }
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        for (raw in lines) {
-            val line = raw.trimEnd()
-            val b = bullet.find(line)
-            when {
-                line.isBlank() -> Spacer(Modifier.height(4.dp))
-                line.startsWith("### ") -> Text(inlineMarkdown(line.removePrefix("### ")), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                line.startsWith("## ") -> Text(inlineMarkdown(line.removePrefix("## ")), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                line.startsWith("# ") -> Text(inlineMarkdown(line.removePrefix("# ")), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                b != null -> Row(Modifier.padding(start = (b.groupValues[1].length * 6).dp)) {
+        for (l in lines) {
+            when (l) {
+                MdLine.Blank -> Spacer(Modifier.height(4.dp))
+                is MdLine.Heading -> Text(
+                    l.text,
+                    style = when (l.level) { 1 -> MaterialTheme.typography.titleLarge; 2 -> MaterialTheme.typography.titleMedium; else -> MaterialTheme.typography.titleSmall },
+                    fontWeight = FontWeight.SemiBold,
+                )
+                is MdLine.Bullet -> Row(Modifier.padding(start = (l.indent * 6).dp)) {
                     Text("•", color = GravityColors.Cyan, style = MaterialTheme.typography.bodyLarge)
                     Spacer(Modifier.width(8.dp))
-                    Text(inlineMarkdown(b.groupValues[2]), style = MaterialTheme.typography.bodyLarge)
+                    Text(l.text, style = MaterialTheme.typography.bodyLarge)
                 }
-                else -> Text(inlineMarkdown(line), style = MaterialTheme.typography.bodyLarge)
+                is MdLine.Plain -> Text(l.text, style = MaterialTheme.typography.bodyLarge)
             }
         }
     }
@@ -1144,12 +1191,7 @@ fun CodeBlock(code: String, language: String?) {
 private fun MadeFileCard(name: String, path: String, mime: String, size: Long) {
     val context = LocalContext.current
     val file = remember(path) { java.io.File(path) }
-    val thumb = remember(path) {
-        if (mime.startsWith("image/") && file.isFile) runCatching {
-            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
-            android.graphics.BitmapFactory.decodeFile(path, opts)?.asImageBitmap()
-        }.getOrNull() else null
-    }
+    val thumb = if (mime.startsWith("image/")) com.gravity.ide.ui.components.rememberFileImage(path, 720) else null
     fun uri() = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     Surface(
         shape = RoundedCornerShape(16.dp), color = GravityColors.SurfaceHigh, border = BorderStroke(1.dp, GravityColors.Outline),

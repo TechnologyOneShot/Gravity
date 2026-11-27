@@ -228,6 +228,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
     // home or swiping Gravity away does not stop it, and reopening the chat shows it.
     private val run = c.chatRuns.forChat(chatId)
     val streaming = run.streaming
+    val activity = run.activity
     val busy = run.busy
     /** The file the message being answered asks for (PDF, ZIP, image, audio), made from the reply. */
     private var pendingMake: com.gravity.ide.core.MakeFiles.Kind? = null
@@ -545,6 +546,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         c.chatRuns.active(chatId, true)
         error.value = null
         streaming.value = ""
+        activity.value = com.gravity.ide.agent.ChatRuns.Activity(if (atts.isNotEmpty()) "Reading ${atts.joinToString { it.name }.take(80)}…" else "Getting ready…")
         var resolvedModel: String? = null
         var providerId: String? = null
         val text = StringBuilder()
@@ -553,6 +555,16 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         var speed: LlmEvent.Speed? = null
         var finish: String? = null
         var outTok = 0
+        // The reply on screen is refreshed about 20 times a second, not for every word: copying a
+        // long reply for each word made the chat stutter on phones.
+        var shownAt = 0L
+        fun show(force: Boolean = false) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (force || now - shownAt >= 50) {
+                shownAt = now
+                streaming.value = text.toString()
+            }
+        }
         try {
             suspend fun answerWith(resolved: com.gravity.ide.ai.ResolvedModel) {
                 resolvedModel = resolved.model
@@ -627,6 +639,14 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                             else -> ""
                         },
                 )
+                // Said in the chat until the first words come (with a running time).
+                activity.value = com.gravity.ide.agent.ChatRuns.Activity(
+                    when {
+                        resolved.provider.isLocal -> "Reading your message" + (if (recent.size > 1) " and the chat so far" else "") + " · ${resolved.model}"
+                        chat.webGrounding -> "Searching the web and asking ${resolved.model}"
+                        else -> "Asking ${resolved.model}"
+                    } + "…",
+                )
                 // Live voice: short spoken answers come back much sooner (and are spoken while written).
                 try { resolved.provider.stream(
                     LlmRequest(
@@ -644,7 +664,8 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                     when (ev) {
                         is LlmEvent.TextDelta -> {
                             text.append(ev.text)
-                            streaming.value = text.toString()
+                            if (activity.value != null) activity.value = null
+                            show()
                         }
                         is LlmEvent.Usage -> {
                             inTok = maxOf(inTok, ev.inputTokens)
@@ -653,7 +674,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                         is LlmEvent.Sources -> sources += ev.sources
                         is LlmEvent.Retract -> {
                             text.setLength(maxOf(0, text.length - ev.chars))
-                            streaming.value = text.toString()
+                            show(force = true)
                         }
                         is LlmEvent.Speed -> speed = ev
                         is LlmEvent.Done -> finish = ev.finishReason
@@ -667,7 +688,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                         }
                         else -> Unit
                     }
-                } } finally { c.crashReports.end(workId) }
+                } } finally { c.crashReports.end(workId); show(force = true) }
                 c.providers.recordUsage(resolved.entity, inTok, outTok)
             }
             try {
@@ -718,6 +739,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         } finally {
             busy.value = false
             streaming.value = null
+            activity.value = null
             pendingMake = null
             c.chatRuns.active(chatId, false)
         }
@@ -1038,6 +1060,12 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
     val chat by vm.chat.collectAsState(initial = null)
     val messages by vm.messages.collectAsState(initial = emptyList())
     val streaming by vm.streaming.collectAsState()
+    // What the AI is doing before its first words: loading the phone model, reading, asking, searching.
+    val runActivity by vm.activity.collectAsState()
+    val hostState by c.localHost.state.collectAsState()
+    val activityNow = (hostState as? com.gravity.ide.ai.local.LocalModelHost.State.Loading)?.takeIf { streaming?.isEmpty() == true }
+        ?.let { com.gravity.ide.agent.ChatRuns.Activity("Loading the phone model: ${it.name}…", runActivity?.since ?: System.currentTimeMillis()) }
+        ?: runActivity
     val busy by vm.busy.collectAsState()
     val error by vm.error.collectAsState()
     val notice by vm.notice.collectAsState()
@@ -1115,7 +1143,7 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
                     speed = if (m.role == "assistant" && m.providerId == LocalLlamaProvider.ID) remember(m.id, speedTick) { c.replySpeeds.get(m.id) } else null,
                 )
             }
-            streaming?.let { s -> item { StreamingBubble(s) } }
+            streaming?.let { s -> item { StreamingBubble(s, activityNow) } }
         }
         error?.let { MessageBanner(it, isError = true) { vm.error.value = null } }
         notice?.let { MessageBanner(it) { vm.notice.value = null } }

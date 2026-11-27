@@ -405,12 +405,16 @@ fun FilesScreen(projectId: String?, go: (String) -> Unit) {
             text = {
                 Column {
                     if (isImage(n.name)) {
-                        val bmp = remember(n.file) { android.graphics.BitmapFactory.decodeFile(n.file.absolutePath)?.asImageBitmap() }
+                        val bmp = com.gravity.ide.ui.components.rememberFileImage(n.file.absolutePath, 1024)
                         if (bmp != null) androidx.compose.foundation.Image(bmp, n.name, modifier = Modifier.fillMaxWidth())
                     }
                     KeyValue("Path", n.relPath, mono = true)
                     KeyValue("Type", if (n.isDirectory) "Folder" else n.name.substringAfterLast('.', "file").uppercase())
-                    KeyValue("Size", if (n.isDirectory) formatBytes(c.workspace.storageUsage(n.file)) else formatBytes(n.size))
+                    // A folder's size means walking all its files: done in the background, not on tap.
+                    val folderBytes by androidx.compose.runtime.produceState<Long?>(null, n.file) {
+                        if (n.isDirectory) value = kotlinx.coroutines.withContext(Dispatchers.IO) { c.workspace.storageUsage(n.file) }
+                    }
+                    KeyValue("Size", if (n.isDirectory) folderBytes?.let { formatBytes(it) } ?: "Counting…" else formatBytes(n.size))
                     KeyValue("Modified", formatTimeFull(n.lastModified))
                     if (n.isDirectory) KeyValue("Items", n.childCount.toString())
                 }

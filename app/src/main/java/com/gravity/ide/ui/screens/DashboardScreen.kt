@@ -239,11 +239,7 @@ fun DashboardScreen(go: (String) -> Unit) {
             SectionHeader("Recent screenshots") { TextButton(onClick = { go(Routes.SCREENSHOTS) }) { Text("Gallery") } }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(shots.take(8), key = { it.id }) { s ->
-                    val bmp = remember(s.filePath) {
-                        File(s.filePath).takeIf { it.exists() }?.let { f ->
-                            BitmapFactory.decodeFile(f.absolutePath, BitmapFactory.Options().apply { inSampleSize = 8 })?.asImageBitmap()
-                        }
-                    }
+                    val bmp = com.gravity.ide.ui.components.rememberFileImage(s.filePath, 256)
                     Box(Modifier.width(90.dp).aspectRatio(0.5f).background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp)).clickable { go(Routes.SCREENSHOTS) }) {
                         if (bmp != null) Image(bmp, s.label, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth())
                     }

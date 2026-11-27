@@ -43,4 +43,16 @@ class BuildNarrationTest {
         assertEquals("Tested it on this phone: opened the app and tapped 1 button — no errors.", BuildNarration.line("TEST", "App test: 0 error(s), 1 button(s) tapped", "", "INFO"))
         assertEquals(null, BuildNarration.line("AGENT", "Calling qwen", "", "INFO"))
     }
+
+    @Test fun theAgentsFileWorkIsSaidAsWhatItDoes() {
+        assertEquals("Created index.html (1,234 characters).", BuildNarration.line("TOOL", "Created index.html", "1234 chars", "INFO"))
+        assertEquals("Modified app.js (rewrote it, 980 characters).", BuildNarration.line("TOOL", "Updated app.js", "980 chars", "INFO"))
+        assertEquals("Modified style.css: replaced 1 occurrence(s).", BuildNarration.line("TOOL", "Edited style.css", "Replaced 1 occurrence(s)", "INFO"))
+        assertEquals("Reading index.html…", BuildNarration.line("TOOL", "Reading index.html", "", "INFO"))
+        assertEquals("Running: ls -la", BuildNarration.line("TOOL", "Running: ls -la", "", "INFO"))
+        assertEquals("Failed (exit 2): make", BuildNarration.line("TOOL", "Exit 2: make", "", "WARN")?.removeSuffix("."))
+        assertEquals("Created the folder assets.", BuildNarration.line("TOOL", "Created folder assets", "", "INFO"))
+        // Not tool lines.
+        assertEquals("I'm studying your design picture: layout, positions, colors and text…", BuildNarration.line("AGENT", "Reading your design picture(s): 1", "", "INFO"))
+    }
 }
