@@ -1020,6 +1020,12 @@ class DeviceServicesTest {
         val killed = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_SIGNALED, null, 9, doing, "details")
         val lowMem = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_LOW_MEMORY, null, 0, doing, "details")
         val noRecord = com.gravity.ide.CrashReports.reportFor(-1, null, 0, doing, "details")
+        // A user's report: HyperOS "SwipeUpClean" (swiped away from recent apps) during a background
+        // warm-up was shown as "The phone closed Yamini while it was working".
+        val warmUp = listOf("phone-model engine (FAST): Gemma 3 4b It (Q4_K_M) writing, context 8192, up to 1 tokens")
+        assertEquals(null, com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_OTHER, "SwipeUpClean", 0, warmUp, "details"))
+        val swipedDuringReply = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_OTHER, "SwipeUpClean", 0, doing, "details")
+        assertEquals("Yamini was closed from the recent apps", swipedDuringReply?.title)
         val idleKill = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_SIGNALED, null, 9, emptyList(), "details")
         val swiped = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_USER_REQUESTED, null, 0, doing, "details")
         val cleaner = com.gravity.ide.CrashReports.reportFor(android.app.ApplicationExitInfo.REASON_USER_REQUESTED, "stop by powerkeeper", 0, doing, "details")

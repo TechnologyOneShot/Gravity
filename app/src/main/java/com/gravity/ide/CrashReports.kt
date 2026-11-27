@@ -224,6 +224,9 @@ class CrashReports(private val context: Context) {
             // The user swiping Yamini away or stopping it is a normal close.
             val byUser = listOf("remove task", "swipe", "user request", "force stop", "stop app", "instr", "finished inst", "shutdown", "reboot").any { it in desc }
             val engineWork = doing.any { "on the phone" in it || "phone-model engine" in it || "loading" in it }
+            // Getting a phone model ready in the background (it reads the prompt and writes 1 token):
+            // nothing the user asked for was lost.
+            val onlyWarmUp = doing.isNotEmpty() && doing.all { "up to 1 tokens" in it }
             return when (reason) {
                 ApplicationExitInfo.REASON_CRASH -> Report("Yamini crashed last time", "A mistake in Yamini's code closed it.$was Please share the report.", details)
                 ApplicationExitInfo.REASON_CRASH_NATIVE -> if (engineWork) Report(
@@ -250,6 +253,15 @@ class CrashReports(private val context: Context) {
                 )
                 ApplicationExitInfo.REASON_SIGNALED, ApplicationExitInfo.REASON_OTHER, ApplicationExitInfo.REASON_UNKNOWN,
                 ApplicationExitInfo.REASON_EXIT_SELF, -1 -> when {
+                    // Swiped away from the recent apps (HyperOS reports "SwipeUpClean"): the user closed it.
+                    // A note only if a reply or a build was cut off; nothing for a background warm-up.
+                    byUser && !oem -> if (doing.isNotEmpty() && !onlyWarmUp) Report(
+                        "Yamini was closed from the recent apps",
+                        "It was swiped away while it was working, so that was not finished.$was To let a reply or an app finish " +
+                            "while you use other apps, leave Yamini in the recent apps (you can lock it there).",
+                        details,
+                    ) else null
+                    onlyWarmUp && !oem && status != 9 -> null
                     // Phones' own battery savers (MIUI/HyperOS "powerkeeper" and others) show up here.
                     oem && doing.isEmpty() -> Report(
                         "The phone closed Yamini in the background",
