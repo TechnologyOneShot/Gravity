@@ -1281,7 +1281,13 @@ class DeviceServicesTest {
         val json = runBlocking {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val req = okhttp3.Request.Builder().url("https://api.github.com/repos/TechnologyOneShot/Gravity/releases/tags/debug-latest").header("User-Agent", "Yamini-CI").build()
-                com.gravity.ide.ai.Http.base.newCall(req).execute().use { org.json.JSONObject(it.body!!.string()) }
+                com.gravity.ide.ai.Http.base.newCall(req).execute().use { resp ->
+                    val text = resp.body!!.string()
+                    // GitHub limits requests without an account per network address; CI runners share
+                    // addresses, so a limit there skips this test (reported as skipped, not passed).
+                    Assume.assumeTrue("GitHub answered HTTP ${resp.code} (${text.take(120)})", resp.isSuccessful)
+                    org.json.JSONObject(text)
+                }
             }
         }
         val r = com.gravity.ide.device.SelfUpdate.parse(json, phone = true)
