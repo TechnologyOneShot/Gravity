@@ -97,7 +97,7 @@ jobs:
     # audio and play button). A quality report: only a run that cannot execute fails.
     needs: debug-apk
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 100
     strategy:
       fail-fast: false
       matrix:
@@ -139,7 +139,7 @@ jobs:
           /tmp/llama-build/bin/llama-server -m /tmp/model.gguf -c 8192 -np 1 -t "$(nproc)" --port 8089 > /tmp/server.log 2>&1 &
           for i in $(seq 1 300); do curl -sf http://127.0.0.1:8089/health > /dev/null && break; sleep 1; done
           ls -R prompts
-          python3 .github/scripts/phone-model-check.py prompts/app-builder-prompts http://127.0.0.1:8089 phone-model-apps 2 prompts/app-builder-repair.json
+          python3 -u .github/scripts/phone-model-check.py prompts/app-builder-prompts http://127.0.0.1:8089 phone-model-apps 2 prompts/app-builder-repair.json
 
       - name: Server log
         if: always()

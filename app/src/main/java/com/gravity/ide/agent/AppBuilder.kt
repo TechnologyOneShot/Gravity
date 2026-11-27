@@ -237,7 +237,8 @@ class AppBuilder(
                 if (usesUserFiles(request) || currentHtml?.contains("type=\"file\"") == true) {
                     " The user picks their own files with <input type=\"file\"> (multiple where useful); use URL.createObjectURL to play or show " +
                         "them. Never use made-up file names or URLs. Hide the file input (display:none) and open it from a styled button; " +
-                        "for audio or video, draw your own play/pause, seek bar and times instead of the browser's built-in controls."
+                        "for audio or video, draw your own play/pause, seek bar and times instead of the browser's built-in controls. " +
+                        "Before a file is chosen, every control must still work without errors (check that something is loaded)."
                 } else {
                     ""
                 }
