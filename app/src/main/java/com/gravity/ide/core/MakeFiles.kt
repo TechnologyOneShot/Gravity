@@ -36,6 +36,59 @@ object MakeFiles {
             "${B}(make|create|generate|draw|give)\\s+(me|a|an|the|my)${B}|बनाओ|बना\\s*दो|बना\\s*दीजिए|बनाइए|बना\\s*के\\s*दो|बनाकर|चाहिए|चाहिये|भेजो|जनरेट\\s*करो",
     )
 
+    // Asking for the last picture again or changed: "fir se banao", "ek aur", "dobara", "again".
+    private val again = Regex(
+        "(?i)${B}(fir\\s*se|phir\\s*se|dobara|dubara|ek\\s+aur|aur\\s+ek|again|another|redo|one\\s+more|badlo|badal\\s*do|change\\s+it|" +
+            "banao|bana\\s*do|bana\\s*de|bnao|bna\\s*do)${B}|फिर\\s*से|दोबारा|एक\\s+और|बदलो|बदल\\s*दो|बनाओ|बना\\s*दो",
+    )
+    // What a picture shows: who, how they look, what they do, where, in which style.
+    private val describes = Regex(
+        "(?i)${B}(hoga|hogi|honge|wala|wali|wale|rang|color|colour|background|smile|smiling|muskura\\w*|hans\\w*|saal|years?\\s*old|umar|age|" +
+            "pehne|pehna|pehni|kapde|dress|shirt|baal|hair|chashma|glasses|topi|cap|hat|kitab|book|padh\\w*|likh\\w*|khel\\w*|baith\\w*|khada|khadi|" +
+            "school|park|garden|room|kamre|kamra|raat|night|subah|shaam|barish|rain|cartoon|anime|realistic|sketch|painting|bada|badi|chhota|chhoti|" +
+            "sundar|cute|ladka|ladki|boy|girl|man|woman|aadmi|aurat|bachcha|baby|dog|cat|kutta|billi|ghoda|horse)${B}|" +
+            "होगा|होगी|वाला|वाली|रंग|साल|पहने|किताब|पढ़|खेल|बैठ|लड़का|लड़की|बच्चा|कार्टून",
+    )
+    private val otherAsk = Regex(
+        "(?i)${B}(kahani|story|kavita|poem|gaana|gana|song|lyrics|code|app|website|list|essay|nibandh|letter|patra|quiz|joke|chutkula)${B}|कहानी|कविता|गाना|निबंध|पत्र",
+    )
+    private val thanks = Regex("(?i)^\\s*(ok|okay|thik|theek|thanks|thank\\s*you|thx|nice|good|accha|achha|acha|badhiya|wow|great|super|haan|ha|yes|no|nahi)\\b")
+
+    /**
+     * True when [message] asks again for the picture asked for just before, or changes it, without
+     * the word "picture": "dikha hi nahi fir se banao", "wo padh raha hoga, wo 10 years old hoga".
+     * [earlier] are the user's earlier messages in the chat, newest last. Without this, a phone model
+     * answered such a message itself and pretended to make the picture.
+     */
+    fun pictureFollowUp(message: String, earlier: List<String>): Boolean {
+        val t = message.trim()
+        if (t.isEmpty() || detect(t) != null || otherAsk.containsMatchIn(t)) return false
+        val recent = earlier.takeLast(3)
+        if (recent.none { detect(it) == Kind.IMAGE }) return false
+        if (t.contains('?') || (question.containsMatchIn(t) && !again.containsMatchIn(t))) return false
+        if (again.containsMatchIn(t)) return true
+        // Right after a picture request: a short description (not a question, not a "thanks").
+        return detect(recent.last()) == Kind.IMAGE && t.split(Regex("\\s+")).size <= 25 && !thanks.containsMatchIn(t) && describes.containsMatchIn(t)
+    }
+
+    /** The picture request a follow-up changes, joined with it ("ek boy ka image banao. wo padh raha hoga…"). */
+    fun followUpRequest(message: String, earlier: List<String>): String =
+        (earlier.takeLast(3).lastOrNull { detect(it) == Kind.IMAGE }?.let { "$it. " } ?: "") + message.trim()
+
+    // A reply that says it made or shows a picture ("simulating image generation", "यह दूसरी तस्वीर है").
+    private val claimsPictureRe = Regex(
+        "(?i)simulat\\w*\\s+(the\\s+)?(image|picture|photo)|here\\s+(is|'s)\\s+(a|the|your)\\s+(new\\s+|second\\s+|another\\s+)?(picture|image|photo)|" +
+            "i('ve|\\s+have)\\s+(made|created|generated|drawn)\\s+(a|the|an|your)\\s+(new\\s+)?(picture|image|photo)|" +
+            "(यह|ये)\\s+(दूसरी\\s+|नई\\s+|आपकी\\s+)?तस्वीर\\s+है|यहाँ\\s+.{0,40}तस्वीर\\s+है|तस्वीर\\s+बना\\s+(दी|ली)",
+    )
+
+    /** True when a reply claims a picture although none was made for its message. */
+    fun claimsPicture(reply: String): Boolean = claimsPictureRe.containsMatchIn(reply)
+
+    /** The note added to such a reply, so it is not taken for a real picture. */
+    const val NO_PICTURE_NOTE =
+        "_(No picture was made for this message: the chat AI cannot make or show pictures by itself. Ask for one, e.g. \"ek photo banao…\", and Yamini makes it.)_"
+
     /** The file a message asks for, or null. Checked in this order: ZIP, PDF, video, audio, image. */
     fun detect(message: String): Kind? {
         val t = message.trim()

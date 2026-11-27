@@ -3,7 +3,9 @@ package com.gravity.ide
 import com.gravity.ide.core.MakeFiles
 import com.gravity.ide.core.MakeFiles.Kind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MakeFilesTest {
@@ -41,5 +43,27 @@ class MakeFilesTest {
         assertEquals("<svg viewBox=\"0 0 10 10\"><circle r=\"4\"/></svg>", MakeFiles.svg("Sure!\n```svg\n<svg viewBox=\"0 0 10 10\"><circle r=\"4\"/></svg>\n```"))
         assertNull(MakeFiles.svg("no picture"))
         assertEquals("school-rules", MakeFiles.baseName("school rules ki pdf banao", "document"))
+    }
+
+    @Test fun aPictureAskedAgainOrChangedIsAPicture() {
+        val before = listOf("ek boy ka image banao")
+        // Real messages from a user's chat after a phone picture.
+        assertTrue(MakeFiles.pictureFollowUp("wo padh raha hoga wo 10 years old hoga", before))
+        assertTrue(MakeFiles.pictureFollowUp("dikha hi nahi fir se banao", before + "wo padh raha hoga wo 10 years old hoga"))
+        assertTrue(MakeFiles.pictureFollowUp("ab cartoon wala bana do", before))
+        assertEquals("ek boy ka image banao. wo padh raha hoga wo 10 years old hoga", MakeFiles.followUpRequest("wo padh raha hoga wo 10 years old hoga", before))
+        // Not picture follow-ups: thanks, questions, other requests, or no picture before.
+        assertFalse(MakeFiles.pictureFollowUp("thank you, bahut sundar hai", before))
+        assertFalse(MakeFiles.pictureFollowUp("ye ladka kaun hai?", before))
+        assertFalse(MakeFiles.pictureFollowUp("ab ek kahani bana do", before))
+        assertFalse(MakeFiles.pictureFollowUp("tum kaun ho", before))
+        assertFalse(MakeFiles.pictureFollowUp("fir se banao", listOf("mujhe GK ke sawal do")))
+    }
+
+    @Test fun aReplyThatPretendsToMakeAPictureIsSpotted() {
+        assertTrue(MakeFiles.claimsPicture("मैं खुद ही तस्वीर बनाऊँगी।\n... (Processing - simulating image generation) ...\nHere is a picture of a 10-year-old boy studying."))
+        assertTrue(MakeFiles.claimsPicture("यह दूसरी तस्वीर है। (Yah doosri tasveer hai.)"))
+        assertFalse(MakeFiles.claimsPicture("Photosynthesis is how plants make food from sunlight."))
+        assertFalse(MakeFiles.claimsPicture("Aap photo ke liye \"ek photo banao\" likh sakte hain."))
     }
 }

@@ -85,9 +85,10 @@ object LanguageHint {
     }
 
     private fun byScript(text: String): String = when (detect(text)) {
-        Lang.HINDI_DEVANAGARI -> "(Reply in Hindi, written in Devanagari.)"
+        // "No translation": Gemma 3 4B wrote each sentence three times (Devanagari, Roman, English).
+        Lang.HINDI_DEVANAGARI -> "(Reply in Hindi, written in Devanagari, with no translation.)"
         // Not "English letters": in tests that made Gemma and Qwen answer in English.
-        Lang.HINGLISH -> "(Reply in Hinglish, like this message: Hindi words in Roman script, not English.)"
+        Lang.HINGLISH -> "(Reply in Hinglish, like this message: Hindi words in Roman script, not English, with no translation.)"
         Lang.ENGLISH -> "(Reply in English.)"
         Lang.UNKNOWN -> ""
     }

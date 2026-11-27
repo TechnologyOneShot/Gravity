@@ -377,19 +377,36 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
     fun send(text: String) {
         if (busy.value || (text.isBlank() && attachments.value.isEmpty())) return
         cutReply.value = null
-        val wants = com.gravity.ide.core.MakeFiles.detect(text)
-        if (wants == com.gravity.ide.core.MakeFiles.Kind.IMAGE || wants == com.gravity.ide.core.MakeFiles.Kind.VIDEO) {
-            viewModelScope.launch {
+        viewModelScope.launch {
+            var wants = com.gravity.ide.core.MakeFiles.detect(text)
+            var request = text
+            // "fir se banao", "wo padh raha hoga…" right after a picture: that picture again, changed.
+            if (wants == null && text.isNotBlank()) {
+                val earlier = c.db.chats().messages(chatId).filter { it.role == "user" }.map { it.content }
+                if (com.gravity.ide.core.MakeFiles.pictureFollowUp(text, earlier)) {
+                    wants = com.gravity.ide.core.MakeFiles.Kind.IMAGE
+                    request = com.gravity.ide.core.MakeFiles.followUpRequest(text, earlier)
+                }
+            }
+            if (wants == com.gravity.ide.core.MakeFiles.Kind.IMAGE || wants == com.gravity.ide.core.MakeFiles.Kind.VIDEO) {
                 // The first picture: ask where pictures come from. Also ask again if "on this phone" was
                 // chosen but its picture model is not downloaded (any more).
                 val maker = c.settings.current().pictureMaker
                 val phoneMissing = maker == "phone" && c.phonePictures.state() != com.gravity.ide.ai.image.PhonePictures.State.Ready
-                if (maker == "ask" || phoneMissing) askPictures.value = text else sendNow(text)
+                if (maker == "ask" || phoneMissing) {
+                    askPictures.value = text
+                    askPicturesMake = wants to request
+                } else {
+                    sendNow(text, wants, request)
+                }
+            } else {
+                sendNow(text, wants, request)
             }
-            return
         }
-        sendNow(text)
     }
+
+    /** What the message waiting for the pictures question asks for, and the picture request. */
+    private var askPicturesMake: Pair<com.gravity.ide.core.MakeFiles.Kind?, String>? = null
 
     /**
      * The user's answer for pictures: "online", "phone" or "draw" (remembered; Settings → AI →
@@ -399,6 +416,8 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
     fun answerPictures(choice: String) {
         val text = askPictures.value ?: return
         askPictures.value = null
+        val (make, request) = askPicturesMake?.takeIf { it.second.endsWith(text.trim()) } ?: (com.gravity.ide.core.MakeFiles.detect(text) to text)
+        askPicturesMake = null
         viewModelScope.launch {
             c.settings.update { it.copy(pictureMaker = choice) }
             if (choice == "phone") {
@@ -418,14 +437,16 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                     }
                 }
             }
-            sendNow(text)
+            sendNow(text, make, request)
         }
     }
 
     /** Text to put back in the message box (a request that has to wait). */
     val returnedInput = MutableStateFlow<String?>(null)
 
-    private fun sendNow(text: String) {
+    private fun sendNow(
+        text: String, make: com.gravity.ide.core.MakeFiles.Kind? = com.gravity.ide.core.MakeFiles.detect(text), makeRequest: String = text,
+    ) {
         if (busy.value || (text.isBlank() && attachments.value.isEmpty())) return
         val atts = attachments.value
         attachments.value = emptyList()
@@ -438,8 +459,8 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             if (chat != null && (chat.title == "New chat" || chat.title.isBlank()) && text.isNotBlank()) {
                 c.db.chats().upsert(chat.copy(title = text.lineSequence().first().take(60), updatedAt = System.currentTimeMillis()))
             }
-            pendingMake = com.gravity.ide.core.MakeFiles.detect(text)
-            pendingMakeRequest = text
+            pendingMake = make
+            pendingMakeRequest = makeRequest
             generate(atts)
           } finally {
             busy.value = false
@@ -675,6 +696,11 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                     // Say both reasons: why the cloud AI did not answer, and why the phone model did not.
                     throw IllegalStateException("${e.message}\n\nThe phone model could not answer either: ${pe.message}", pe)
                 }
+            }
+            // A chat AI that says it made a picture when none was asked for (none is being made):
+            // say so in the reply, so a pretend picture is not taken for a real one.
+            if (pendingMake == null && com.gravity.ide.core.MakeFiles.claimsPicture(text.toString())) {
+                text.append("\n\n").append(com.gravity.ide.core.MakeFiles.NO_PICTURE_NOTE)
             }
             val savedId = saveAssistant(text.toString(), resolvedModel, providerId, inTok, outTok, sources, null)
             // Stopped at the length limit: the reply gets a Continue button.
