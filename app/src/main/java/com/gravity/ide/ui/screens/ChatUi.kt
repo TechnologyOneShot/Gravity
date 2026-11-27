@@ -152,7 +152,11 @@ internal fun GravityAvatar(size: Dp = 30.dp) {
 }
 
 /** What the chat will use, as shown on the model button. */
-internal data class ModelLabel(val text: String, val isLocal: Boolean, val needsAttention: Boolean)
+/** [slowBuild]: a phone model in a K-quant build (Q4_K_M…), which Arm phones run much slower than Q4_0. */
+internal data class ModelLabel(val text: String, val isLocal: Boolean, val needsAttention: Boolean, val slowBuild: Boolean = false)
+
+/** K-quant builds (Q4_K_M, Q5_K…): the phone engine repacks only Q4_0 for Arm's fast int8 units. */
+internal fun isSlowBuild(fileName: String) = Regex("(?i)[-_.]q[2-6]_k").containsMatchIn(fileName)
 
 internal fun modelLabelFor(
     chat: ChatEntity, providers: List<ProviderEntity>, loadedLocal: LocalModelHost.Loaded?,
@@ -161,8 +165,13 @@ internal fun modelLabelFor(
     val chosen = providers.firstOrNull { it.id == chat.providerId }
     val hasCloud = providers.any { it.enabled && it.kind != ProviderKind.LOCAL.name }
     return when {
-        chat.providerId == LocalLlamaProvider.ID ->
-            ModelLabel((localModels.firstOrNull { it.id == chat.model }?.name ?: loadedLocal?.name)?.let(::shortModelName) ?: "Phone model", true, false)
+        chat.providerId == LocalLlamaProvider.ID -> {
+            val m = localModels.firstOrNull { it.id == chat.model }
+            ModelLabel(
+                (m?.name ?: loadedLocal?.name)?.let(::shortModelName) ?: "Phone model", true, false,
+                slowBuild = isSlowBuild(m?.filePath ?: loadedLocal?.name.orEmpty()),
+            )
+        }
         chosen != null -> ModelLabel(shortModelName(chat.model ?: chosen.defaultModel.ifBlank { chosen.name }), false, false)
         hasCloud -> ModelLabel("Auto", false, false)
         loadedLocal != null -> ModelLabel(shortModelName(loadedLocal.name), true, false)
@@ -642,7 +651,7 @@ internal fun ChatComposer(
             if (!appMode && !hideCoderHint && modelLabel != null && modelLabel.isLocal && modelLabel.text.contains("coder", ignoreCase = true)) {
                 Row(Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp).testTag("coder-hint"), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Coder models are made for code and apps; their Hindi chat is weak. For Hindi / Hinglish talk, tap here and pick Gemma 3 4B (Phone Models → Recommended) or Gemini.",
+                        "Coder models are made for code and apps; their Hindi chat is weak. For Hindi / Hinglish talk, tap here and pick Gemma 3 4B QAT (Phone Models → Recommended) or Gemini.",
                         style = MaterialTheme.typography.labelSmall, color = GravityColors.Amber,
                         modifier = Modifier.weight(1f).clickable(onClick = onPickModel),
                     )
@@ -661,6 +670,22 @@ internal fun ChatComposer(
                         modifier = Modifier.weight(1f).clickable(onClick = onPickModel),
                     )
                     IconButton(onClick = { hideAppHint = true }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.Close, "Hide", modifier = Modifier.size(14.dp), tint = GravityColors.Muted)
+                    }
+                }
+            }
+            // A slow (K-quant) build of a phone model: a Q4_0 build answers much sooner.
+            var hideSlowHint by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+            val appHintShown = appMode && !hideAppHint && modelLabel != null && modelLabel.isLocal && !modelLabel.text.contains("coder", ignoreCase = true)
+            if (!appHintShown && !hideSlowHint && modelLabel != null && modelLabel.isLocal && modelLabel.slowBuild) {
+                Row(Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp).testTag("slow-build-hint"), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "⚡ ${modelLabel.text} is a Q4_K build: on phones it reads your message about 3× slower than a Q4_0 build. " +
+                            "For quicker answers, tap here and get Gemma 3 4B QAT (Phone Models → Recommended).",
+                        style = MaterialTheme.typography.labelSmall, color = GravityColors.Amber,
+                        modifier = Modifier.weight(1f).clickable(onClick = onPickModel),
+                    )
+                    IconButton(onClick = { hideSlowHint = true }, modifier = Modifier.size(28.dp)) {
                         Icon(Icons.Filled.Close, "Hide", modifier = Modifier.size(14.dp), tint = GravityColors.Muted)
                     }
                 }

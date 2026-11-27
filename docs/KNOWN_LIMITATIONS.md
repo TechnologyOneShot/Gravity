@@ -75,3 +75,18 @@ The specification asks Gravity never to fake a feature. This file lists everythi
 - **Browser and phone bars** in a screenshot (an address like music.apple.com, the clock and battery) are left out; words printed on a photo (an album cover) belong to the photo and are not written into the app.
 - **Installed apps** keep their page below the status bar and above the navigation bar (Android 15 draws apps under them), and the bars take the page's background color; a page whose background is a picture gets the picture's first color or white.
 - **In an app's chat**, a message that asks for a whole app ("music player app banao", "make a new app", "start over"), or a design picture sent to the phone model, writes the app anew instead of editing the old page; the old version stays in the history ("Undo last change" on the app's screen). Other messages are changes. Chat models (Qwen2.5 7B Instruct, Gemma) often fail to write the small edits a change needs on the phone; the chat box suggests a Coder model in App mode.
+
+## Reply speed on the phone (added 2026-11-27)
+
+Measured with the app's engine code on a real Arm CPU (GitHub's Neoverse-N2 runner, 4 threads; `.github/workflows/speed.yml`), first word of a chat reply / writing speed:
+
+| Model | Q4_K_M | Q4_0 |
+|---|---|---|
+| Gemma 3 4B (Q4_0 = Google's QAT build) | 0.95 s / 11 tokens/s | 0.38 s / 12–14 tokens/s |
+| Llama 3.2 3B | 0.7–0.9 s / 13 tokens/s | 0.3–0.37 s / 16–18 tokens/s |
+| Qwen2.5 7B | 1.5–2.0 s / 6.5 tokens/s | 0.6–0.7 s / 8–9.5 tokens/s |
+
+- The engine (llama.cpp b6000) repacks only **Q4_0** weights for Arm's dot-product / int8-matrix units; K-quant builds (Q4_K_M…) are not, so they read a message about 3× slower. The Recommended list now offers Q4_0 builds for chat; the chat box points out a K-quant build. Q4_0 weights are copied into memory when loaded (about a second longer to load, and they cannot be paged out like a mapped file).
+- A phone's cores differ from the test machine, so times on a phone differ; the ratios are what the change is based on. A follow-up message reads only the new words (the earlier chat is kept), measured as above.
+- **Live voice** sends the words heard so far if the speech service has not given its final words 0.3 s after you stop; the first piece of a reply is spoken at the first short exclamation or clause ("Arre yaar,"); what Yamini remembers about you is read once at the start of a talk (a fact learned mid-talk is used from the next talk), so the model does not read the whole talk again. Speech recognition, the phone's voice and the model still take their time: replies are not instant.
+

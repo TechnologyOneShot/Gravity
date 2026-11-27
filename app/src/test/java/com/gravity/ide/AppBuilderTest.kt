@@ -207,6 +207,13 @@ class AppBuilderPromptExportTest {
         )) assertFalse(r, AppBuilder.asksForNewApp(r))
     }
 
+    @Test fun kQuantPhoneBuildsAreMarkedSlow() {
+        for (f in listOf("google_gemma-3-4b-it-Q4_K_M.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "Llama-3.2-3B-Instruct-Q5_K_S.gguf"))
+            assertTrue(f, com.gravity.ide.ui.screens.isSlowBuild(f))
+        for (f in listOf("gemma-3-4B-it-QAT-Q4_0.gguf", "Qwen2.5-7B-Instruct-Q4_0.gguf", "model-Q8_0.gguf", "my-model.gguf"))
+            assertFalse(f, com.gravity.ide.ui.screens.isSlowBuild(f))
+    }
+
     companion object {
         /** DesignReader's starting page for a real now-playing screenshot (see DesignReaderTest for how it is measured). */
         val MEASURED_PLAYER = """

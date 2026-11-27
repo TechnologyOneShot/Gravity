@@ -411,16 +411,20 @@ private data class Suggested(val title: String, val repo: String, val file: Stri
 
 private val suggestedModels = listOf(
     Suggested(
-        "Gemma 3 4B (Hindi chat)", "bartowski/google_gemma-3-4b-it-GGUF", "google_gemma-3-4b-it-Q4_K_M.gguf", 2_490_000_000L,
-        "Best phone model for Hindi chat: in Yamini's CI test it wrote the most correct, natural Hindi. To a Hinglish question it often answers in Hindi script (Devanagari) instead of Roman letters. About 6 GB RAM phones. Phone models can still get facts wrong.",
+        "Gemma 3 4B QAT (Hindi chat, fastest)", "lmstudio-community/gemma-3-4B-it-qat-GGUF", "gemma-3-4B-it-QAT-Q4_0.gguf", 2_363_511_904L,
+        "Best phone model for Hindi chat and live voice. Google's quantization-aware Q4_0 build: on an Arm CPU (Yamini's CI) it read the " +
+            "message 3× faster and started answering in 0.4 s instead of 1 s for the usual Q4_K_M build, and wrote about 25% faster. " +
+            "To a Hinglish question it often answers in Hindi script. About 6 GB RAM phones. Phone models can still get facts wrong.",
     ),
     Suggested(
-        "Llama 3.2 3B (chat, fast)", "bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf", 2_020_000_000L,
-        "Small and quick, good for short replies and live voice. Best at keeping Hinglish in Roman letters (CI test: every Hinglish question), but some words are wrong more often than with Gemma 3 4B.",
+        "Llama 3.2 3B (chat, quickest)", "bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_0.gguf", 1_921_909_280L,
+        "The quickest replies, good for live voice: Q4_0 build, on an Arm CPU (CI) it started answering in 0.3 s (0.7–0.9 s for Q4_K_M) " +
+            "and wrote about 17 tokens a second. Best at keeping Hinglish in Roman letters, but some words are wrong more often than with Gemma 3 4B.",
     ),
     Suggested(
-        "Qwen2.5 7B (chat)", "bartowski/Qwen2.5-7B-Instruct-GGUF", "Qwen2.5-7B-Instruct-Q4_K_M.gguf", 4_680_000_000L,
-        "Better writing than the 3B chat model, but slower. The Coder models below are made for apps and code: they write weak lyrics or stories. About 12 GB RAM phones.",
+        "Qwen2.5 7B (chat)", "bartowski/Qwen2.5-7B-Instruct-GGUF", "Qwen2.5-7B-Instruct-Q4_0.gguf", 4_444_121_792L,
+        "Better writing than the 3B chat model, but slower. Q4_0 build: on an Arm CPU (CI) it started answering in 0.6 s instead of 1.5–2 s " +
+            "for Q4_K_M and wrote about 40% faster. The Coder models below are made for apps and code. About 12 GB RAM phones.",
     ),
     Suggested(
         "Qwen2.5-Coder 7B", "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf", 4_680_000_000L,
@@ -448,7 +452,8 @@ private fun RecommendedModels(installed: List<LocalModelEntity>) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Recommended for this phone", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Q4_K_M builds from Hugging Face, checked with their published SHA-256. Yamini loads a downloaded model by itself when the AI is needed.",
+                "Builds from Hugging Face, checked with their published SHA-256. Q4_0 builds start answering 2–3× sooner on phones (the engine " +
+                    "repacks them for the CPU's fast int8 units); Q4_K_M builds are slower. Yamini loads a downloaded model by itself when the AI is needed.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             for (m in suggestedModels) {
@@ -466,9 +471,9 @@ private fun RecommendedModels(installed: List<LocalModelEntity>) {
                     }
                     when {
                         have != null -> Text(if (have.status == ModelStatus.READY.name) "Downloaded" else have.status.lowercase(), style = MaterialTheme.typography.labelMedium, color = GravityColors.Green)
-                        busy == m.repo -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        busy == m.file -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         else -> TextButton(onClick = {
-                            busy = m.repo
+                            busy = m.file
                             c.appScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                                 try {
                                     val file = c.models.listHubFiles(m.repo).firstOrNull { it.path.equals(m.file, ignoreCase = true) }
