@@ -1,0 +1,41 @@
+name: Phone model speed
+
+# The waits a user feels in chat and live voice, measured on a real Arm CPU (GitHub's Arm runner,
+# 4 cores like a phone's fast cores) with the app's inference core: Q4_K_M (what users have now)
+# against Q4_0 (which llama.cpp repacks for the dot-product and int8-matrix units of Arm CPUs),
+# with the phone app's two Arm engine builds. Run by hand (workflow_dispatch).
+on:
+  workflow_dispatch:
+
+jobs:
+  speed:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - { name: Gemma-3-4B-Q4_K_M, url: "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf" }
+          - { name: Gemma-3-4B-QAT-Q4_0, url: "https://huggingface.co/lmstudio-community/gemma-3-4B-it-qat-GGUF/resolve/main/gemma-3-4B-it-QAT-Q4_0.gguf" }
+          - { name: Qwen2.5-7B-Q4_K_M, url: "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf" }
+          - { name: Qwen2.5-7B-Q4_0, url: "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_0.gguf" }
+        engine:
+          - { name: fast, arch: "armv8.2-a+dotprod+fp16" }
+          - { name: i8mm, arch: "armv8.6-a+dotprod+fp16+i8mm" }
+    name: speed (${{ matrix.model.name }}, ${{ matrix.engine.name }} engine)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build speed-check (the app's engine code, llama.cpp b6000)
+        run: |
+          lscpu | grep -E "Model name|^CPU\(s\)|Flags" | cut -c1-300
+          git clone --depth 1 --branch b6000 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
+          cmake -S tools/arm-check -B /tmp/b -DCMAKE_BUILD_TYPE=Release -DLLAMA_DIR=/tmp/llama.cpp \
+            -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH="${{ matrix.engine.arch }}" > /tmp/cmake.log
+          cmake --build /tmp/b --target speed-check -j"$(nproc)" > /tmp/build.log 2>&1 || (tail -30 /tmp/build.log; exit 1)
+      - name: Download ${{ matrix.model.name }}
+        run: curl -fL --retry 3 -o /tmp/model.gguf "${{ matrix.model.url }}" && ls -l /tmp/model.gguf
+      - name: Measure
+        run: |
+          /tmp/b/speed-check /tmp/model.gguf 4 tools/arm-check/prompts/chat-system.txt tools/arm-check/prompts/live-system.txt 2>/tmp/err.txt | tee /tmp/out.txt
+          grep -iE "repack|CPU_REPACK|AARCH64" /tmp/err.txt | head -5 || true
+          echo "TABLE|${{ matrix.model.name }}|${{ matrix.engine.name }}|$(grep '^SUMMARY' /tmp/out.txt | cut -d'|' -f2-)"

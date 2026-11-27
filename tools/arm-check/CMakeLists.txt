@@ -33,3 +33,10 @@ add_executable(state-check state_check.cpp ${APP_CPP}/gravity_core.cpp)
 target_include_directories(state-check PRIVATE ${LLAMA_DIR}/include ${APP_CPP})
 target_compile_features(state-check PRIVATE cxx_std_17)
 target_link_libraries(state-check llama ggml)
+
+# The waits a user feels in chat and live voice (first word, speed, what a follow-up reads again);
+# runs natively on the Arm runner (see .github/workflows/speed.yml).
+add_executable(speed-check speed_check.cpp ${APP_CPP}/gravity_core.cpp)
+target_include_directories(speed-check PRIVATE ${LLAMA_DIR}/include ${APP_CPP})
+target_compile_features(speed-check PRIVATE cxx_std_17)
+target_link_libraries(speed-check llama ggml)
