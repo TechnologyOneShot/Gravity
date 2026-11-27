@@ -177,12 +177,13 @@ class AppBuilderPromptExportTest {
                 .put("prefix", AppBuilder.DIRECT_PREFIX).put("stop", org.json.JSONArray().put("</html>"))
             File(dir, "$name.json").writeText(json.toString(2))
         }
-        // A build from a design picture with the phone model: the measurements DesignReader made of a
+        // A build from a design picture with the phone model: the starting page DesignReader made from a
         // real screenshot (a music player's now-playing screen, from a browser window).
         val (designSystem, designUser) = AppBuilder.directPrompt(
-            AppBuilder.requestFrom(AppBuilder.buildInstruction("music player is design jaisa bana do")), null, designText = MEASURED_PLAYER,
+            AppBuilder.requestFrom(AppBuilder.buildInstruction("music player is design jaisa bana do")), null, designText = "(measured)", designLayout = MEASURED_PLAYER,
         )
-        assertTrue(designUser.contains("You cannot see it") && designUser.contains("⏸ (pause)") && designUser.contains("display:none"))
+        assertTrue(designUser.contains("You cannot see it") && designUser.contains("aria-label=\"pause\"") && designUser.contains("display:none"))
+        assertFalse("The starting page replaces the description", designUser.contains("(measured)"))
         File(dir, "music-player-design.json").writeText(
             org.json.JSONObject().put("name", "music-player-design").put("kind", "music-player").put("system", designSystem).put("user", designUser)
                 .put("prefix", AppBuilder.DIRECT_PREFIX).put("stop", org.json.JSONArray().put("</html>")).toString(2),
@@ -196,20 +197,43 @@ class AppBuilderPromptExportTest {
     }
 
     companion object {
-        /** DesignReader's description of a real now-playing screenshot (see DesignReaderTest for how it is measured). */
+        /** DesignReader's starting page for a real now-playing screenshot (see DesignReaderTest for how it is measured). */
         val MEASURED_PLAYER = """
-Screen: dark, about 509 px tall at 390 px wide. (The browser or phone bar above the app was left out.)
-Background: linear-gradient(180deg, #263d0d, #41370d, #39300d) (corners: top-left #313f0d, top-right #1b3b0d, bottom-left #27320a, bottom-right #4b2e10)
-Top to bottom (sizes in CSS px; x = horizontal place in % of the width):
-1. [gap 15] icon 16 px #65704b, centered
-2. [gap 13] picture 251×251 px (64% wide), rounded 7 px, a photo, mostly #97ae70, #566b4c, #4f3526; the words printed on it belong to the photo, centered
-3. [gap 20] 3 side by side across the width: text "Deeper Well" 16 px bold #dee0d7 at x 14%; round button 19 px #b1aa9e with a #5f4f35 icon inside at x 84%; round button 19 px #544026 with a #bfb8af icon inside that looks like ⋯ (more) at x 91%
-4. text "Kacey Musgraves — Deeper Well" 15 px #9ea18c, left (x 6%)
-5. [gap 17] bar 5 px thick, 88% wide, rounded ends: #9fa492 from the left to 20%, then #64624a (a progress bar or slider), centered
-6. [gap 8] 2 side by side across the width: text "0:46" 11 px #969c89 at x 8%; text "-3:06" 11 px #9b9186 at x 91%
-7. [gap 23] 3 side by side: icon 25 px #fefefe that looks like ⏪ (rewind / previous) at x 22%; icon 26 px #fefefe that looks like ⏸ (pause) at x 50%; icon 26 px #fefefe that looks like ⏩ (forward / next) at x 78%
-8. [gap 31] 2 side by side across the width: icon 10 px #94978e that looks like ◀ (a triangle pointing left) at x 8%; bar 5 px thick, 82% wide, rounded ends: #95948e from the left to 47%, then #6a5d48 (a progress bar or slider) at x 52%
-9. [gap 22] 2 side by side: icon 15 px #91908d at x 28%; icon 14 px #95928e that looks like ☰ (a list or menu) at x 72%
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{box-sizing:border-box}html,body{margin:0}
+body{min-height:100vh;background:linear-gradient(180deg, #263d0d, #41370d, #39300d);color:#dee0d7;font-family:system-ui,-apple-system,Roboto,sans-serif;padding-bottom:16px}
+button{background:none;border:0;padding:0;margin:0;color:inherit;font:inherit;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+</style></head>
+<body>
+<div style="display:flex;margin-top:15px"><button aria-label="icon" style="color:#65704b;margin:0 auto"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/></svg></button></div>
+<div style="display:flex;margin-top:13px"><div class="photo" role="img" style="width:64%;aspect-ratio:495/495;border-radius:7px;background:linear-gradient(135deg, #97ae70, #566b4c, #4f3526);margin:0 auto"></div></div>
+<div style="position:relative;height:22px;margin-top:20px">
+  <span style="font-size:16px;font-weight:700;color:#dee0d7;white-space:nowrap;position:absolute;top:50%;left:6%;transform:translateY(-50%)">Deeper Well</span>
+  <button aria-label="icon" style="width:19px;height:19px;border-radius:50%;background:#b1aa9e;color:#5f4f35;position:absolute;top:50%;left:84%;transform:translate(-50%,-50%)"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+  <button aria-label="more" style="width:19px;height:19px;border-radius:50%;background:#544026;color:#bfb8af;position:absolute;top:50%;left:91%;transform:translate(-50%,-50%)"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg></button>
+</div>
+<div style="display:flex;margin-top:1px"><span style="font-size:15px;color:#9ea18c;white-space:nowrap;margin-left:6%">Kacey Musgraves — Deeper Well</span></div>
+<div style="display:flex;margin-top:17px"><div class="bar" style="width:88%;height:5px;border-radius:5px;background:#64624a;margin:0 auto"><div class="fill" style="width:20%;height:100%;border-radius:5px;background:#9fa492"></div></div></div>
+<div style="position:relative;height:15px;margin-top:8px">
+  <span style="font-size:11px;color:#969c89;white-space:nowrap;position:absolute;top:50%;left:6%;transform:translateY(-50%)">0:46</span>
+  <span style="font-size:11px;color:#9b9186;white-space:nowrap;position:absolute;top:50%;right:6%;transform:translateY(-50%)">-3:06</span>
+</div>
+<div style="position:relative;height:26px;margin-top:23px">
+  <button aria-label="rewind / previous" style="color:#fefefe;position:absolute;top:50%;left:22%;transform:translate(-50%,-50%)"><svg viewBox="0 0 24 24" width="25" height="25" fill="currentColor"><path d="M22 4l-10 8 10 8zM12 4L2 12l10 8z"/></svg></button>
+  <button aria-label="pause" style="color:#fefefe;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><rect x="5" y="3" width="5" height="18" rx="1"/><rect x="14" y="3" width="5" height="18" rx="1"/></svg></button>
+  <button aria-label="forward / next" style="color:#fefefe;position:absolute;top:50%;left:78%;transform:translate(-50%,-50%)"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M2 4l10 8-10 8zM12 4l10 8-10 8z"/></svg></button>
+</div>
+<div style="position:relative;height:10px;margin-top:31px">
+  <button aria-label="a triangle pointing left" style="color:#94978e;position:absolute;top:50%;left:8%;transform:translate(-50%,-50%)"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M18 3L3 12l15 9z"/></svg></button>
+  <div class="bar" style="width:82%;height:5px;border-radius:5px;background:#6a5d48;position:absolute;top:50%;left:11%;transform:translateY(-50%)"><div class="fill" style="width:47%;height:100%;border-radius:5px;background:#95948e"></div></div>
+</div>
+<div style="position:relative;height:14px;margin-top:22px">
+  <button aria-label="icon" style="color:#91908d;position:absolute;top:50%;left:28%;transform:translate(-50%,-50%)"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+  <button aria-label="a list or menu" style="color:#95928e;position:absolute;top:50%;left:72%;transform:translate(-50%,-50%)"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="3" y="5" width="18" height="2.4" rx="1"/><rect x="3" y="11" width="18" height="2.4" rx="1"/><rect x="3" y="17" width="18" height="2.4" rx="1"/></svg></button>
+</div>
+</body></html>
         """.trimIndent()
     }
 }

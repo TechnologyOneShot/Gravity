@@ -21,13 +21,16 @@ object ImageText {
     private const val OCR_WIDTH = 1440
     private const val MEASURE_WIDTH = 720
 
-    fun describe(context: Context, file: File): String {
+    fun describe(context: Context, file: File): String = read(context, file).description
+
+    /** The measured description and a starting page with the design's look (see DesignReader). */
+    fun read(context: Context, file: File): DesignReader.Reading {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return ""
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return DesignReader.Reading("", "")
         var sample = 1
         while (bounds.outWidth / (sample * 2) >= OCR_WIDTH) sample *= 2
-        val bmp = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return ""
+        val bmp = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return DesignReader.Reading("", "")
         val recognizer = TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
         try {
             val result = Tasks.await(recognizer.process(InputImage.fromBitmap(bmp, 0)), 60, TimeUnit.SECONDS)
@@ -43,7 +46,7 @@ object ImageText {
             try {
                 val px = IntArray(small.width * small.height)
                 small.getPixels(px, 0, small.width, 0, 0, small.width, small.height)
-                return DesignReader.describe(DesignReader.Pixels(small.width, small.height, px), lines)
+                return DesignReader.read(DesignReader.Pixels(small.width, small.height, px), lines)
             } finally {
                 if (small !== bmp) small.recycle()
             }

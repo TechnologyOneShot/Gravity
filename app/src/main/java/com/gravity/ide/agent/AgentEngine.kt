@@ -552,6 +552,7 @@ class AgentEngine(
         val designFiles = AppBuilder.designsFrom(task.instruction).map { File(root, it) }.filter { it.isFile }
         var designImages = emptyList<com.gravity.ide.ai.ImagePart>()
         var designText: String? = null
+        var designLayout: String? = null
         if (designFiles.isNotEmpty()) {
             if (!local) {
                 designImages = designFiles.map { f ->
@@ -561,21 +562,25 @@ class AgentEngine(
             } else {
                 stage(task.id, "Measuring your design picture (colors, sizes, places, texts)")
                 val started = System.currentTimeMillis()
-                designText = withContext(Dispatchers.IO) {
-                    designFiles.mapIndexed { i, f ->
-                        val d = runCatching { com.gravity.ide.files.ImageText.describe(context, f) }.getOrDefault("")
-                        if (designFiles.size > 1 && d.isNotBlank()) "Picture ${i + 1}:\n$d" else d
-                    }.filter { it.isNotBlank() }.joinToString("\n\n")
-                }.trim().take(DesignReader.MAX_CHARS * 2)
+                val readings = withContext(Dispatchers.IO) {
+                    designFiles.map { f -> runCatching { com.gravity.ide.files.ImageText.read(context, f) }.getOrDefault(DesignReader.Reading("", "")) }
+                }
+                designText = readings.mapIndexed { i, r ->
+                    if (designFiles.size > 1 && r.description.isNotBlank()) "Picture ${i + 1}:\n${r.description}" else r.description
+                }.filter { it.isNotBlank() }.joinToString("\n\n").trim().take(DesignReader.MAX_CHARS * 2)
+                // The phone model builds on a starting page with the design's look (the first picture's).
+                designLayout = readings.firstOrNull { it.layout.isNotBlank() }?.layout?.takeIf { it.length <= 9000 }
                 events.log(
                     EventCategory.AGENT,
-                    "Design measured in ${(System.currentTimeMillis() - started) / 100 / 10.0} s (the phone model cannot see pictures, so Yamini describes it)",
+                    "Design measured in ${(System.currentTimeMillis() - started) / 100 / 10.0} s (the phone model cannot see pictures, so Yamini measures it)",
                     designText.ifBlank { "Nothing could be measured in the picture." }, EventLevel.WARN, taskId = task.id,
                 )
+                designLayout?.let { events.log(EventCategory.AGENT, "Starting page made from your design (${it.length} characters)", it, taskId = task.id) }
             }
         }
         val (system, user) = AppBuilder.directPrompt(
             AppBuilder.requestFrom(task.instruction), current, compact = local, designImages = designImages.size, designText = designText,
+            designLayout = designLayout,
         )
         val loaded = if (local) localHost.loadedOrNull() else null
         // A whole app in one answer needs room: on the phone, use a bigger context for this request if free memory allows.

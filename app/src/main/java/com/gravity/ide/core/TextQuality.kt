@@ -35,6 +35,22 @@ object TextQuality {
         val bengali = text.count { it in '\u0985'..'\u09B9' }
         val letters = text.count { it.isLetter() }
         if (bengali * 20 > letters) return text
-        return text.replace('\u09EA', '8').replace('\u09E6', '0')
+        // A round "০" inside a Latin word is the letter o ("Rao", "Hello"), elsewhere the digit 0.
+        val out = StringBuilder(text.length)
+        for ((i, ch) in text.withIndex()) {
+            out.append(
+                when (ch) {
+                    '\u09EA' -> '8'
+                    '\u09E6' -> {
+                        val before = text.getOrNull(i - 1)
+                        val after = text.getOrNull(i + 1)
+                        fun latin(c: Char?) = c != null && (c in 'a'..'z' || c in 'A'..'Z')
+                        if ((latin(before) || latin(after)) && before?.isDigit() != true && after?.isDigit() != true) 'o' else '0'
+                    }
+                    else -> ch
+                }
+            )
+        }
+        return out.toString()
     }
 }

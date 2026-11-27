@@ -20,6 +20,8 @@ class TextQualityTest {
 
     @Test fun ocrLookalikeDigitsAreFixedOnHindiAndEnglishPages() {
         org.junit.Assert.assertEquals("Arrive by 8 AM, room 10", com.gravity.ide.core.TextQuality.fixOcrDigits("Arrive by \u09EA AM, room 1\u09E6"))
+        // Read in a word, the round sign is the letter o (ML Kit read "Asha Rao" with a Bengali zero).
+        org.junit.Assert.assertEquals("Asha Rao, Hello, 10:05, 0:46", com.gravity.ide.core.TextQuality.fixOcrDigits("Asha Ra\u09E6, Hell\u09E6, 1\u09E6:\u09E65, \u09E6:46"))
         // Stray misread Bengali letters on an English / Hindi page do not stop the fix.
         org.junit.Assert.assertEquals("School Rules. Arrive by 8 AM. File: \u0995\u09BEtml", com.gravity.ide.core.TextQuality.fixOcrDigits("School Rules. Arrive by \u09EA AM. File: \u0995\u09BEtml"))
         // A real Bengali page keeps its digits.

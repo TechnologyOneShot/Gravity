@@ -168,11 +168,20 @@ object DesignReader {
     private class IconEl(val color: Int, val shape: String?, val round: Boolean, val inner: Int?, val innerShape: String?, l: Int, t: Int, r: Int, b: Int) : El(l, t, r, b)
     private class GraphicEl(val colors: List<Int>, l: Int, t: Int, r: Int, b: Int) : El(l, t, r, b)
 
+    /**
+     * What was measured: [description] in words, and [layout], a starting page (HTML and CSS) with the
+     * same parts, sizes, colors and places, for a model to build the app on. Both are "" when the
+     * picture is empty or too small to measure.
+     */
+    data class Reading(val description: String, val layout: String)
+
     /** The measured description, or "" when the picture is empty or too small to measure. */
-    fun describe(px: Pixels, ocr: List<TextLine>): String {
+    fun describe(px: Pixels, ocr: List<TextLine>): String = read(px, ocr).description
+
+    fun read(px: Pixels, ocr: List<TextLine>): Reading {
         val w = px.width
         val h = px.height
-        if (w < 40 || h < 40 || px.argb.size < w * h) return ""
+        if (w < 40 || h < 40 || px.argb.size < w * h) return Reading("", "")
         val p = solid(px)
         val top = contentTop(p, w, h, ocr)
         val ch = h - top
@@ -352,10 +361,10 @@ object DesignReader {
         val dark = luma(bgColors.avgColor()) < 110
         out.append("Screen: ${if (dark) "dark" else "light"}, about ${px(ch)} px tall at $PHONE_WIDTH px wide.")
         if (top > 0) out.append(" (The browser or phone bar above the app was left out.)")
-        out.append("\nBackground: ").append(
-            if (bigPicture != null) "a full-screen picture, mostly ${(bigPicture as PictureEl).colors.joinToString(", ") { hex(it) }}"
-            else backgroundCss(bgColors),
-        ).append('\n')
+        val bgCss = if (bigPicture != null) "linear-gradient(160deg, ${bigPicture.colors.joinToString(", ") { hex(it) }})" else backgroundCss(bgColors)
+        out.append("\nBackground (CSS): ").append(bgCss)
+        if (bigPicture != null) out.append(" (the whole screen is a picture; these are its colors)")
+        out.append('\n')
 
         fun describeEl(e: El): String = when (e) {
             is TextEl -> "text \"${e.text}\" ${font(e)} px${if (e.bold) " bold" else ""} ${hex(e.color)}"
@@ -402,7 +411,118 @@ object DesignReader {
             written++
         }
         if (rowsOut.isEmpty()) out.append("(no separate parts found)\n")
-        return out.toString().trim()
+
+        // ------------------------------------------------ the starting page
+        fun esc(t: String) = t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+        fun label(shape: String?) = shape?.substringAfter("(", "")?.substringBefore(")")?.ifBlank { null } ?: "icon"
+        val textColors = topLevel.filterIsInstance<TextEl>().groupingBy { it.color }.eachCount()
+        val mainText = textColors.maxByOrNull { it.value }?.key ?: if (dark) 0xFFFFFFFF.toInt() else 0xFF111111.toInt()
+
+        /** An element as [tag, attributes, style, inner HTML]; the row adds where it goes. */
+        fun part(e: El): Array<String> = when (e) {
+            is TextEl -> arrayOf("span", "", "font-size:${font(e)}px;${if (e.bold) "font-weight:700;" else ""}color:${hex(e.color)};white-space:nowrap", esc(e.text))
+            is PictureEl -> arrayOf(
+                "div", " class=\"photo\" role=\"img\"",
+                "width:${pct(e.w)}%;aspect-ratio:${e.w}/${e.h};border-radius:${px(e.radius)}px;background:linear-gradient(135deg, ${e.colors.joinToString(", ") { hex(it) }})", "",
+            )
+            is BoxEl -> {
+                val only = e.children.singleOrNull() as? TextEl
+                val radius = if (e.radius * 2 >= e.h - 2) "999px" else "${px(e.radius)}px"
+                if (e.outlined && only != null && only.cx < e.cx) {
+                    arrayOf(
+                        "input", " placeholder=\"${esc(only.text)}\"",
+                        "width:${pct(e.w)}%;height:${px(e.h)}px;border:2px solid ${hex(e.color)};border-radius:$radius;padding:0 ${px(only.l - e.l)}px;" +
+                            "font-size:${font(only)}px;background:transparent;color:inherit", "",
+                    )
+                } else {
+                    val inner = e.children.sortedBy { it.l }.joinToString("") { c -> part(c).let { (tag, attrs, style, body) -> "<$tag$attrs style=\"$style\">$body${if (tag == "input") "" else "</$tag>"}" } }
+                    val centered = e.children.isEmpty() || e.children.any { abs(it.cx - e.cx) < e.w * 0.1f }
+                    arrayOf(
+                        if (e.outlined) "div" else "button", "",
+                        "width:${pct(e.w)}%;min-height:${px(e.h)}px;border-radius:$radius;" +
+                            (if (e.outlined) "border:2px solid ${hex(e.color)}" else "background:${hex(e.color)}") +
+                            ";display:flex;align-items:center;justify-content:${if (centered) "center" else "flex-start"};gap:8px;padding:0 12px", inner,
+                    )
+                }
+            }
+            is BarEl -> {
+                val round = if (e.rounded) "border-radius:${px(e.thick)}px;" else ""
+                if (e.rest != null && e.fraction != null) arrayOf(
+                    "div", " class=\"bar\"", "width:${pct(e.w)}%;height:${px(e.thick)}px;${round}background:${hex(e.rest)}",
+                    "<div class=\"fill\" style=\"width:${(e.fraction * 100).roundToInt()}%;height:100%;${round}background:${hex(e.first)}\"></div>",
+                ) else arrayOf("div", " class=\"bar\"", "width:${pct(e.w)}%;height:${px(e.thick)}px;${round}background:${hex(e.first)}", "")
+            }
+            is IconEl -> {
+                val size = px(max(e.w, e.h))
+                if (e.round) arrayOf(
+                    "button", " aria-label=\"${esc(label(e.innerShape))}\"",
+                    "width:${size}px;height:${size}px;border-radius:50%;background:${hex(e.color)};color:${hex(e.inner ?: e.color)}",
+                    if (e.inner != null) svgOf(e.innerShape, size * 55 / 100) else "",
+                ) else arrayOf("button", " aria-label=\"${esc(label(e.shape))}\"", "color:${hex(e.color)}", svgOf(e.shape, size))
+            }
+            is GraphicEl -> arrayOf(
+                "div", " class=\"graphic\" role=\"img\"",
+                "width:${pct(e.w)}%;aspect-ratio:${e.w}/${e.h};background:linear-gradient(135deg, ${e.colors.joinToString(", ") { hex(it) }})", "",
+            )
+        }
+        fun tagOf(a: Array<String>, extra: String) = "<${a[0]}${a[1]} style=\"${a[2]};$extra\">${a[3]}${if (a[0] == "input") "" else "</${a[0]}>"}"
+        fun heightOf(e: El) = if (e is TextEl) (font(e) * 1.35f).roundToInt() else px(e.h)
+
+        val page = StringBuilder()
+        page.append("<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<style>\n")
+        page.append("*{box-sizing:border-box}html,body{margin:0}\n")
+        page.append("body{min-height:100vh;background:$bgCss;color:${hex(mainText)};font-family:system-ui,-apple-system,Roboto,sans-serif;padding-bottom:16px}\n")
+        page.append("button{background:none;border:0;padding:0;margin:0;color:inherit;font:inherit;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}\n")
+        page.append("</style></head>\n<body>\n")
+        var bottom = top
+        for (row in rowsOut) {
+            row.sortBy { it.l }
+            val gap = px(max(0, row.minOf { it.t } - bottom))
+            bottom = max(bottom, row.maxOf { it.b })
+            if (row.size == 1) {
+                val e = row[0]
+                val place = when {
+                    e.w > cw * 0.9 -> "margin:0 auto"
+                    abs(e.cx - cw / 2) < cw * 0.06 -> "margin:0 auto"
+                    e.cx < cw / 2 -> "margin-left:${pct(e.l)}%"
+                    else -> "margin-left:auto;margin-right:${pct(cw - e.r)}%"
+                }
+                page.append("<div style=\"display:flex;margin-top:${gap}px\">").append(tagOf(part(e), place)).append("</div>\n")
+            } else {
+                // Side by side: each part at its own place across the width.
+                page.append("<div style=\"position:relative;height:${row.maxOf { heightOf(it) }}px;margin-top:${gap}px\">\n")
+                for (e in row) {
+                    val place = when {
+                        e is TextEl && e.cx < cw / 2 -> "position:absolute;top:50%;left:${pct(e.l)}%;transform:translateY(-50%)"
+                        e is TextEl -> "position:absolute;top:50%;right:${pct(cw - e.r)}%;transform:translateY(-50%)"
+                        e is BarEl || e is PictureEl || e is BoxEl || e is GraphicEl -> "position:absolute;top:50%;left:${pct(e.l)}%;transform:translateY(-50%)"
+                        else -> "position:absolute;top:50%;left:${pct(e.cx)}%;transform:translate(-50%,-50%)"
+                    }
+                    page.append("  ").append(tagOf(part(e), place)).append('\n')
+                }
+                page.append("</div>\n")
+            }
+        }
+        page.append("</body></html>")
+        return Reading(out.toString().trim(), if (rowsOut.isEmpty()) "" else page.toString())
+    }
+
+    /** Inline SVG for an icon shape DesignReader named (current color), or a plain ring when the shape is unknown. */
+    internal fun svgOf(shape: String?, size: Int): String {
+        val d = when (shape?.firstOrNull()) {
+            '⏸' -> "<rect x=\"5\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"/><rect x=\"14\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"/>"
+            '▶' -> "<path d=\"M6 3l15 9-15 9z\"/>"
+            '◀' -> "<path d=\"M18 3L3 12l15 9z\"/>"
+            '⏩' -> "<path d=\"M2 4l10 8-10 8zM12 4l10 8-10 8z\"/>"
+            '⏪' -> "<path d=\"M22 4l-10 8 10 8zM12 4L2 12l10 8z\"/>"
+            '⏭' -> "<path d=\"M3 4l12 8-12 8zM17 4h3v16h-3z\"/>"
+            '⏮' -> "<path d=\"M21 4L9 12l12 8zM4 4h3v16H4z\"/>"
+            '⋯' -> "<circle cx=\"5\" cy=\"12\" r=\"2.2\"/><circle cx=\"12\" cy=\"12\" r=\"2.2\"/><circle cx=\"19\" cy=\"12\" r=\"2.2\"/>"
+            '⋮' -> "<circle cx=\"12\" cy=\"5\" r=\"2.2\"/><circle cx=\"12\" cy=\"12\" r=\"2.2\"/><circle cx=\"12\" cy=\"19\" r=\"2.2\"/>"
+            '☰' -> "<rect x=\"3\" y=\"5\" width=\"18\" height=\"2.4\" rx=\"1\"/><rect x=\"3\" y=\"11\" width=\"18\" height=\"2.4\" rx=\"1\"/><rect x=\"3\" y=\"17\" width=\"18\" height=\"2.4\" rx=\"1\"/>"
+            else -> "<circle cx=\"12\" cy=\"12\" r=\"8\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/>"
+        }
+        return "<svg viewBox=\"0 0 24 24\" width=\"$size\" height=\"$size\" fill=\"currentColor\">$d</svg>"
     }
 
     private fun List<Int>.avgColor(): Int = if (isEmpty()) 0xFF808080.toInt() else rgb(sumOf { r(it) } / size, sumOf { g(it) } / size, sumOf { b(it) } / size)
@@ -459,12 +579,12 @@ object DesignReader {
         return listOf(tl ?: fallback, tr ?: fallback, bl ?: fallback, br ?: fallback, mid ?: fallback)
     }
 
-    /** One color, or a CSS gradient that runs the way the colors change most. */
+    /** One color, or a CSS gradient that runs the way the colors change most (a CSS value). */
     internal fun backgroundCss(c: List<Int>): String {
         val (tl, tr, bl, br) = c
         val mid = c.getOrElse(4) { tl }
         val spreadAll = listOf(tl, tr, bl, br, mid).let { cs -> cs.maxOf { a -> cs.maxOf { dist(a, it) } } }
-        if (spreadAll < 24) return "${hex(listOf(tl, tr, bl, br, mid).avgColor())} (one color)"
+        if (spreadAll < 24) return hex(listOf(tl, tr, bl, br, mid).avgColor())
         val vertical = (dist(tl, bl) + dist(tr, br)) / 2
         val horizontal = (dist(tl, tr) + dist(bl, br)) / 2
         val diagonal = dist(tl, br)
@@ -474,7 +594,7 @@ object DesignReader {
             anti >= max(vertical, horizontal) * 1.15 -> "linear-gradient(225deg, ${hex(tr)}, ${hex(mid)}, ${hex(bl)})"
             vertical >= horizontal -> "linear-gradient(180deg, ${hex(listOf(tl, tr).avgColor())}, ${hex(mid)}, ${hex(listOf(bl, br).avgColor())})"
             else -> "linear-gradient(90deg, ${hex(listOf(tl, bl).avgColor())}, ${hex(mid)}, ${hex(listOf(tr, br).avgColor())})"
-        } + " (corners: top-left ${hex(tl)}, top-right ${hex(tr)}, bottom-left ${hex(bl)}, bottom-right ${hex(br)})"
+        }
     }
 
     // ---------------------------------------------------------------- one part

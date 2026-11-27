@@ -121,7 +121,7 @@ class DesignReaderTest {
         val out = DesignReader.describe(c.pixels(), lines)
         println(out)
         assertTrue(out, out.startsWith("Screen: dark"))
-        assertTrue("The gradient background: $out", out.contains("Background: linear-gradient(180deg"))
+        assertTrue("The gradient background: $out", out.contains("Background (CSS): linear-gradient(180deg"))
         assertFalse("The phone's clock is not part of the app: $out", out.contains("9:41"))
         assertTrue(out, out.contains("phone bar above the app was left out"))
         val rows = out.lines()
@@ -147,6 +147,29 @@ class DesignReaderTest {
         assertTrue(out.length <= DesignReader.MAX_CHARS)
     }
 
+    @Test fun theStartingPageHasTheDesignsLook() {
+        val (c, lines) = player()
+        val page = DesignReader.read(c.pixels(), lines).layout
+        println(page)
+        assertTrue(page, page.startsWith("<!DOCTYPE html>") && page.endsWith("</html>") && page.contains("name=\"viewport\""))
+        assertTrue("The gradient background: $page", page.contains("background:linear-gradient(180deg"))
+        assertTrue("The photo as a box of its colors: $page", Regex("class=\"photo\" role=\"img\" style=\"width:6[2-6]%;aspect-ratio:\\d+/\\d+").containsMatchIn(page))
+        assertTrue("Bold title: $page", Regex("font-weight:700;color:#ffffff[^>]*>Song Title<").containsMatchIn(page))
+        assertTrue("A two-tone bar with its fill: $page", Regex("class=\"fill\" style=\"width:2[4-6]%;height:100%;background:#c8c8c0").containsMatchIn(page))
+        assertTrue("Icons as SVG buttons named by their shape: $page", page.contains("aria-label=\"pause\"") && page.contains("aria-label=\"rewind / previous\"") && page.contains("aria-label=\"more\""))
+        assertTrue("Controls placed across the width: $page", Regex("aria-label=\"pause\" style=\"color:#ffffff;position:absolute;top:50%;left:50%").containsMatchIn(page))
+        assertFalse(page.contains("DeereR") || page.contains("9:41") || page.contains(">il<"))
+        // Every tag that is opened is closed.
+        for (tag in listOf("div", "span", "button", "svg")) assertTrue(tag, Regex("<$tag[ >]").findAll(page).count() == Regex("</$tag>").findAll(page).count())
+    }
+
+    @Test fun textOnTheStartingPageIsEscaped() {
+        val c = Canvas(720, 1280, WHITE)
+        c.letters(54, 200, 500, 250, 6, rgb(0, 0, 0))
+        val page = DesignReader.read(c.pixels(), listOf(line("Tom & <Jerry> \"show\"", 54, 200, 500, 250))).layout
+        assertTrue(page, page.contains(">Tom &amp; &lt;Jerry&gt; &quot;show&quot;<"))
+    }
+
     @Test fun aSignInScreenHasFieldsAndAButton() {
         val c = Canvas(720, 1280, WHITE)
         c.letters(30, 12, 100, 40, 4, rgb(0, 0, 0))
@@ -164,12 +187,15 @@ class DesignReaderTest {
         )
         val out = DesignReader.describe(c.pixels(), lines)
         println(out)
-        assertTrue(out, out.startsWith("Screen: light") && out.contains("Background: #ffffff (one color)"))
+        assertTrue(out, out.startsWith("Screen: light") && out.contains("Background (CSS): #ffffff\n"))
         val rows = out.lines()
         assertTrue("An outlined Email field: $out", rows.any { it.contains("outlined box") && it.contains("\"Email\"") })
         assertTrue("An outlined Password field: $out", rows.any { it.contains("outlined box") && it.contains("\"Password\"") })
         assertTrue("A pill button with its label: $out", rows.any { it.contains("box #4f46e5") && it.contains("pill-shaped") && it.contains("\"Sign in\"") })
         assertTrue("Three faint round buttons in a row: $out", rows.any { Regex("3 side by side.*round button.*round button.*round button").containsMatchIn(it) })
+        val page = DesignReader.read(c.pixels(), lines).layout
+        assertTrue("Fields become inputs with their placeholder: $page", page.contains("<input placeholder=\"Email\"") && page.contains("<input placeholder=\"Password\""))
+        assertTrue("The pill button keeps its label: $page", Regex("<button style=\"width:85%;min-height:\\d+px;border-radius:999px;background:#4f46e5[^>]*><span[^>]*>Sign in</span></button>").containsMatchIn(page))
     }
 
     @Test fun aBrowserBarAboveTheAppIsLeftOut() {
@@ -195,7 +221,7 @@ class DesignReaderTest {
         assertTrue(DesignReader.describe(DesignReader.Pixels(10, 10, IntArray(100)), emptyList()).isEmpty())
         val plain = Canvas(400, 700, WHITE)
         val out = DesignReader.describe(plain.pixels(), emptyList())
-        assertTrue(out, out.contains("#ffffff (one color)") && out.contains("no separate parts"))
+        assertTrue(out, out.contains("Background (CSS): #ffffff") && out.contains("no separate parts"))
         assertTrue(abs(out.length) < 400)
     }
 }

@@ -190,8 +190,10 @@ class AppBuilder(
             request: String, currentHtml: String?, compact: Boolean = true,
             /** How many design pictures are attached to the message (cloud AI that can see them). */
             designImages: Int = 0,
-            /** For a phone model that cannot see pictures: the text read from the design, with positions. */
+            /** For a phone model that cannot see pictures: the design as measured on the phone (DesignReader). */
             designText: String? = null,
+            /** For a phone model: a starting page with the design's look, made from those measurements. */
+            designLayout: String? = null,
         ): Pair<String, String> {
             val system = if (compact) {
                 "You are an expert web developer. You write small, complete, working mobile web apps as ONE self-contained HTML file " +
@@ -200,8 +202,8 @@ class AppBuilder(
                 "You are an expert web developer and designer. You write complete, polished, working mobile web apps as ONE self-contained " +
                     "HTML file with inline <style> and <script>. No external libraries or CDNs. Reply with the code only, in one ```html code block."
             }
-            val size = if (compact && !designText.isNullOrBlank()) {
-                "the look of the design described below; keep the code compact (short CSS, no repeated rules)"
+            val size = if (compact && (!designText.isNullOrBlank() || !designLayout.isNullOrBlank())) {
+                "the look of the user's design (below); keep the code compact (short CSS, no repeated rules)"
             } else if (compact) {
                 "a clean modern look; keep it compact (about 100–200 lines, short CSS)"
             } else {
@@ -224,6 +226,13 @@ class AppBuilder(
                         "shapes of the same size, and every visible text word for word. Fit it to a phone screen. Then make every control in the design " +
                         "really work. Sample content in the design (song or people's names, times, numbers) shows where the app's real data goes: " +
                         "show the real data there in the same style. If the request text and the picture disagree, follow the request text."
+                !designLayout.isNullOrBlank() ->
+                    "\n\nThe user attached a design picture of how the app must look. You cannot see it, so Yamini measured it and made this " +
+                        "starting page with the same parts, sizes, colors and places (the icon names in aria-label are guesses):\n```html\n$designLayout\n```\n" +
+                        "Build the app on this page: keep its look (the styles, sizes, colors and order of the parts) and add what the request needs. " +
+                        "Give the parts ids and make every button really work. Keep the photo box as it is (a box of the photo's colors) unless the app " +
+                        "shows a real picture there. Texts on the page are samples: titles and labels stay, but names, times and numbers show the " +
+                        "app's real data in the same place and style."
                 !designText.isNullOrBlank() ->
                     "\n\nThe user attached a design picture of how the app must look. You cannot see it, so here are its measurements " +
                         "(made on the phone; icon names are guesses):\n$designText\n\n" +
