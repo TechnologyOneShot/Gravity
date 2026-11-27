@@ -177,11 +177,39 @@ class AppBuilderPromptExportTest {
                 .put("prefix", AppBuilder.DIRECT_PREFIX).put("stop", org.json.JSONArray().put("</html>"))
             File(dir, "$name.json").writeText(json.toString(2))
         }
+        // A build from a design picture with the phone model: the measurements DesignReader made of a
+        // real screenshot (a music player's now-playing screen, from a browser window).
+        val (designSystem, designUser) = AppBuilder.directPrompt(
+            AppBuilder.requestFrom(AppBuilder.buildInstruction("music player is design jaisa bana do")), null, designText = MEASURED_PLAYER,
+        )
+        assertTrue(designUser.contains("You cannot see it") && designUser.contains("⏸ (pause)") && designUser.contains("display:none"))
+        File(dir, "music-player-design.json").writeText(
+            org.json.JSONObject().put("name", "music-player-design").put("kind", "music-player").put("system", designSystem).put("user", designUser)
+                .put("prefix", AppBuilder.DIRECT_PREFIX).put("stop", org.json.JSONArray().put("</html>")).toString(2),
+        )
         val (repairSystem, repairUser) = AppBuilder.repairPrompt("{{HTML}}", listOf("{{ERRORS}}"))
         File(dir.parentFile, "app-builder-repair.json").writeText(
             org.json.JSONObject().put("system", repairSystem).put("user", repairUser).put("prefix", AppBuilder.DIRECT_PREFIX).toString(2),
         )
         assertTrue(repairUser.contains("- {{ERRORS}}"))
-        assertEquals(3, dir.listFiles { f -> f.name.endsWith(".json") }!!.size)
+        assertEquals(4, dir.listFiles { f -> f.name.endsWith(".json") }!!.size)
+    }
+
+    companion object {
+        /** DesignReader's description of a real now-playing screenshot (see DesignReaderTest for how it is measured). */
+        val MEASURED_PLAYER = """
+Screen: dark, about 509 px tall at 390 px wide. (The browser or phone bar above the app was left out.)
+Background: linear-gradient(180deg, #263d0d, #41370d, #39300d) (corners: top-left #313f0d, top-right #1b3b0d, bottom-left #27320a, bottom-right #4b2e10)
+Top to bottom (sizes in CSS px; x = horizontal place in % of the width):
+1. [gap 15] icon 16 px #65704b, centered
+2. [gap 13] picture 251×251 px (64% wide), rounded 7 px, a photo, mostly #97ae70, #566b4c, #4f3526; the words printed on it belong to the photo, centered
+3. [gap 20] 3 side by side across the width: text "Deeper Well" 16 px bold #dee0d7 at x 14%; round button 19 px #b1aa9e with a #5f4f35 icon inside at x 84%; round button 19 px #544026 with a #bfb8af icon inside that looks like ⋯ (more) at x 91%
+4. text "Kacey Musgraves — Deeper Well" 15 px #9ea18c, left (x 6%)
+5. [gap 17] bar 5 px thick, 88% wide, rounded ends: #9fa492 from the left to 20%, then #64624a (a progress bar or slider), centered
+6. [gap 8] 2 side by side across the width: text "0:46" 11 px #969c89 at x 8%; text "-3:06" 11 px #9b9186 at x 91%
+7. [gap 23] 3 side by side: icon 25 px #fefefe that looks like ⏪ (rewind / previous) at x 22%; icon 26 px #fefefe that looks like ⏸ (pause) at x 50%; icon 26 px #fefefe that looks like ⏩ (forward / next) at x 78%
+8. [gap 31] 2 side by side across the width: icon 10 px #94978e that looks like ◀ (a triangle pointing left) at x 8%; bar 5 px thick, 82% wide, rounded ends: #95948e from the left to 47%, then #6a5d48 (a progress bar or slider) at x 52%
+9. [gap 22] 2 side by side: icon 15 px #91908d at x 28%; icon 14 px #95928e that looks like ☰ (a list or menu) at x 72%
+        """.trimIndent()
     }
 }

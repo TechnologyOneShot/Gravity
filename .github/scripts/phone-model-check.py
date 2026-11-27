@@ -122,7 +122,7 @@ def main():
                 summary.append((tag, "FAIL", "FAIL", predicted, "no complete page"))
                 print(f"RESULT {tag}: FAIL, no complete page. Reply ends with: {reply[-300:]!r}")
                 continue
-            first, detail, errors = evaluate(p["name"], html, os.path.join(out_dir, f"{p['name']}-{run}"))
+            first, detail, errors = evaluate(p.get("kind", p["name"]), html, os.path.join(out_dir, f"{p['name']}-{run}"))
             print(f"RESULT {tag} first try: {first}: {detail}; test errors: {errors or 'none'}")
             print(html)
             final, final_detail = first, detail
@@ -133,7 +133,7 @@ def main():
                 if fixed is None:
                     print(f"RESULT {tag} repair: no complete page ({fixed_tokens} tokens); first version kept")
                 else:
-                    v2, d2, e2 = evaluate(p["name"], fixed, os.path.join(out_dir, f"{p['name']}-{run}-fixed"))
+                    v2, d2, e2 = evaluate(p.get("kind", p["name"]), fixed, os.path.join(out_dir, f"{p['name']}-{run}-fixed"))
                     kept = len(e2) < len(errors)
                     print(f"RESULT {tag} after repair ({fixed_tokens} tokens, {fixed_secs:.0f} s): {v2}: {d2}; test errors: {e2 or 'none'}; "
                           f"{'kept' if kept else 'not better, first version kept'}")

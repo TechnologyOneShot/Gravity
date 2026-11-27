@@ -5,7 +5,9 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
@@ -17,18 +19,28 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.widget.FrameLayout;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collections;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Runs a web app bundled under assets/www. Pages are served from https://appassets.androidplatform.net
  * (intercepted, never fetched from the network) so relative URLs, fetch(), ES modules and
  * localStorage behave as on a web server. File inputs open the system picker (e.g. to choose
  * songs or photos); other links open in the browser.
+ *
+ * The page sits between the status bar and the navigation bar (and above the keyboard), never under
+ * them: Android 15 draws apps behind the bars, so the page is padded by the bars' size, and the bars
+ * take the page's background color with icons that stay readable on it.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "GravityWebShell";
@@ -36,12 +48,34 @@ public class MainActivity extends Activity {
     private static final int PICK_FILES = 41;
 
     private WebView web;
+    private FrameLayout root;
     private ValueCallback<Uri[]> pendingFiles;
+
+    /** The page's background color (body, else html, else the first color of a gradient), as CSS. */
+    private static final String PAGE_COLOR_JS =
+        "(function(){function bg(e){if(!e)return '';var s=getComputedStyle(e);var c=s.backgroundColor;" +
+        "if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;var m=(s.backgroundImage||'').match(/rgba?\\([^)]*\\)|#[0-9a-fA-F]{3,8}/);" +
+        "return m?m[0]:'';}return bg(document.body)||bg(document.documentElement)||'rgb(255, 255, 255)';})()";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        root = new FrameLayout(this);
+        root.setBackgroundColor(Color.WHITE);
+        if (Build.VERSION.SDK_INT >= 30) {
+            // Draw behind the bars on every Android version from 11 on (15 does it anyway), then keep the page out from under them.
+            getWindow().setDecorFitsSystemWindows(false);
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(Color.TRANSPARENT);
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                Insets ime = insets.getInsets(WindowInsets.Type.ime());
+                v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+                Log.i(TAG, "insets " + bars.left + "," + bars.top + "," + bars.right + "," + Math.max(bars.bottom, ime.bottom));
+                return WindowInsets.CONSUMED;
+            });
+        }
         web = new WebView(this);
         web.setBackgroundColor(Color.WHITE);
         WebSettings s = web.getSettings();
@@ -72,6 +106,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 Log.i(TAG, "loaded " + url + " title=" + view.getTitle());
+                view.evaluateJavascript(PAGE_COLOR_JS, value -> matchBars(value));
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -98,9 +133,47 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-        setContentView(web);
+        root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        setContentView(root);
         if (state != null) web.restoreState(state);
         else web.loadUrl("https://" + HOST + "/index.html");
+    }
+
+    private static final Pattern RGB = Pattern.compile("rgba?\\(\\s*(\\d+)[,\\s]+(\\d+)[,\\s]+(\\d+)");
+    private static final Pattern HEX = Pattern.compile("#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\\b");
+
+    /** Colors the space behind the status and navigation bars like the page, with readable bar icons. */
+    private void matchBars(String value) {
+        if (value == null) return;
+        String css = value.replace("\"", "").trim();
+        int color;
+        Matcher m = RGB.matcher(css);
+        Matcher h = HEX.matcher(css);
+        if (m.find()) {
+            color = Color.rgb(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)));
+        } else if (h.find()) {
+            String hex = h.group(1);
+            if (hex.length() == 3) hex = "" + hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
+            color = Color.parseColor("#" + hex);
+        } else {
+            return;
+        }
+        root.setBackgroundColor(color);
+        boolean light = (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) > 150;
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController c = getWindow().getInsetsController();
+            if (c != null) {
+                int bits = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                c.setSystemBarsAppearance(light ? bits : 0, bits);
+            }
+        } else if (Build.VERSION.SDK_INT >= 26) {
+            getWindow().setStatusBarColor(color);
+            getWindow().setNavigationBarColor(color);
+            int flags = getWindow().getDecorView().getSystemUiVisibility();
+            int lightBits = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            getWindow().getDecorView().setSystemUiVisibility(light ? (flags | lightBits) : (flags & ~lightBits));
+        }
+        Log.i(TAG, "bars colored " + String.format(Locale.ROOT, "#%06x", color & 0xFFFFFF) + (light ? " (dark icons)" : " (light icons)"));
     }
 
     @Override

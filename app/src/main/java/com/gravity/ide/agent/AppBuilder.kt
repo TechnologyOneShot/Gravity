@@ -200,7 +200,9 @@ class AppBuilder(
                 "You are an expert web developer and designer. You write complete, polished, working mobile web apps as ONE self-contained " +
                     "HTML file with inline <style> and <script>. No external libraries or CDNs. Reply with the code only, in one ```html code block."
             }
-            val size = if (compact) {
+            val size = if (compact && !designText.isNullOrBlank()) {
+                "the look of the design described below; keep the code compact (short CSS, no repeated rules)"
+            } else if (compact) {
                 "a clean modern look; keep it compact (about 100–200 lines, short CSS)"
             } else {
                 "a beautiful modern design that follows the phone's light or dark mode (prefers-color-scheme), with smooth, app-like screens"
@@ -209,7 +211,8 @@ class AppBuilder(
                 "really work: define every function you call, and show results in an element that is on screen. Use localStorage only if the app must remember data." +
                 if (usesUserFiles(request) || currentHtml?.contains("type=\"file\"") == true) {
                     " The user picks their own files with <input type=\"file\"> (multiple where useful); use URL.createObjectURL to play or show " +
-                        "them. Never use made-up file names or URLs."
+                        "them. Never use made-up file names or URLs. Hide the file input (display:none) and open it from a styled button; " +
+                        "for audio or video, draw your own play/pause, seek bar and times instead of the browser's built-in controls."
                 } else {
                     ""
                 }
@@ -219,10 +222,16 @@ class AppBuilder(
                         "Recreate it as exactly as you can: the same screens, layout and positions, sizes, spacing and rounded corners, the exact colors " +
                         "(use the hex values you see), the closest fonts and font weights, look-alike icons (inline SVG or emoji), pictures as CSS/SVG " +
                         "shapes of the same size, and every visible text word for word. Fit it to a phone screen. Then make every control in the design " +
-                        "really work. If the request text and the picture disagree, follow the request text."
+                        "really work. Sample content in the design (song or people's names, times, numbers) shows where the app's real data goes: " +
+                        "show the real data there in the same style. If the request text and the picture disagree, follow the request text."
                 !designText.isNullOrBlank() ->
-                    "\n\nThe user's design picture contains these texts (top to bottom, with where they are on the screen):\n$designText\n" +
-                        "Use these exact texts and place them where the design has them."
+                    "\n\nThe user attached a design picture of how the app must look. You cannot see it, so here are its measurements " +
+                        "(made on the phone; icon names are guesses):\n$designText\n\n" +
+                        "Recreate this screen as closely as you can: the same parts in the same order, with these sizes, gaps, colors (the hex values), " +
+                        "background (the CSS given), rounded corners and places. Lay it out with flexbox in normal flow, not absolute positions. " +
+                        "Draw icons as inline SVG of the named shape. Show a photo as a box of the same size filled with a CSS gradient of its colors. " +
+                        "Texts in the design are samples: titles and labels stay as they are, but names, times and numbers show the app's real data " +
+                        "in the same place and style. Then make every control really work."
                 else -> ""
             }
             val user = if (currentHtml == null) {

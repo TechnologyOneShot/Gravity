@@ -891,6 +891,72 @@ class DeviceServicesTest {
         assertTrue("OCR did not read the Hindi line: ${b.text}", b.text.contains("नियम") || b.text.contains("छात्र"))
     }
 
+    /**
+     * A design picture is measured on the phone for the phone model (which cannot see it): ML Kit reads
+     * the texts and DesignReader the rest. Drawn here: a phone status bar, a dark gradient, a photo with
+     * a word printed on it, a bold title, a two-tone progress bar, times and ⏪ ⏸ ⏩ controls.
+     */
+    @Test
+    fun t16a_designPictureIsMeasuredOnThePhone() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val bmp = android.graphics.Bitmap.createBitmap(720, 1280, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(bmp)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.shader = android.graphics.LinearGradient(0f, 0f, 0f, 1280f, 0xFF1E3A12.toInt(), 0xFF46280E.toInt(), android.graphics.Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, 720f, 1280f, paint)
+        paint.shader = null
+        fun text(t: String, x: Float, y: Float, size: Float, color: Int, bold: Boolean = false, right: Boolean = false) {
+            val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = size; this.color = color
+                typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                textAlign = if (right) android.graphics.Paint.Align.RIGHT else android.graphics.Paint.Align.LEFT
+            }
+            c.drawText(t, x, y, p)
+        }
+        text("9:41", 30f, 42f, 30f, android.graphics.Color.WHITE, bold = true)
+        // The photo: random colored noise in a rounded square, with a word printed on it.
+        val photo = android.graphics.Bitmap.createBitmap(460, 460, android.graphics.Bitmap.Config.ARGB_8888)
+        val rnd = java.util.Random(7)
+        for (y in 0 until 460) for (x in 0 until 460) {
+            val n = rnd.nextInt(64) - 32
+            photo.setPixel(x, y, if (y < 230) android.graphics.Color.rgb(70 + x / 6 + n, 120 + n, 60 + n / 2) else android.graphics.Color.rgb(160 + n, 130 + y / 8 + n, 100 + n / 2))
+        }
+        c.save()
+        c.clipPath(android.graphics.Path().apply { addRoundRect(130f, 150f, 590f, 610f, 16f, 16f, android.graphics.Path.Direction.CW) })
+        c.drawBitmap(photo, 130f, 150f, null)
+        c.restore()
+        text("SUNRISE", 280f, 220f, 40f, android.graphics.Color.WHITE, bold = true)
+        text("Morning Song", 60f, 700f, 44f, android.graphics.Color.WHITE, bold = true)
+        text("Asha Rao", 60f, 752f, 34f, android.graphics.Color.rgb(170, 170, 150))
+        paint.color = android.graphics.Color.rgb(200, 200, 192); c.drawRect(60f, 790f, 210f, 798f, paint)
+        paint.color = android.graphics.Color.rgb(96, 96, 80); c.drawRect(210f, 790f, 660f, 798f, paint)
+        text("0:46", 60f, 840f, 26f, android.graphics.Color.rgb(160, 160, 150))
+        text("-3:06", 660f, 840f, 26f, android.graphics.Color.rgb(160, 160, 150), right = true)
+        paint.color = android.graphics.Color.WHITE
+        fun triangle(l: Float, r: Float, right: Boolean) {
+            c.drawPath(android.graphics.Path().apply {
+                if (right) { moveTo(l, 905f); lineTo(r, 930f); lineTo(l, 955f) } else { moveTo(r, 905f); lineTo(l, 930f); lineTo(r, 955f) }
+                close()
+            }, paint)
+        }
+        triangle(150f, 190f, false); triangle(190f, 230f, false)
+        c.drawRect(334f, 900f, 350f, 960f, paint); c.drawRect(372f, 900f, 388f, 960f, paint)
+        triangle(490f, 530f, true); triangle(530f, 570f, true)
+        val file = java.io.File(ctx.cacheDir, "design-player.png")
+        file.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        val started = System.currentTimeMillis()
+        val out = com.gravity.ide.files.ImageText.describe(ctx, file)
+        Ci.log("design", "Measured in ${System.currentTimeMillis() - started} ms (${out.length} characters):\n$out")
+        file.delete()
+        assertTrue("Dark screen with its gradient: $out", out.startsWith("Screen: dark") && out.contains("linear-gradient"))
+        assertFalse("The phone's clock is not part of the app: $out", out.contains("9:41"))
+        assertTrue("The title, read by ML Kit, bold: $out", Regex("\"Morning Song\" \\d+ px bold").containsMatchIn(out))
+        assertTrue("The photo: $out", out.contains("picture ") && out.contains("a photo"))
+        assertFalse("A word printed on the photo is not app text: $out", out.contains("\"SUNRISE"))
+        assertTrue("The progress bar, a quarter filled: $out", Regex("from the left to 2[3-7]%").containsMatchIn(out))
+        assertTrue("The controls: $out", out.contains("⏸") && out.contains("⏪") && out.contains("⏩"))
+    }
+
     /** A real MP4 is made on the phone from scenes (a picture + narration each), and Android can read it back. */
     @Test
     fun t16b_videoIsMadeOnThePhone() {

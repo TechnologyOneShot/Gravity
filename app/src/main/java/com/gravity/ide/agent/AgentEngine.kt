@@ -14,6 +14,7 @@ import com.gravity.ide.ai.Role
 import com.gravity.ide.ai.complete
 import com.gravity.ide.ai.local.LocalModelHost
 import com.gravity.ide.ai.withRetry
+import com.gravity.ide.core.DesignReader
 import com.gravity.ide.core.SecretScanner
 import com.gravity.ide.core.TextToolProtocol
 import com.gravity.ide.data.EventCategory
@@ -558,12 +559,18 @@ class AgentEngine(
                 }
                 events.log(EventCategory.AGENT, "Reading your design picture(s): ${designFiles.size}", designFiles.joinToString { it.name }, taskId = task.id, model = resolved.model)
             } else {
+                stage(task.id, "Measuring your design picture (colors, sizes, places, texts)")
+                val started = System.currentTimeMillis()
                 designText = withContext(Dispatchers.IO) {
-                    designFiles.joinToString("\n") { f -> runCatching { com.gravity.ide.files.ImageText.describe(context, f) }.getOrDefault("") }
-                }.trim().take(1500)
+                    designFiles.mapIndexed { i, f ->
+                        val d = runCatching { com.gravity.ide.files.ImageText.describe(context, f) }.getOrDefault("")
+                        if (designFiles.size > 1 && d.isNotBlank()) "Picture ${i + 1}:\n$d" else d
+                    }.filter { it.isNotBlank() }.joinToString("\n\n")
+                }.trim().take(DesignReader.MAX_CHARS * 2)
                 events.log(
-                    EventCategory.AGENT, "Design read as text (the phone model cannot see pictures)",
-                    designText.ifBlank { "No text was found in the picture." }, EventLevel.WARN, taskId = task.id,
+                    EventCategory.AGENT,
+                    "Design measured in ${(System.currentTimeMillis() - started) / 100 / 10.0} s (the phone model cannot see pictures, so Yamini describes it)",
+                    designText.ifBlank { "Nothing could be measured in the picture." }, EventLevel.WARN, taskId = task.id,
                 )
             }
         }

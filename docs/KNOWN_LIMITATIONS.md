@@ -68,3 +68,10 @@ The specification asks Gravity never to fake a feature. This file lists everythi
 - **Online voice (Gemini)**: needs the user's own Gemini key and internet, and sends the reply's text to Google while switched on. It was not tested against Google's servers in CI (no key there); the request and answer formats are unit tested, and any failure falls back to the phone voice. Gemini's audio is watermarked (SynthID) by Google. Live mode uses the phone voice.
 - **Speed test**: each run is one measurement; a warm phone runs slower, so results can differ a little between runs. Only a setup at least 5% faster than the usual one is kept. The previous voice changes (phrase-by-phrase speed changes and the offline voice as default) were undone after users found them worse.
 
+## Building an app from a design picture (added 2026-11-27)
+
+- **Phone models cannot see pictures.** Yamini measures the picture on the phone instead (ML Kit reads the texts; DesignReader measures the background and its gradient, photos, cards and buttons, outlined fields, bars, icons, and each text's size, color and weight) and gives the phone model that description. It is a measurement, not sight: icon names are guesses from the shape ("looks like ⏸"), only common shapes are named (play, pause, next, previous, ⋯, ☰), a photo becomes a box of its colors (the app cannot copy the photo), and texts the OCR misses are missing. The result is close to the design, not exact.
+- **Gemini sees the picture itself.** When a design picture would go to the phone model and a Gemini key is set, Yamini asks first; choosing Gemini sends the picture and the request to Google.
+- **Browser and phone bars** in a screenshot (an address like music.apple.com, the clock and battery) are left out; words printed on a photo (an album cover) belong to the photo and are not written into the app.
+- **Installed apps** keep their page below the status bar and above the navigation bar (Android 15 draws apps under them), and the bars take the page's background color; a page whose background is a picture gets the picture's first color or white.
+

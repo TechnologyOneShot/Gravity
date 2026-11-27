@@ -191,6 +191,15 @@ class AppBuilderDeviceTest {
             }
             Ci.log("builder", "Installed app launched: ${loaded ?: "no page-load log"} | resumed: $resumed")
             Ci.screenshot("06_generated_app_installed")
+            // Android 15 draws apps under the status bar: the shell must keep the page below it, with bars in the page's color.
+            val shellLog = Ci.shell("logcat -d -s GravityWebShell:I")
+            val insetLine = shellLog.lineSequence().lastOrNull { "insets " in it }
+            Ci.log("builder", "Installed app bars: ${insetLine?.substringAfter("GravityWebShell") ?: "no insets line"}; " +
+                (shellLog.lineSequence().lastOrNull { "bars colored" in it }?.substringAfter("GravityWebShell") ?: "bars not colored"))
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val top = insetLine?.substringAfter("insets ")?.split(",")?.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
+                assertTrue("The page is not kept below the status bar: $insetLine", top > 0)
+            }
             assertNotNull("The installed app did not load its page", loaded)
             assertTrue("The installed app is not in front: $resumed", resumed.contains(out.packageName))
         } finally {

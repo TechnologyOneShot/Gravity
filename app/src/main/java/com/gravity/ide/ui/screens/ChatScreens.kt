@@ -983,6 +983,10 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         }
     }
 
+    /** A design picture about to go to the phone model while a Gemini key is set: which AI should read it. */
+    data class DesignAsk(val text: String, val attachments: List<Attachment>, val geminiId: String, val geminiName: String)
+    val askDesign = MutableStateFlow<DesignAsk?>(null)
+
     fun sendApp(text: String) {
         val atts = attachments.value
         if (busy.value || (text.isBlank() && atts.isEmpty())) return
@@ -992,6 +996,33 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             error.value = "${unusable.name} can't be used to build an app. Attach a design picture (screenshot, mockup) or a text / PDF file with details."
             return
         }
+        if (atts.none { it.kind == "image" || it.text.isNullOrBlank() }) {
+            startApp(text, atts, null)
+            return
+        }
+        viewModelScope.launch {
+            // The phone model cannot see the picture; Gemini can, but only with the user's yes (it uploads the picture).
+            val gemini = geminiForDesign()
+            if (gemini != null) askDesign.value = DesignAsk(text, atts, gemini.id, gemini.name) else startApp(text, atts, null)
+        }
+    }
+
+    fun answerDesign(useGemini: Boolean) {
+        val a = askDesign.value ?: return
+        askDesign.value = null
+        startApp(a.text, a.attachments, if (useGemini) a.geminiId else null)
+    }
+
+    /** A Gemini key to offer for a design picture, when this chat would give it to the phone model. */
+    private suspend fun geminiForDesign(): ProviderEntity? {
+        val s = c.settings.current()
+        if (s.operatingMode == com.gravity.ide.data.settings.OperatingMode.LOCAL_ONLY || !c.network.isOnline) return null
+        val chat = c.db.chats().get(chatId)
+        if ((chat?.providerId ?: s.defaultProviderId) != LocalLlamaProvider.ID) return null
+        return c.db.providers().all().firstOrNull { it.enabled && it.kind == com.gravity.ide.ai.ProviderKind.GEMINI.name }
+    }
+
+    private fun startApp(text: String, atts: List<Attachment>, providerOverride: String?) {
         val designs = atts.filter { it.kind == "image" || it.text.isNullOrBlank() }.flatMap { it.images }
         val references = atts.filter { it.kind != "image" && !it.text.isNullOrBlank() }.map { it.name to it.text!! }
         attachments.value = emptyList()
@@ -1005,9 +1036,10 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 )
                 val chat = c.db.chats().get(chatId)
                 val linked = chat?.projectId?.let { c.db.projects().get(it) }?.takeIf { it.type == "APP" }
-                // The app is built by the AI chosen in this chat (e.g. the phone model), not always the default.
-                val providerId = chat?.providerId
-                val model = chat?.model
+                // The app is built by the AI chosen in this chat (e.g. the phone model), not always the default,
+                // or by Gemini when the user chose it to read the design picture.
+                val providerId = providerOverride ?: chat?.providerId
+                val model = if (providerOverride != null) null else chat?.model
                 val (project, taskId) = if (linked != null) linked to c.appBuilder.change(linked, text, providerId, model, designs, references)
                 else c.appBuilder.create(text, providerId, model, designs, references)
                 if (chat != null && linked == null) {
@@ -1241,6 +1273,28 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
                     TextButton(onClick = { vm.answerPictures("online") }, modifier = Modifier.testTag("pictures-online")) { Text("Online image AI") }
                     TextButton(onClick = { vm.answerPictures("phone") }, modifier = Modifier.testTag("pictures-phone")) { Text("On this phone (realistic)") }
                     TextButton(onClick = { vm.answerPictures("draw") }, modifier = Modifier.testTag("pictures-draw")) { Text("Code drawing (simple)") }
+                }
+            },
+        )
+    }
+    // A design picture for the phone model while a Gemini key is set: the user chooses who reads it.
+    val askDesign by vm.askDesign.collectAsState()
+    askDesign?.let { a ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { vm.askDesign.value = null; input = a.text },
+            title = { Text("Who should read your design picture?") },
+            text = {
+                Text(
+                    "The phone model cannot see pictures. Yamini measures the picture on the phone (colors, sizes, places, texts, icons) " +
+                        "and describes it, so the app comes out close to the design but not exact.\n\n" +
+                        "${a.geminiName} (your key) sees the picture itself and copies designs much more closely. " +
+                        "Choosing it sends this picture and your request to Google."
+                )
+            },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { vm.answerDesign(true) }, modifier = Modifier.testTag("design-gemini")) { Text("Send to ${a.geminiName}") }
+                    TextButton(onClick = { vm.answerDesign(false) }, modifier = Modifier.testTag("design-phone")) { Text("Phone model (stays on this phone)") }
                 }
             },
         )
