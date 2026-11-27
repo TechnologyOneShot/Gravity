@@ -307,6 +307,23 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
      * The live voice instruction added to the system prompt (empty outside live mode). The warm-up
      * adds the same, so a phone model has already read it when the first spoken question comes.
      */
+    /**
+     * What Yamini remembers about the user, read once when a live talk starts. Facts learned during
+     * the talk are saved for the next one; changing the instructions mid-talk would make a phone
+     * model read the whole talk again before its next answer (seconds of silence).
+     */
+    @Volatile private var liveMemory: String? = null
+    private var wasLive = false
+    init {
+        viewModelScope.launch {
+            liveLanguage.collect { lang ->
+                if (lang != null && !wasLive) liveMemory = com.gravity.ide.files.TalkMemoryStore.forPrompt(c.appContext)
+                if (lang == null) liveMemory = null
+                wasLive = lang != null
+            }
+        }
+    }
+
     private fun liveExtra(): String = liveLanguage.value?.let { lang ->
         "\n\nThis is a live voice conversation, like a phone call: the user speaks and your reply is read aloud at once. " +
             (livePersona.value ?: "Talk like a warm, friendly Indian friend.") + " Reply in $lang, in 1 to 3 short spoken " +
@@ -316,7 +333,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             "Talk like a real person: react first when it fits (\"arre wah!\", \"oh no\", \"haha\"), then answer; now and then ask " +
             "one short question back about what the user said; use what they told you earlier; you may share a small opinion or a " +
             "light joke. If asked, say honestly that you are an AI." +
-            com.gravity.ide.files.TalkMemoryStore.forPrompt(c.appContext)
+            (liveMemory ?: com.gravity.ide.files.TalkMemoryStore.forPrompt(c.appContext).also { liveMemory = it })
     } ?: ""
 
     /**

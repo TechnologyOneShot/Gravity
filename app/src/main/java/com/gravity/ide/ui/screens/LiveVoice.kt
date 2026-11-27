@@ -144,7 +144,18 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
     }
     // End of speech: when the words stop changing for a moment, stop listening at once (the
     // speech service on its own waits 1-2 s of silence before it answers).
-    val endpoint = remember { Runnable { if (open.get() && phase == LivePhase.LISTENING && heard.isNotBlank()) recognizer?.stopListening() } }
+    // The speech service then still works out its final words, sometimes for a second or more: the
+    // words heard so far are sent when the final ones are not there within a moment.
+    val submitNowRef = remember { mutableStateOf<(String) -> Unit>({}) }
+    val finalWait = remember { Runnable { if (open.get() && phase == LivePhase.LISTENING && heard.isNotBlank()) submitNowRef.value(heard.trim()) } }
+    val endpoint = remember {
+        Runnable {
+            if (open.get() && phase == LivePhase.LISTENING && heard.isNotBlank()) {
+                recognizer?.stopListening()
+                main.postDelayed(finalWait, 300)
+            }
+        }
+    }
     // Live replies are spoken while they are still being written: what has been queued so far.
     var spokenUpTo by remember { mutableStateOf(0) }
     var partNo by remember { mutableStateOf(0) }
@@ -269,6 +280,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         }
     }
     val filler = remember { Runnable { fillerNow.value() } }
+    submitNowRef.value = { said -> submitNow.value(said) }
     submitNow.value = { said ->
         heard = said
         reply = ""
@@ -329,7 +341,8 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         if (phase != LivePhase.THINKING && phase != LivePhase.SPEAKING) return@LaunchedEffect
         reply = text
         if (spokenUpTo > text.length) spokenUpTo = text.length
-        val end = SpeechText.speakableEnd(text, spokenUpTo)
+        // The first piece may stop at a clause, so the voice starts as soon as possible.
+        val end = if (partNo == 0) SpeechText.firstSpeakableEnd(text, spokenUpTo) else SpeechText.speakableEnd(text, spokenUpTo)
         if (end > spokenUpTo) {
             val piece = text.substring(spokenUpTo, end)
             spokenUpTo = end
@@ -384,7 +397,10 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
 
             override fun onError(error: Int) {
                 main.removeCallbacks(endpoint)
+                main.removeCallbacks(finalWait)
                 if (!open.get()) return
+                // The words were already sent (the final ones came too late): this listening is over.
+                if (phase == LivePhase.THINKING || phase == LivePhase.SPEAKING) return
                 phase = LivePhase.IDLE
                 when (error) {
                     SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
@@ -414,7 +430,10 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
 
             override fun onResults(results: Bundle?) {
                 main.removeCallbacks(endpoint)
+                main.removeCallbacks(finalWait)
                 if (!open.get()) return
+                // Already sent with the words heard so far.
+                if (phase != LivePhase.LISTENING) return
                 val said = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().trim()
                 if (said.isEmpty()) {
                     phase = LivePhase.IDLE

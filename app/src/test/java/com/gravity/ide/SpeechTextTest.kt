@@ -32,4 +32,14 @@ class SpeechTextTest {
         assertEquals(44, SpeechText.speakableEnd("Hello there friend. How are you doing today? Fine", 19))
         assertTrue(SpeechText.speakableEnd("word ".repeat(40), 0) > 0)
     }
+
+    @Test fun theFirstSpokenPieceStartsAtAShortExclamationOrClause() {
+        fun first(x: String) = x.substring(0, com.gravity.ide.core.SpeechText.firstSpeakableEnd(x, 0))
+        org.junit.Assert.assertEquals("Arre yaar,", first("Arre yaar, office ka din lamba tha na"))
+        org.junit.Assert.assertEquals("Arre wah!", first("Arre wah! Kya baat hai"))
+        org.junit.Assert.assertEquals("Oh no, yaar,", first("Oh no, yaar, bahut thak gaye ho"))
+        // Too short to stand alone, or a number: wait for more.
+        org.junit.Assert.assertEquals("", first("Haan, theek"))
+        org.junit.Assert.assertEquals("", first("10:30, 3,5 aur baaki"))
+    }
 }

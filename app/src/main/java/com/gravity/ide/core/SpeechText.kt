@@ -51,6 +51,27 @@ object SpeechText {
      * it passes [longAt] characters). Returns [from] when nothing is ready yet. Lets live mode
      * start talking after the first sentence instead of waiting for the whole reply.
      */
+    /**
+     * For the first piece of a spoken reply: where the voice can already start without waiting for
+     * a long first sentence. A short exclamation counts ("Arre wah!"), and so does a clause end
+     * (", ", " — ", ": ", "; ") after at least 2 words, e.g. "Arre yaar," of "Arre yaar, office ka
+     * din lamba tha na?".
+     */
+    fun firstSpeakableEnd(text: String, from: Int): Int {
+        val sentence = speakableEnd(text, from, minChars = 6)
+        if (sentence > from) return sentence
+        val window = text.substring(from)
+        for (m in clauseEnd.findAll(window)) {
+            val piece = window.substring(0, m.range.first + 1).trim()
+            val words = piece.split(Regex("\\s+")).count { w -> w.any { it.isLetterOrDigit() } }
+            if (words >= 2 && piece.length >= 8) return from + m.range.first + 1
+        }
+        return from
+    }
+
+    // A clause mark followed by a space (not "3,5" or "10:30").
+    private val clauseEnd = Regex("[,;:،—](?=\\s)")
+
     fun speakableEnd(text: String, from: Int, minChars: Int = 12, longAt: Int = 140): Int {
         if (from >= text.length) return from
         var end = -1
