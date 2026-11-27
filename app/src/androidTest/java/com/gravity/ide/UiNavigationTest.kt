@@ -317,6 +317,18 @@ class UiNavigationTest {
         // Either it is really listening, or it says why it cannot (e.g. no speech service on the emulator).
         // (or is still saying its greeting, when the emulator has a text-to-speech voice)
         assertTrue("Live mode shows neither listening nor a reason: status=$status", status.startsWith("Listening") || problem != null || status.startsWith("Tap") || status.startsWith("Speaking"))
+        // "Talk about something": Yamini starts a topic herself (a real AI reply, or the reason it cannot).
+        if (compose.onAllNodesWithTag("live-topic").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithTag("live-topic").performClick()
+            runCatching {
+                compose.waitUntil(90_000) {
+                    val st = compose.onAllNodesWithTag("live-status").fetchSemanticsNodes().firstOrNull()?.config?.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }.orEmpty()
+                    compose.onAllNodesWithTag("live-problem").fetchSemanticsNodes().isNotEmpty() || st.startsWith("Speaking") || st.startsWith("Listening")
+                }
+            }
+            Ci.log("live", "After \"talk about something\": ${visibleText().take(600)}")
+            Ci.screenshot("06b_live_topic")
+        }
         compose.onNodeWithTag("live-end").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("live-dialog").fetchSemanticsNodes().isEmpty() }
     }

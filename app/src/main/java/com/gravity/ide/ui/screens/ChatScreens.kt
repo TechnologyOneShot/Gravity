@@ -286,6 +286,8 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             recent += LlmMessage(
                 if (user) Role.USER else Role.ASSISTANT,
                 when {
+                    // Live talk: the topic to bring up, for this reply only.
+                    user && live && i == kept.lastIndex && liveTurnHint != null -> text + "\n\n" + liveTurnHint
                     !user || !hint -> text
                     // This message asks for an online picture: its Picture lines must be in English.
                     pictureLines && i == kept.lastIndex -> com.gravity.ide.core.LanguageHint.withPictureHint(text)
@@ -309,8 +311,20 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         "\n\nThis is a live voice conversation, like a phone call: the user speaks and your reply is read aloud at once. " +
             (livePersona.value ?: "Talk like a warm, friendly Indian friend.") + " Reply in $lang, in 1 to 3 short spoken " +
             "sentences; make the first sentence very short so the voice can start at once. Use simple words that sound good " +
-            "when spoken. No Markdown, lists, emojis, links or code."
+            "when spoken. No Markdown, lists, emojis, links or code. " +
+            // Like a person, not an answering machine.
+            "Talk like a real person: react first when it fits (\"arre wah!\", \"oh no\", \"haha\"), then answer; now and then ask " +
+            "one short question back about what the user said; use what they told you earlier; you may share a small opinion or a " +
+            "light joke. If asked, say honestly that you are an AI." +
+            com.gravity.ide.files.TalkMemoryStore.forPrompt(c.appContext)
     } ?: ""
+
+    /**
+     * An instruction for the next live reply only (not saved in the chat): a topic to bring up when
+     * the user just wants to chat ("kuch baat karo"). See core/TalkTopics.
+     */
+    @Volatile private var liveTurnHint: String? = null
+    private val liveTopics = ArrayList<String>()
 
     fun warmUp() = viewModelScope.launch {
         val chat = c.db.chats().get(chatId) ?: return@launch
@@ -476,6 +490,14 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
     fun sendLive(text: String, onReply: (reply: String, error: String?) -> Unit): Boolean {
         if (busy.value || text.isBlank()) return false
         busy.value = true
+        // What the user says about themselves is remembered for later talks (Settings → Voice).
+        com.gravity.ide.files.TalkMemoryStore.remember(c.appContext, text)
+        // "Kuch baat karo": Yamini brings up a topic, a different one each time in this talk.
+        liveTurnHint = if (com.gravity.ide.core.TalkTopics.wantsTopic(text)) {
+            val (topic, angle) = com.gravity.ide.core.TalkTopics.pick(System.nanoTime(), liveTopics)
+            liveTopics += topic
+            com.gravity.ide.core.TalkTopics.hint(topic, angle)
+        } else null
         run.job = c.appScope.launch(Dispatchers.Main.immediate) {
           try {
             c.db.chats().insertMessage(MessageEntity(chatId = chatId, role = "user", content = text, createdAt = System.currentTimeMillis()))
@@ -740,6 +762,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
             busy.value = false
             streaming.value = null
             activity.value = null
+            liveTurnHint = null
             pendingMake = null
             c.chatRuns.active(chatId, false)
         }

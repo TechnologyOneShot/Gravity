@@ -431,6 +431,31 @@ class DeviceServicesTest {
         assertTrue("The model forgot the chat: ${reply}", reply.contains("Asha", ignoreCase = true))
     }
 
+    /** What the user says about themselves in live talk is kept on the phone, shown and deletable. */
+    @Test
+    fun t19b_talkMemoryIsKeptAndForgotten() {
+        val store = com.gravity.ide.files.TalkMemoryStore
+        val was = store.enabled(ctx)
+        store.clear(ctx)
+        try {
+            store.setEnabled(ctx, true)
+            store.remember(ctx, "mera naam Ravi hai aur mujhe cricket bahut pasand hai")
+            store.remember(ctx, "main Patna me rehta hun")
+            val facts = store.facts(ctx)
+            Ci.log("talk-memory", facts.joinToString { "${it.kind.label}: ${it.value}" } + " → " + store.forPrompt(ctx))
+            assertEquals(setOf("Ravi", "cricket", "Patna"), facts.map { it.value }.toSet())
+            store.forget(ctx, facts.first { it.value == "cricket" })
+            assertEquals(setOf("Ravi", "Patna"), store.facts(ctx).map { it.value }.toSet())
+            store.setEnabled(ctx, false)
+            store.remember(ctx, "mujhe chess pasand hai")
+            assertEquals("", store.forPrompt(ctx))
+            assertTrue(store.facts(ctx).none { it.value == "chess" })
+        } finally {
+            store.clear(ctx)
+            store.setEnabled(ctx, was)
+        }
+    }
+
     /**
      * The speed test (Phone Models → Check the phone AI): threads for writing and for reading are
      * really changed on the loaded model, every run is measured (tokens and time), and the result

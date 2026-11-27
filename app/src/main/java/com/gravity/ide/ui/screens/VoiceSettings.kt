@@ -225,6 +225,8 @@ internal fun VoiceSettingsPanel() {
 
         OnlineVoiceCard(yaminiGender, hindiTab)
 
+        TalkMemoryCard()
+
         VoiceCard("Speaking style", "How Yamini talks in live mode and when it reads replies: its words and mood, and the voice's speed, pitch and pauses.") {
             VoiceStyles.all.forEachIndexed { i, st ->
                 if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -499,3 +501,46 @@ private fun OnlineVoiceCard(gender: String, hindi: Boolean) {
         status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted) }
     }
 }
+
+/**
+ * What Yamini remembers from live talks (files/TalkMemoryStore): the user's name, place, likes…,
+ * from what they said about themselves. Shown in full, each item deletable, all of it switchable off.
+ */
+@Composable
+private fun TalkMemoryCard() {
+    val context = LocalContext.current
+    var on by remember { mutableStateOf(com.gravity.ide.files.TalkMemoryStore.enabled(context)) }
+    var facts by remember { mutableStateOf(com.gravity.ide.files.TalkMemoryStore.facts(context)) }
+    VoiceCard(
+        "Yamini remembers (live talk)",
+        "Like a friend, Yamini remembers what you tell her about yourself in live talk (\"mera naam Ravi hai\", \"mujhe cricket pasand hai\") " +
+            "and uses it in later talks. Kept only on this phone; with a cloud AI it is sent along with the talk. In live talk, " +
+            "\"💬 Kuch baat karo\" makes Yamini bring up a topic herself (${com.gravity.ide.core.TalkTopics.topicCount} topics, " +
+            "${com.gravity.ide.core.TalkTopics.angles.size} ways to start); the AI can talk about anything else you like.",
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Remember what I tell Yamini", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            androidx.compose.material3.Switch(
+                checked = on, onCheckedChange = { on = it; com.gravity.ide.files.TalkMemoryStore.setEnabled(context, it) },
+                modifier = Modifier.testTag("talk-memory-on"),
+            )
+        }
+        if (facts.isEmpty()) {
+            Text("Nothing remembered yet.", style = MaterialTheme.typography.bodySmall, color = GravityColors.Muted)
+        } else {
+            facts.forEach { f ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${f.kind.label}: ${f.value}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        com.gravity.ide.files.TalkMemoryStore.forget(context, f)
+                        facts = com.gravity.ide.files.TalkMemoryStore.facts(context)
+                    }) { Text("Forget") }
+                }
+            }
+            TextButton(onClick = { com.gravity.ide.files.TalkMemoryStore.clear(context); facts = emptyList() }, modifier = Modifier.testTag("talk-memory-clear")) {
+                Text("Forget everything")
+            }
+        }
+    }
+}
+

@@ -255,6 +255,9 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         phase = LivePhase.SPEAKING
     }
 
+    // Sends what the user said (or the "Kuch baat karo" button) and speaks the answer as it comes.
+    // Kept in a state holder so the speech recognizer's listener always calls the current one.
+    val submitNow = remember { mutableStateOf<(String) -> Unit>({}) }
     // A listening response: when the answer takes a moment, a short "हम्म…" (no gendered words)
     // so the user knows they were heard. Never when the reply has already started.
     val fillerNow = remember { mutableStateOf<() -> Unit>({}) }
@@ -266,6 +269,35 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
         }
     }
     val filler = remember { Runnable { fillerNow.value() } }
+    submitNow.value = { said ->
+        heard = said
+        reply = ""
+        spokenUpTo = 0
+        partNo = 0
+        voiceReady = false
+        problem = null
+        phase = LivePhase.THINKING
+        main.removeCallbacks(filler)
+        main.postDelayed(filler, 900)
+        val started = vm.sendLive(said) { answer, error ->
+            if (open.get()) {
+                reply = answer
+                when {
+                    error == "Stopped" -> Unit // interrupted by the user
+                    error != null -> {
+                        tts.stop()
+                        phase = LivePhase.IDLE
+                        problem = error
+                    }
+                    else -> finishSpeaking(if (spokenUpTo in 0..answer.length) answer.substring(spokenUpTo) else answer)
+                }
+            }
+        }
+        if (!started) {
+            phase = LivePhase.IDLE
+            problem = "The AI is still answering the last message. Wait a moment, then tap the circle."
+        }
+    }
     DisposableEffect(Unit) { onDispose { main.removeCallbacks(filler) } }
 
     /** Plays a sample of a style or voice. Pauses listening (so the mic does not hear it); never cuts a reply. */
@@ -390,31 +422,7 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                 }
                 misses = 0
                 retries = 0
-                heard = said
-                reply = ""
-                spokenUpTo = 0
-                partNo = 0
-                voiceReady = false
-                phase = LivePhase.THINKING
-                main.removeCallbacks(filler)
-                main.postDelayed(filler, 900)
-                val started = vm.sendLive(said) { answer, error ->
-                    if (!open.get()) return@sendLive
-                    reply = answer
-                    when {
-                        error == "Stopped" -> Unit // interrupted by the user
-                        error != null -> {
-                            tts.stop()
-                            phase = LivePhase.IDLE
-                            problem = error
-                        }
-                        else -> finishSpeaking(if (spokenUpTo in 0..answer.length) answer.substring(spokenUpTo) else answer)
-                    }
-                }
-                if (!started) {
-                    phase = LivePhase.IDLE
-                    problem = "The AI is still answering the last message. Wait a moment, then tap the circle."
-                }
+                submitNow.value(said)
             }
         })
         onDispose { }
@@ -630,6 +638,17 @@ internal fun LiveVoiceDialog(vm: ChatViewModel, modelName: String, onClose: () -
                     Text(it, style = MaterialTheme.typography.bodySmall, color = GravityColors.Red, textAlign = TextAlign.Center, modifier = Modifier.testTag("live-problem"))
                 }
                 Spacer(Modifier.weight(1f))
+                // Nothing to say? Yamini brings up a topic herself (a different one each time).
+                if (phase == LivePhase.IDLE || phase == LivePhase.LISTENING) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            recognizer?.cancel()
+                            submitNow.value(if (hindiVoice) "कुछ बात करो" else "Let's chat about something")
+                        },
+                        modifier = Modifier.testTag("live-topic"),
+                    ) { Text(if (hindiVoice) "💬 कुछ बात करो" else "💬 Talk about something") }
+                    Spacer(Modifier.height(8.dp))
+                }
                 Button(
                     onClick = onClose,
                     colors = ButtonDefaults.buttonColors(containerColor = GravityColors.Red, contentColor = Color.White),
