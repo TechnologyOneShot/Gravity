@@ -376,6 +376,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
 
     fun send(text: String) {
         if (busy.value || (text.isBlank() && attachments.value.isEmpty())) return
+        cutReply.value = null
         val wants = com.gravity.ide.core.MakeFiles.detect(text)
         if (wants == com.gravity.ide.core.MakeFiles.Kind.IMAGE || wants == com.gravity.ide.core.MakeFiles.Kind.VIDEO) {
             viewModelScope.launch {
@@ -495,7 +496,23 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         }
     }
 
-    fun continueGeneration() = send("Continue exactly where you stopped.")
+    // One word, so no reply language is added to it: the rest keeps the language of the reply.
+    fun continueGeneration() = send("continue")
+
+    /** The last reply, when it stopped at the length limit (it shows a Continue button). */
+    val cutReply = MutableStateFlow<Long?>(null)
+
+    /**
+     * Room for a list the user asked for by count (or for more of it: "continue"), for a phone
+     * model: about 10 tokens an item, 1024 to 4096. Null: the usual length.
+     */
+    private fun listTokens(recent: List<LlmMessage>): Int? {
+        val asks = recent.filter { it.role == Role.USER }.map { it.text.substringBefore("\n\n(") }
+        val last = asks.lastOrNull() ?: return null
+        val n = com.gravity.ide.core.LanguageHint.listCount(last)
+            ?: if (com.gravity.ide.core.LanguageHint.isFollowUp(last)) asks.dropLast(1).lastOrNull()?.let { com.gravity.ide.core.LanguageHint.listCount(it) } else null
+        return n?.let { (it * 10 + 150).coerceIn(1024, 4096) }
+    }
 
     fun stop() {
         run.job?.cancel()
@@ -513,6 +530,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
         val sources = mutableListOf<WebSource>()
         var inTok = 0
         var speed: LlmEvent.Speed? = null
+        var finish: String? = null
         var outTok = 0
         try {
             suspend fun answerWith(resolved: com.gravity.ide.ai.ResolvedModel) {
@@ -596,6 +614,8 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                         maxOutputTokens = when {
                             live -> if (resolved.provider.isLocal) 160 else 260
                             drawTokens != null -> drawTokens
+                            // A list asked for by count ("500 names") gets room for it on the phone.
+                            resolved.provider.isLocal -> listTokens(recent)
                             else -> null
                         },
                     )
@@ -615,6 +635,7 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                             streaming.value = text.toString()
                         }
                         is LlmEvent.Speed -> speed = ev
+                        is LlmEvent.Done -> finish = ev.finishReason
                         is LlmEvent.ModelSwitched -> {
                             resolvedModel = ev.to
                             notice.value = when {
@@ -656,6 +677,8 @@ class ChatViewModel(private val c: AppContainer, val chatId: String) : ViewModel
                 }
             }
             val savedId = saveAssistant(text.toString(), resolvedModel, providerId, inTok, outTok, sources, null)
+            // Stopped at the length limit: the reply gets a Continue button.
+            cutReply.value = if (finish == "MAX_TOKENS" || finish == "length") savedId else null
             speed?.let { v -> c.replySpeeds.put(savedId, com.gravity.ide.core.ReplySpeed.line(v.promptTokens, v.reusedTokens, v.readMs, v.outputTokens, v.writeMs, v.threads, v.engine)) }
             c.chatRuns.notifyReady(chatId, c.db.chats().get(chatId)?.title.orEmpty(), text.toString())
             pendingMake?.let { kind -> if (text.isNotBlank()) makeFile(savedId, kind, pendingMakeRequest) }
@@ -985,6 +1008,7 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
     val clipboard = LocalClipboardManager.current
     // Ticks when a phone-model reply's speed line is saved, so the bubbles read it again.
     val speedTick by c.replySpeeds.changes.collectAsState()
+    val cutId by vm.cutReply.collectAsState()
     val chat by vm.chat.collectAsState(initial = null)
     val messages by vm.messages.collectAsState(initial = emptyList())
     val streaming by vm.streaming.collectAsState()
@@ -1061,6 +1085,7 @@ fun ChatScreen(chatId: String, go: (String) -> Unit) {
                     onOpenApp = { go(Routes.app(it)) },
                     onRetryApp = { p, t -> vm.retryApp(p, t) },
                     onMake = { kind -> vm.makeFile(m.id, kind) },
+                    onContinue = if (m.id == cutId && m.id == lastId) ({ vm.continueGeneration() }) else null,
                     speed = if (m.role == "assistant" && m.providerId == LocalLlamaProvider.ID) remember(m.id, speedTick) { c.replySpeeds.get(m.id) } else null,
                 )
             }

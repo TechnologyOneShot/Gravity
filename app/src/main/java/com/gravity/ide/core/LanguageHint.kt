@@ -104,10 +104,45 @@ object LanguageHint {
         return t.split(Regex("\\s+")).size <= 8 && followUp.containsMatchIn(t)
     }
 
+    // Things a user asks for by count ("500 boys name", "100 GK questions", "50 सवाल"). Not "500
+    // words" or "20 lines": that is the length of one text (an essay, a poem), not a list.
+    private val listNoun = Regex(
+        "(?i)(?<![a-z])(?:names?|naam|naamo|naamon|questions?|ques|sawal|sawaal|savaal|items?|examples?|ideas?|facts?|jokes?|quotes?|" +
+            "shayari|countries|cities|states|capitals|animals|birds|fruits?|vegetables?|flowers?|songs?|movies?|films?|books?|apps?|games?|" +
+            "gk|mcqs?|points?|tips?|list|riddles?|paheli|paheliyan)(?![a-z])|नाम|सवाल|प्रश्न|उदाहरण|तथ्य|चुटकुले|शायरी|जानवर|पक्षी|फल|फूल|गाने|सूची|पहेलियाँ|पहेली",
+    )
+    private val wantsPairs = Regex("(?i)meaning|matlab|arth|अर्थ|मतलब|translat|anuvad|अनुवाद|hindi aur english|hindi and english|english aur hindi|dono")
+
+    /**
+     * How many items [text] asks for (10 to 2000), when it asks for a list by count: "500 boys
+     * name bole to" → 500. Null for anything else.
+     */
+    fun listCount(text: String): Int? {
+        for (m in Regex("(?<![\\d.,])(\\d{2,4})(?![\\d.,])").findAll(text)) {
+            val n = m.value.toInt()
+            if (n !in 10..2000) continue
+            val after = text.substring(m.range.last + 1).trim().split(Regex("\\s+")).take(4).joinToString(" ")
+            if (listNoun.containsMatchIn(after)) return n
+        }
+        return null
+    }
+
+    /**
+     * For a list asked by count: write all of it, numbered, each item once. A phone model wrote 32 of
+     * 500 names, said "listing 500 would be very long", and paired names with wrong spellings
+     * ("नैतिक (Netral)"), so items are in one script unless the user asks for meanings.
+     */
+    fun listHint(text: String): String? = listCount(text)?.let { n ->
+        "(The user asks for $n items: write all $n, numbered 1 to $n, one item per line, each only once" +
+            (if (wantsPairs.containsMatchIn(text)) "" else ", in one script, without a translation in brackets") +
+            ". Do not stop early and do not say the list is too long.)"
+    }
+
     /** [text] with its reply instruction on a new line (unchanged when the language is unclear). */
     fun withHint(text: String): String {
         val parts = listOfNotNull(
             "(This asks for more of your previous answer: continue it with new items, do not repeat them.)".takeIf { isFollowUp(text) },
+            listHint(text),
             hint(text).ifEmpty { null },
         )
         return if (parts.isEmpty()) text else text + "\n\n" + parts.joinToString(" ")

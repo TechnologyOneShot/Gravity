@@ -3,6 +3,7 @@ package com.gravity.ide
 import com.gravity.ide.core.LanguageHint
 import com.gravity.ide.core.LanguageHint.Lang
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LanguageHintTest {
@@ -81,6 +82,22 @@ class LanguageHintTest {
         listOf("more", "aur do", "continue", "10 more please", "aur batao", "more questions in hindi").forEach { assertEquals(it, true, LanguageHint.isFollowUp(it)) }
         listOf("What is photosynthesis? Explain in 2 lines.", "mere liye ek gana gao", "Name three planets.", "more people live in cities than villages, why is that so?")
             .forEach { assertEquals(it, false, LanguageHint.isFollowUp(it)) }
+    }
+
+    @Test fun aListAskedByCountIsFoundAndWrittenInFull() {
+        assertEquals(500, LanguageHint.listCount("500 boys name bole to"))
+        assertEquals(100, LanguageHint.listCount("class 2 ke 100 GK questions do"))
+        assertEquals(50, LanguageHint.listCount("50 सवाल हिंदी में"))
+        assertEquals(20, LanguageHint.listCount("give me 20 startup ideas"))
+        // The length of one text, a year, a price or a class are not lists.
+        assertEquals(null, LanguageHint.listCount("500 words ka essay likho"))
+        assertEquals(null, LanguageHint.listCount("2024 me kya hua"))
+        assertEquals(null, LanguageHint.listCount("class 2 ka GK"))
+        assertEquals(null, LanguageHint.listCount("₹500 me phone"))
+        val h = LanguageHint.withHint("500 boys name bole to")
+        assertTrue(h, h.contains("write all 500, numbered 1 to 500") && h.contains("without a translation in brackets"))
+        // Meanings asked for: pairs are fine.
+        assertTrue(!LanguageHint.withHint("100 English words with Hindi meaning").contains("without a translation"))
     }
 }
 

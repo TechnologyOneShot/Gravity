@@ -72,6 +72,10 @@ class ChatPromptTest {
             turn("user", "Now a different question, in English please: why is the sky blue?"), script = "latin",
         )
         case("Hinglish problem", listOf(), turn("user", "Mera phone bahut slow chal raha hai, kya karu?"), script = "latin", hinglish = true)
+        // A user asked Gemma for "500 boys name": it wrote 32 (and stopped at the length limit),
+        // said 500 was too long, and paired names with wrong spellings ("नैतिक (Netral)").
+        // "40." in the reply = the whole list was written.
+        case("list by count (40 names)", listOf("40."), turn("user", "40 boys name bole to"), script = "latin")
         case("English short", listOf("Mars", "Jupiter", "Venus", "Saturn", "Mercury", "Neptune", "Uranus"), turn("user", "Name three planets."), script = "latin")
         // A user's chat: GK for class 2, then "more and hindi text" (English words asking for Hindi).
         // Gemma 3 4B answered in English with wrong Hindi in brackets (गरुड़ for peacock).

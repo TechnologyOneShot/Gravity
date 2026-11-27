@@ -80,6 +80,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -279,6 +280,8 @@ internal fun ChatBubble(
     onMake: (com.gravity.ide.core.MakeFiles.Kind) -> Unit = {},
     /** The phone model's speed for this reply (see ReplySpeed), shown under it. */
     speed: String? = null,
+    /** Set when this reply stopped at the length limit: a Continue button asks for the rest. */
+    onContinue: (() -> Unit)? = null,
 ) {
     val atts = remember(m.attachments) {
         runCatching { JSONArray(m.attachments) }.getOrNull()?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: emptyList()
@@ -394,6 +397,11 @@ internal fun ChatBubble(
                 Spacer(Modifier.weight(1f))
                 m.model?.let {
                     Text("${shortModelName(it)} · ${relativeTime(m.createdAt)}", style = MaterialTheme.typography.labelSmall, color = GravityColors.Muted, maxLines = 1)
+                }
+            }
+            if (onContinue != null && isLast && !busy) {
+                OutlinedButton(onClick = onContinue, modifier = Modifier.testTag("reply-continue")) {
+                    Text("Continue · the reply stopped at its length limit")
                 }
             }
             // How fast the phone model was (reading the prompt, writing, threads, engine).
